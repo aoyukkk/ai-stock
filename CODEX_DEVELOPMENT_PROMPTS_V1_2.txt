@@ -1,0 +1,1317 @@
+==================================================
+AI Trader Assistant
+Codex Development Prompt Guide
+Version: 1.2 Development Edition
+==================================================
+
+
+IMPORTANT:
+
+Before performing any development task:
+
+1. Read:
+
+PROJECT_SPECIFICATION.txt
+
+SYSTEM_CONFIG_DESIGN.txt
+
+DATABASE_SCHEMA_DESIGN.txt
+
+
+2. Understand:
+
+- Overall architecture
+- Module boundaries
+- Interface requirements
+- Extension requirements
+- A-share trading rules
+- AI traceability requirements
+- Order price evaluation requirements
+- Pre-market and post-market order plan workflow
+
+
+3. Never rewrite the entire project.
+
+4. Only modify files related to current phase.
+
+5. After completing each phase:
+
+- Run tests
+- Verify functionality
+- Generate development report
+- Commit Git
+
+
+
+==================================================
+GENERAL CODEX DEVELOPMENT RULES
+==================================================
+
+
+You are the lead software engineer.
+
+Your goal:
+
+Build a production-quality AI trading assistant for A-share short-term trading.
+
+Follow these rules:
+
+
+RULE 1:
+Modular development only.
+
+Never create:
+
+- huge single files
+- mixed business logic
+- hard-coded configuration
+
+
+RULE 2:
+All external services must use adapters.
+
+Bad:
+
+Agent → ths_api.py
+
+Good:
+
+Agent → Data Interface → THS Adapter
+
+
+RULE 3:
+All AI models must use LLM Gateway.
+
+Forbidden:
+
+agent.py directly calls OpenAI or DeepSeek.
+
+Allowed:
+
+agent.py calls llm.chat()
+
+
+RULE 4:
+All configuration must be stored in:
+
+config/
+
+or
+
+.env
+
+or
+
+database configuration table.
+
+
+RULE 5:
+Every module requires:
+
+- unit test
+- error handling
+- logging
+
+
+RULE 6:
+Maintain backward compatibility.
+
+
+RULE 7:
+Do not remove existing tests.
+
+
+RULE 8:
+Do not hard-code model names inside Agents.
+
+Use model config.
+
+
+RULE 9:
+Do not hard-code stock selection numbers.
+
+Use config:
+
+quant_top_n
+light_analysis_top_n
+committee_analysis_top_n
+final_recommend_top_n
+manual_watchlist_limit
+
+
+RULE 10:
+All AI recommendations must be traceable.
+
+Save:
+
+- prediction_record
+- decision_snapshot
+- model_version
+- prompt_version
+
+
+RULE 11:
+Order prices must be calculated by rule-based modules.
+
+LLM can explain and review order prices.
+
+LLM must not invent order prices without market data.
+
+
+RULE 12:
+Every order plan must be reviewable.
+
+Save:
+
+- order_plan
+- order_price_candidate
+- order_plan_evaluation
+- order_reassessment_log
+
+
+
+==================================================
+Development Sequence
+==================================================
+
+
+
+PHASE 0
+Project initialization
+==================================================
+
+Goal:
+
+Create basic project structure.
+
+
+Create directories:
+
+backend/
+
+frontend/
+
+agents/
+
+quant/
+
+order_price/
+
+datasource/
+
+llm_gateway/
+
+memory/
+
+trading/
+
+database/
+
+backtest/
+
+config/
+
+tests/
+
+docs/
+
+logs/
+
+
+Create:
+
+README.md
+
+requirements.txt
+
+.env.example
+
+.gitignore
+
+
+Testing:
+
+Run:
+
+python -m pytest
+
+
+Acceptance:
+
+Project starts successfully.
+
+
+
+==================================================
+PHASE 1
+Backend foundation
+==================================================
+
+Goal:
+
+Create FastAPI backend.
+
+
+Implement:
+
+backend/main.py
+
+API structure:
+
+/api
+
+
+Health check:
+
+GET /health
+
+
+Create:
+
+- logging system
+- configuration loader
+- exception handler
+- response schema
+
+
+Testing:
+
+uvicorn backend.main:app
+
+
+Expected:
+
+{
+  "status": "ok"
+}
+
+
+
+==================================================
+PHASE 2
+Database system
+==================================================
+
+Goal:
+
+Create database layer.
+
+
+Implement:
+
+- PostgreSQL connection
+- SQLAlchemy ORM
+- migration system
+- database session manager
+
+
+Create initial models:
+
+Stock
+MarketData
+PreMarketAuction
+FinanceData
+FactorScore
+FactorDetail
+News
+NewsStockRelation
+AIAnalysisResult
+StockAIScore
+PredictionRecord
+DecisionSnapshot
+OrderPlan
+OrderPriceCandidate
+OrderPlanEvaluation
+OrderReassessmentLog
+ExperimentRun
+TradeRecord
+TradeOrder
+Position
+TradingAccount
+DailyReview
+PredictionEvaluation
+LLMUsage
+AgentExecutionLog
+PromptVersion
+ModelVersion
+ConfigHistory
+
+
+Testing:
+
+- Create database
+- Insert test stock
+- Insert factor score
+- Insert prediction record
+- Insert order plan
+- Insert order price candidate
+- Query successfully
+
+
+
+==================================================
+PHASE 3
+Data source abstraction
+==================================================
+
+Goal:
+
+Create unified data interface.
+
+
+Implement:
+
+MarketDataProvider
+
+
+Methods:
+
+get_stock_list()
+
+get_realtime()
+
+get_kline()
+
+get_finance()
+
+get_capital_flow()
+
+get_market_emotion()
+
+get_limit_price()
+
+get_pre_market_auction()
+
+
+Create:
+
+datasource/interfaces/
+
+datasource/ths/
+
+
+Create mock provider first.
+
+
+Important:
+
+Do not depend on THS API yet.
+
+
+Testing:
+
+Mock data can flow into database.
+
+
+
+==================================================
+PHASE 4
+Quant Engine
+==================================================
+
+Goal:
+
+Implement first layer screening.
+
+NO LLM.
+
+
+Implement:
+
+- Factor calculation
+- Technical indicators
+- Ranking system
+- Factor normalization
+- Factor detail explanation
+- Future data leakage prevention
+
+
+Default factors:
+
+Technical: 25%
+
+Capital: 25%
+
+Emotion: 20%
+
+Momentum: 15%
+
+Risk: 15%
+
+
+Input:
+
+A-share stock universe.
+
+
+Output:
+
+Top N stocks.
+
+
+Parameters must come from config.
+
+
+Testing:
+
+- Generate ranking result
+- Verify weights sum to 1
+- Verify output Top N count
+- Verify no LLM call happens
+
+
+
+==================================================
+PHASE 5
+Order Price Evaluation Engine
+==================================================
+
+Goal:
+
+Create rule-based order price evaluation module.
+
+
+Implement:
+
+order_price/atr_model.py
+
+order_price/support_resistance.py
+
+order_price/price_level_calculator.py
+
+order_price/execution_probability.py
+
+order_price/order_score.py
+
+order_price/order_plan_generator.py
+
+
+Core formulas:
+
+TR = max(
+  High - Low,
+  abs(High - Previous_Close),
+  abs(Low - Previous_Close)
+)
+
+ATR_N = Average(TR, N)
+
+Buy_Pullback = Support + 0.05 × ATR
+
+Buy_Balanced =
+0.5 × Support
++
+0.3 × VWAP
++
+0.2 × Previous_Close
++
+Adjustment
+
+Buy_Breakout = Resistance + Tick_Size
+
+Max_Buy_Price = min(
+  Limit_Up_Price,
+  Previous_Close + 0.8 × ATR,
+  Previous_Close × (1 + Max_Chase_Percent)
+)
+
+Stop_Loss = max(
+  Entry_Price - 1.0 × ATR,
+  Entry_Price × (1 - Max_Stop_Loss_Percent)
+)
+
+Take_Profit_1 = Entry_Price + 1.0 × ATR
+
+Take_Profit_2 = Entry_Price + 2.0 × ATR
+
+
+Output:
+
+- conservative price
+- balanced price
+- aggressive price
+- recommended price
+- max acceptable price
+- stop loss price
+- take profit prices
+- risk reward
+- fill probability
+- order price score
+- cancel conditions
+- reprice conditions
+
+
+Testing:
+
+- Generate three price candidates from mock OHLCV data
+- Verify risk_reward >= configured minimum
+- Verify max buy price does not exceed limit up price
+- Verify output saved to order_plan and order_price_candidate
+
+
+
+==================================================
+PHASE 6
+LLM Gateway
+==================================================
+
+Goal:
+
+Create unified model calling system.
+
+
+Implement:
+
+llm_gateway/router.py
+
+providers/deepseek.py
+
+providers/openai.py
+
+providers/mock.py
+
+
+Interface:
+
+chat(
+    agent,
+    task,
+    messages,
+    model,
+    prompt_version,
+    metadata
+)
+
+
+Add:
+
+- token counting
+- cost logging
+- fallback
+- caching
+- prompt version tracking
+- cost control
+
+
+Testing:
+
+Use mock LLM response.
+
+Verify usage is saved to llm_usage.
+
+
+
+==================================================
+PHASE 7
+Agent Framework
+==================================================
+
+Goal:
+
+Create LangGraph based agent system.
+
+
+Implement:
+
+- Controller Agent
+- Technical Agent
+- News Agent
+- Capital Agent
+- Emotion Agent
+- Overseas Agent
+- Risk Agent
+
+
+Rules:
+
+Agents cannot call models directly.
+
+All calls must go through LLM Gateway.
+
+
+Every Agent output must include:
+
+- score
+- direction
+- confidence
+- reason
+- risk_note
+
+
+Order price review:
+
+Risk Agent and Controller Agent can review order plans.
+
+They can output:
+
+ALLOW
+WATCH_ONLY
+CANCEL_ORDER
+REPRICE
+BLOCK
+
+
+Testing:
+
+Single stock analysis workflow.
+
+Single order plan review workflow.
+
+
+
+==================================================
+PHASE 8
+News Processing System
+==================================================
+
+Goal:
+
+Build news pipeline.
+
+
+Implement:
+
+- News collector
+- Cleaner
+- Entity extraction
+- Stock mapping
+- Industry mapping
+- Impact scoring
+
+
+Pipeline:
+
+News
+
+↓
+
+Clean
+
+↓
+
+Entity extraction
+
+↓
+
+Stock relation
+
+↓
+
+Impact score
+
+↓
+
+Event trigger
+
+↓
+
+Order plan recheck if needed
+
+
+Testing:
+
+Input sample news.
+
+Output related stocks and impact score.
+
+If news is major negative, related order plan should be flagged for recheck.
+
+
+
+==================================================
+PHASE 9A
+Memory System Minimum Version
+==================================================
+
+Goal:
+
+Implement minimum memory system suitable for local PC.
+
+
+Implement:
+
+Short memory:
+
+Redis
+
+
+Vector memory:
+
+Chroma
+
+
+Long memory:
+
+PostgreSQL
+
+
+Create:
+
+MemoryManager
+
+
+Interface:
+
+save_memory()
+
+search_memory()
+
+update_memory()
+
+delete_memory()
+
+
+Testing:
+
+Store and retrieve stock memory.
+
+Store and retrieve historical order plan memory.
+
+
+
+==================================================
+PHASE 9B
+Graph Memory Optional Version
+==================================================
+
+Goal:
+
+Implement optional Neo4j graph memory.
+
+
+Important:
+
+Neo4j is optional and disabled by default.
+
+
+Implement only if config memory.graph.enabled = true.
+
+
+Graph memory stores:
+
+- company relations
+- industry relations
+- overseas impact
+- supply chain relations
+
+
+Testing:
+
+If disabled, system works normally.
+
+If enabled, graph query works.
+
+
+
+==================================================
+PHASE 10
+Post-market Stock Analysis and Order Plan Workflow
+==================================================
+
+Goal:
+
+Complete post-market workflow.
+
+
+Workflow:
+
+Market close data
+
+↓
+
+Quant Engine
+
+↓
+
+Top500
+
+↓
+
+DeepSeek Light Analysis
+
+↓
+
+Top50/80
+
+↓
+
+AI Committee Deep Analysis
+
+↓
+
+Final Ranking
+
+↓
+
+Order Price Evaluation Engine
+
+↓
+
+Next-day order plan draft
+
+
+Requirements:
+
+- Save prediction_record
+- Save decision_snapshot
+- Save stock_ai_score
+- Save agent_execution_log
+- Save order_plan
+- Save order_price_candidate
+
+
+Testing:
+
+Generate daily stock report.
+
+Generate next-day order plan draft.
+
+
+
+==================================================
+PHASE 11
+Pre-market Recheck Workflow
+==================================================
+
+Goal:
+
+Recheck order plans before market open.
+
+
+Workflow:
+
+Update overnight news
+
+↓
+
+Update overseas market
+
+↓
+
+Update announcements
+
+↓
+
+Update pre-market auction if available
+
+↓
+
+Recalculate order prices
+
+↓
+
+Risk Agent reviews
+
+↓
+
+Controller Agent outputs final pre-market order recommendation
+
+
+Requirements:
+
+- Update order_plan
+- Save order_reassessment_log
+- Save decision_snapshot
+
+
+Testing:
+
+Simulate positive news and negative news.
+
+Simulate high open auction.
+
+Verify order plan can be kept, cancelled, repriced, or blocked.
+
+
+
+==================================================
+PHASE 12
+Risk and Black Swan System
+==================================================
+
+Goal:
+
+Implement emergency mode.
+
+
+Monitor:
+
+- price
+- volume
+- news
+- announcement
+- overseas shock
+- pre-market auction
+- pending order near fill
+
+
+Triggers:
+
+- Rapid drop
+- Rapid rise
+- Abnormal volume
+- Major announcement
+- Policy event
+- Auction abnormal
+- Pending order reaches cancel/reprice condition
+
+
+Workflow:
+
+Event
+
+↓
+
+Emergency Mode
+
+↓
+
+Risk Agent
+
+↓
+
+Order Price Engine recheck
+
+↓
+
+Controller Agent
+
+↓
+
+Alert
+
+↓
+
+Save decision_snapshot
+
+↓
+
+Save order_reassessment_log
+
+
+Testing:
+
+Simulate crash event.
+
+Simulate major negative news.
+
+Simulate high open cancel condition.
+
+
+
+==================================================
+PHASE 13
+Trading Simulator
+==================================================
+
+Goal:
+
+Create AI paper trading with pending orders.
+
+
+Implement:
+
+VirtualBroker
+
+
+Support:
+
+buy()
+
+sell()
+
+cancel_order()
+
+reprice_order()
+
+position()
+
+cash()
+
+orders()
+
+
+Must support A-share rules:
+
+- T+1
+- price limit
+- commission
+- stamp tax on sell
+- lot size 100 shares
+- suspension
+- partial fill
+- slippage
+- failed buy at limit up
+- failed sell at limit down
+- pending order
+- cancel order
+- reprice order
+
+
+Testing:
+
+Complete simulated pending order.
+
+Verify T+1 available_quantity.
+
+Verify sell stamp tax.
+
+Verify cancel/reprice behavior.
+
+
+
+==================================================
+PHASE 14
+Backtesting System
+==================================================
+
+Goal:
+
+Evaluate AI strategy historically.
+
+
+Implement:
+
+BacktraderEngine
+
+
+Functions:
+
+- Historical replay
+- Strategy execution
+- Pending order simulation
+- Order price quality evaluation
+- Performance metrics
+- Prediction validation
+
+
+Metrics:
+
+- return
+- win rate
+- max drawdown
+- Sharpe ratio
+- prediction accuracy
+- average holding days
+- order fill rate
+- order price quality score
+
+
+Testing:
+
+Run historical simulation.
+
+
+
+==================================================
+PHASE 15
+Web UI
+==================================================
+
+Goal:
+
+Create trader interface.
+
+
+Technology:
+
+Vue3
+Element Plus
+
+
+Pages:
+
+- Dashboard
+- Stock Ranking
+- Stock Detail
+- AI Analysis
+- Decision Snapshot
+- Order Plan
+- Order Price Candidates
+- Model Management
+- Simulation Trading
+- System Config
+- Daily Review
+
+
+Testing:
+
+Frontend connects backend.
+
+
+
+==================================================
+PHASE 16
+Model Management UI
+==================================================
+
+Goal:
+
+Allow changing models.
+
+
+Functions:
+
+Select model:
+
+- DeepSeek
+- GPT
+- Claude
+- Qwen
+- Mock
+
+
+Configure:
+
+Agent → Model
+
+Agent → temperature
+
+Agent → max_tokens
+
+Agent → prompt_version
+
+
+Testing:
+
+Change model without code modification.
+
+
+
+==================================================
+PHASE 17
+Packaging
+==================================================
+
+Goal:
+
+Create desktop application.
+
+
+Support:
+
+Windows
+
+
+Recommended:
+
+Backend:
+
+PyInstaller
+
+
+Frontend:
+
+Electron
+
+
+Testing:
+
+Install on clean computer.
+
+
+
+==================================================
+PHASE 18
+Production hardening
+==================================================
+
+Add:
+
+- Exception handling
+- Security
+- Performance optimization
+- Database backup
+- Log management
+- Configuration history
+- Cost budget alert
+- 24-hour stability test
+
+
+Testing:
+
+Run 24-hour stability simulation.
+
+
+
+==================================================
+Development Reporting Format
+==================================================
+
+
+After every phase output:
+
+Phase:
+
+Completed:
+
+Files changed:
+
+Features:
+
+Tests:
+
+Problems:
+
+Known limitations:
+
+Next step:
+
+
+
+==================================================
+Git Rules
+==================================================
+
+
+Commit after every phase.
+
+
+Commit format:
+
+feat:
+
+new feature
+
+fix:
+
+bug fix
+
+refactor:
+
+code improvement
+
+docs:
+
+documentation
+
+test:
+
+test update
+
+
+
+==================================================
+Final Goal
+==================================================
+
+
+Build a professional AI trading assistant.
+
+
+Characteristics:
+
+- Human controls real trading
+- AI independently evaluates
+- AI gives executable order plans
+- Simulation validates performance
+- Models replaceable
+- Data sources replaceable
+- Recommendations traceable
+- Order prices reviewable
+- Future automated trading possible
+
+
+
+END
+==================================================
