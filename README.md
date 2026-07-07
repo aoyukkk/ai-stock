@@ -4,18 +4,17 @@ AI Trader Assistant is an AI-assisted trading research and decision-support syst
 
 ## Current Phase
 
-PHASE 0 - Project initialization
+PHASE 1 - Backend foundation
 
-This phase only creates the base project structure, documentation, dependency list, environment variable example, Git ignore rules, and minimal test framework.
+This phase creates the FastAPI backend foundation, including configuration loading, logging initialization, unified response structure, global exception handling, and a health check endpoint.
 
-No FastAPI business API, database model, quant factor, LLM Gateway, Agent, trading system, or frontend page is implemented in this phase.
+No database connection, database model, quant factor, LLM Gateway, Agent, order price evaluation module, trading system, or frontend page is implemented in this phase.
 
 ## Install Dependencies
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
-python -m pip install -r requirements.txt
+conda env create -f environment.yml
+conda activate ai-stock-agent
 ```
 
 ## Run Tests
@@ -24,6 +23,18 @@ python -m pip install -r requirements.txt
 python -m pytest
 ```
 
+## Health Check
+
+```bash
+uvicorn backend.main:app --reload
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000/health
+```
+
 ## Next Phase
 
-The next step is PHASE 1 - Backend foundation, which should introduce the FastAPI backend foundation and a health check endpoint. Do not start PHASE 1 until explicitly requested.
+The next step is PHASE 2 - Database system. Do not start PHASE 2 until explicitly requested.
