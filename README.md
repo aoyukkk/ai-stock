@@ -4,11 +4,11 @@ AI Trader Assistant is an AI-assisted trading research and decision-support syst
 
 ## Current Phase
 
-PHASE 1 - Backend foundation
+PHASE 2 - Database system
 
-This phase creates the FastAPI backend foundation, including configuration loading, logging initialization, unified response structure, global exception handling, and a health check endpoint.
+This phase creates the database foundation, including SQLAlchemy ORM metadata, database session helpers, migration documentation, and SQLite-based unit tests for local validation.
 
-No database connection, database model, quant factor, LLM Gateway, Agent, order price evaluation module, trading system, or frontend page is implemented in this phase.
+No real market data interface, data collection workflow, quant factor calculation, LLM Gateway, Agent, order price calculation, trading simulator, or frontend page is implemented in this phase.
 
 ## Install Dependencies
 
@@ -35,6 +35,10 @@ Then open:
 http://127.0.0.1:8000/health
 ```
 
+## Database Tests
+
+Database unit tests use an in-memory SQLite database. Runtime database connections are read from `DATABASE_URL`, and no real database connection is created during module import.
+
 ## Next Phase
 
-The next step is PHASE 2 - Database system. Do not start PHASE 2 until explicitly requested.
+The next step is PHASE 3 - Data source abstraction. Do not start PHASE 3 until explicitly requested.
