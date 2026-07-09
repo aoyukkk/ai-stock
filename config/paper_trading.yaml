@@ -1,0 +1,32 @@
+paper_trading:
+  enabled: true
+  real_trading_enabled: false
+  account_type: AI_SIMULATION
+  initial_cash: 1000000
+
+  broker:
+    interface_required: true
+    allow_real_broker: false
+
+  rules:
+    t_plus_one: true
+    price_limit: true
+    lot_size: 100
+    allow_partial_fill: true
+    allow_trade_when_suspended: false
+    support_pending_order: true
+    support_cancel_order: true
+    support_reprice_order: true
+
+  cost:
+    commission_rate: 0.0003
+    min_commission: 5
+    stamp_tax_rate: 0.001
+    stamp_tax_side: sell
+    slippage_rate: 0.0005
+
+  execution:
+    fail_buy_at_limit_up: true
+    fail_sell_at_limit_down: true
+    use_auction_price_when_available: true
+    simplified_fill_probability_without_order_book: true

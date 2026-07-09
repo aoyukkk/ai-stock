@@ -1,8 +1,18 @@
 name: ai-stock-agent
 channels:
+  - defaults
   - conda-forge
 dependencies:
-  - python=3.12
+  - python>=3.12
   - pip
   - pip:
-      - -r requirements.txt
+      - pytest>=8.0,<9.0
+      - PyYAML>=6.0,<7.0
+      - python-dotenv>=1.0,<2.0
+      - fastapi>=0.115,<1.0
+      - uvicorn>=0.30,<1.0
+      - httpx>=0.27,<1.0
+      - SQLAlchemy>=2.0,<3.0
+      - akshare
+      - baostock
+      - pandas

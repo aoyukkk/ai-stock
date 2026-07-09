@@ -1,0 +1,132 @@
+AI Trader Assistant V0.3 变更说明
+============================================================
+
+一、V0.3 合并来源
+------------------------------------------------------------
+V0.3 在 V0.2 的基础上，吸收了另一套 V1.2 方案中的工程化设计。
+
+保留 V0.2 优势：
+1. A股全体 + 短线 + 人工实盘 + AI虚拟盘。
+2. Q/N/W 思路。
+3. 盘前/盘后挂单价。
+4. MemoryOS / A-MEM / Reflexion / Temporal KG 记忆系统。
+5. 前端控制台全参数可配置。
+
+吸收 V1.2 优势：
+1. 配置优先级：Web UI > Database > Config File > Default。
+2. 更细的筛选变量：quant_top_n、light_analysis_top_n、committee_analysis_top_n、final_recommend_top_n。
+3. 分层刷新频率：全市场、推荐池、持仓、挂单、异常事件。
+4. 挂单价参数和公式更工程化。
+5. order_plan、order_price_candidate、order_plan_evaluation、order_reassessment_log。
+6. prediction_record、decision_snapshot、prediction_evaluation。
+7. VirtualBroker 支持更完整的 A股规则。
+8. Codex 阶段开发报告和 Git 提交流程。
+
+二、命名更新
+------------------------------------------------------------
+V0.2：
+Q = 量化 Top Q
+N = LLM Top N
+W = 人工关注池
+
+V0.3：
+Q = quant_top_n，默认 500
+L = light_analysis_top_n，默认 500
+N = committee_analysis_top_n，默认 50
+R = final_recommend_top_n，默认 50
+W = manual_watchlist，自定义，默认建议 50，软提示 100
+
+Hot Pool = Final Recommend R ∪ Manual Watch W ∪ Event Trigger Pool
+
+三、前端技术栈更新
+------------------------------------------------------------
+V0.2 倾向 PySide6。
+V0.3 改为 Vue3 + Element Plus + Electron。
+
+原因：
+1. 系统配置页面复杂。
+2. 模型管理、成本统计、参数表单更适合 Web UI。
+3. Electron 能打包桌面应用。
+4. 后端 FastAPI 可独立部署。
+
+四、风控仓位更新
+------------------------------------------------------------
+用户要求“上限先不设置”。
+V0.3 保留仓位参数，但默认：
+position_limit_mode = advisory_only
+max_position.enabled = false
+
+含义：
+- 不硬阻断人工操作。
+- 不硬阻断 AI 虚拟盘，除非未来开启。
+- 前端仍展示软风险提示。
+
+五、记忆系统保留增强版
+------------------------------------------------------------
+另一方案的 Redis + Chroma + PostgreSQL + Neo4j 存储结构可借鉴。
+但 V0.3 不退化为简单向量库。
+
+V0.3 保留：
+- 分层记忆
+- 动态链接
+- 复盘反思
+- 时间知识图谱
+- 记忆质量分
+- 防污染机制
+
+六、挂单价增强
+------------------------------------------------------------
+新增：
+- ATR 公式
+- VWAP 权重
+- 支撑/阻力价
+- 三档价格
+- 最高可追价
+- 风险收益比
+- 成交概率
+- 挂单价格质量复盘
+- 撤单/改价条件
+
+七、数据库增强
+------------------------------------------------------------
+新增或强化：
+- order_plan
+- order_price_candidate
+- order_plan_evaluation
+- order_reassessment_log
+- prediction_record
+- prediction_evaluation
+- decision_snapshot
+- config_history
+- llm_usage
+- memory_retrieval_log
+- strategy_playbook
+- stock_temporal_relation
+
+八、Codex 提示词增强
+------------------------------------------------------------
+新增硬约束：
+- 每阶段只改相关文件。
+- 每阶段必须测试。
+- 每阶段必须输出开发报告。
+- 不得重写整个项目。
+- 不得删除已有测试。
+- 不得硬编码模型和参数。
+
+九、V0.3 交付文件
+------------------------------------------------------------
+- README_INDEX.txt
+- PROJECT_SPECIFICATION.txt
+- SYSTEM_CONFIG_DESIGN.txt
+- ARCHITECTURE_AND_DATAFLOW.txt
+- ORDER_PRICE_AND_VIRTUAL_TRADING_SPEC.txt
+- MEMORY_SYSTEM_DESIGN.txt
+- FRONTEND_CONTROL_PANEL_SPEC.txt
+- DATABASE_AND_API_CONTRACTS.txt
+- PROMPT_TEMPLATES_AND_LLM_GATEWAY.txt
+- CONFIGURATION_AND_ENV_TEMPLATES.txt
+- CODEX_DEVELOPMENT_PROMPTS.txt
+- TESTING_AND_ACCEPTANCE_CHECKLIST.txt
+- MIGRATION_NOTES_V0_3.txt
+
+END

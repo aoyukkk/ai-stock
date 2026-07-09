@@ -1,0 +1,24 @@
+ui:
+  frontend_stack: vue3_element_plus_electron
+
+  editable:
+    stock_number: true
+    model_selection: true
+    factor_weight: true
+    order_price_parameter: true
+    risk_parameter: true
+    trading_mode: true
+    cost_budget: true
+    memory_parameter: true
+    data_source: true
+    refresh_frequency: true
+    language: true
+
+  read_only:
+    ai_score_manual_override: true
+    real_trading_switch: true
+
+  config_change:
+    require_reason: true
+    write_history: true
+    support_rollback: true

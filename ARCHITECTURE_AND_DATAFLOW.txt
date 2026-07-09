@@ -1,0 +1,240 @@
+AI Trader Assistant 架构与数据流设计
+Version: V0.3
+============================================================
+
+一、总架构
+------------------------------------------------------------
+Frontend Trader Console
+  Vue3 + Element Plus + Electron
+  ↓ REST / WebSocket
+FastAPI Backend
+  ↓
+Application Services
+  - ConfigService
+  - SchedulerService
+  - StockPoolService
+  - MarketDataService
+  - NewsEventService
+  - QuantService
+  - LLMService
+  - AgentOrchestrator
+  - OrderPriceService
+  - RiskService
+  - VirtualTradingService
+  - MemoryService
+  - ReviewService
+  ↓
+Storage
+  - PostgreSQL
+  - Redis
+  - Chroma
+  - Neo4j optional
+  - Parquet/DuckDB optional for offline analysis
+  ↓
+External Providers
+  - iFinD / 同花顺
+  - Tushare / AKShare fallback
+  - 金十 / 同花顺资讯 / 公告
+  - OKX / overseas market providers
+
+二、核心约束
+------------------------------------------------------------
+1. Agent 不直接访问外部数据源。
+2. Agent 不直接调用 OpenAI、DeepSeek、Claude 等模型。
+3. Agent 不直接写交易记录。
+4. 所有数据源通过 DataProvider。
+5. 所有模型通过 LLM Gateway。
+6. 所有交易通过 Broker 接口。
+7. 所有配置通过 ConfigService。
+8. 所有推荐通过 DecisionSnapshot 固化。
+
+三、盘后流程
+------------------------------------------------------------
+触发时间：15:30之后。
+
+流程：
+1. Scheduler 触发 post_market_plan。
+2. MarketDataProvider 拉取收盘行情、成交额、涨跌停价、行业/概念数据。
+3. NewsProvider 拉取收盘后公告和新闻。
+4. NormalizeService 标准化数据。
+5. QuantEngine 对全A计算因子。
+6. StockPoolService 生成 Quant Top Q。
+7. LLM Light Analyzer 对 Top Q 做轻量筛选。
+8. AI Committee 对 Top N 候选深度分析。
+9. Controller Agent 输出 Final Recommend Top R。
+10. OrderPriceEngine 生成次日挂单计划草案。
+11. RiskGate 复核风险。
+12. 保存：
+    - stock_factor_score
+    - stock_factor_detail
+    - ai_analysis_result
+    - stock_ai_score
+    - prediction_record
+    - decision_snapshot
+    - order_plan
+    - order_price_candidate
+13. VirtualBroker 可根据策略选择是否创建次日虚拟挂单草案。
+14. ReviewService 生成盘后报告。
+15. 前端 Dashboard 更新。
+
+四、盘前流程
+------------------------------------------------------------
+触发时间：09:00 - 09:25。
+
+流程：
+1. 拉取隔夜海外市场：美股、港股、商品、汇率、OKX 风险偏好。
+2. 拉取国内公告、政策、新闻。
+3. 如果接口支持，拉取集合竞价数据。
+4. NewsEventService 生成事件。
+5. EntityLinking 映射股票、行业、海外龙头、产业链。
+6. MemoryService 检索相关历史事件和复盘记忆。
+7. 对已有 order_plan 进行重评估。
+8. OrderPriceEngine 更新三档挂单价和撤单/改价条件。
+9. RiskAgent 判断：ALLOW / WATCH_ONLY / CANCEL_ORDER / REPRICE / BLOCK。
+10. ControllerAgent 输出最终盘前建议。
+11. 保存 order_reassessment_log 和新的 decision_snapshot。
+12. 前端推送通知。
+
+特别规则：
+- 09:15-09:20 可提示撤单/改价。
+- 09:20-09:25 不可撤单高风险窗口，只提示风险，不给激进追单建议。
+
+五、盘中流程
+------------------------------------------------------------
+盘中不做全A高频 LLM 重选股。
+
+监控对象：
+1. Final Recommend Top R。
+2. Manual Watch W。
+3. 当前持仓。
+4. 已挂单。
+5. 异常事件触发股票。
+
+默认刷新：
+- 全A轻量量化雷达：60分钟。
+- 推荐池 R：30分钟。
+- 人工关注 W：15分钟。
+- 持仓：15分钟。
+- 挂单：5分钟。
+- 开盘/尾盘重点窗口：1-3分钟。
+- 异常事件：立即触发。
+
+盘中动作：
+1. 更新行情快照。
+2. 检查价格、成交量、换手率、接近成交、新闻等触发器。
+3. 对已挂单股票优先检查撤单/改价条件。
+4. 对已持仓股票检查风险与 T+1 可卖数量。
+5. 异常时进入 Emergency Mode。
+6. 保存 order_reassessment_log。
+7. 发送 WebSocket alert 到前端。
+
+六、事件驱动流程
+------------------------------------------------------------
+Event Source:
+- price_move
+- volume_abnormal
+- turnover_abnormal
+- major_news
+- announcement
+- overseas_shock
+- auction_abnormal
+- pending_order_near_fill
+- manual_refresh
+
+Event Pipeline:
+Raw Event
+  ↓
+Deduplicate
+  ↓
+Normalize
+  ↓
+Importance Score
+  ↓
+Entity Linking
+  ↓
+Affected Scope:
+  - single stock
+  - sector
+  - industry chain
+  - overseas mapping
+  - full market
+  ↓
+Risk Level:
+  S0 normal
+  S1 stock abnormal
+  S2 sector abnormal
+  S3 market shock
+  S4 data conflict / rumor
+  ↓
+Action:
+  - refresh data
+  - reprice order
+  - cancel order
+  - block new buy
+  - alert only
+  - request manual review
+
+七、新闻到股票映射流程
+------------------------------------------------------------
+1. 新闻进入。
+2. 清洗标题、正文、来源、时间。
+3. 去重。
+4. 识别实体：公司、股票简称、行业、产品、政策、地区、海外公司。
+5. 识别事件类型：财报、订单、政策、事故、并购、制裁、涨价、降价、监管、技术突破。
+6. 计算来源可信度。
+7. 计算影响方向：POSITIVE / NEGATIVE / NEUTRAL / UNKNOWN。
+8. 计算时效：intraday / 1-3 days / 1-4 weeks / long-term。
+9. 映射：直接公司、同行业、上下游、国内替代、海外映射。
+10. 写入 news_event 和 event_stock_link。
+11. 命中 Hot Pool 则立即触发重评估。
+12. 命中非 Hot Pool 时进入 Event Trigger Pool，按配置决定是否动态入池。
+
+八、记忆流
+------------------------------------------------------------
+写入：
+1. 每次重要新闻写事件记忆。
+2. 每次 Agent 分析写短期/中期记忆。
+3. 每次推荐写 prediction memory。
+4. 每次挂单写 order plan memory。
+5. 每日复盘写 Reflexion memory。
+6. 产业链关系写 Temporal KG。
+
+读取：
+Stock Agent Run 读取：
+- 最近 1-3 天短期记忆。
+- 最近 20 交易日中期记忆。
+- 该股关键长期记忆。
+- 该行业状态。
+- 海外映射事件。
+- 相似历史事件。
+- 复盘反思。
+
+九、虚拟盘流
+------------------------------------------------------------
+1. AI 输出 order_plan。
+2. VirtualBroker 创建 pending_order。
+3. 根据行情模拟是否成交。
+4. 成交后更新 position，T+1 设置 available_quantity。
+5. 未成交记录 missed_opportunity。
+6. 可撤单/改价时记录 order_reassessment_log。
+7. 日终生成 order_plan_evaluation。
+8. 和人工 manual_trade 对比。
+
+十、前端推送
+------------------------------------------------------------
+REST：
+- 页面初始化
+- 查询列表
+- 修改配置
+- 手动刷新
+- 提交人工交易记录
+
+WebSocket：
+- 风险提醒
+- 挂单接近成交
+- 撤单/改价建议
+- 模型成本警告
+- 数据源异常
+- Emergency Mode
+
+END

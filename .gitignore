@@ -1,14 +1,38 @@
-.env
+# Python
 __pycache__/
-**/__pycache__/
-*.pyc
+*.py[cod]
+*.pyo
 .pytest_cache/
-.venv/
-venv/
-logs/*.log
-dist/
-build/
-node_modules/
-.DS_Store
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
+
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# Runtime data
+logs/*
+!logs/.gitkeep
+data/*
+!data/.gitkeep
+*.db
+*.sqlite
+
+# Frontend
+node_modules/
+dist/
+dist-electron/
+build/
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,29 @@
+data_sources:
+  adapter_required: true
+  phase0_mode: mock_only
+
+  market_primary:
+    provider: ifind
+    enabled: false
+
+  market_fallback:
+    - provider: tushare
+      enabled: false
+    - provider: akshare
+      enabled: false
+    - provider: mock
+      enabled: true
+
+  news:
+    - provider: ths_news
+      enabled: false
+    - provider: jinshi
+      enabled: false
+    - provider: mock
+      enabled: true
+
+  overseas:
+    - provider: okx
+      enabled: false
+    - provider: mock
+      enabled: true

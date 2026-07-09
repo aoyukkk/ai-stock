@@ -1,0 +1,189 @@
+llm_gateway:
+  required: true
+  phase0_mode: mock_only
+  request_hash_cache_enabled: true
+  json_schema_required: true
+  parse_failure_fallback_action: WATCH_ONLY
+
+llm:
+  mock_only: true
+  default_provider: mock
+  default_model: mock-chat
+  enable_cache: true
+  cache_ttl_minutes: 30
+
+  providers:
+    deepseek:
+      enabled: false
+      api_key_env: DEEPSEEK_API_KEY
+    openai:
+      enabled: false
+      api_key_env: OPENAI_API_KEY
+    claude:
+      enabled: false
+      api_key_env: CLAUDE_API_KEY
+    qwen:
+      enabled: false
+      api_key_env: QWEN_API_KEY
+    mock:
+      enabled: true
+
+  aliases:
+    deepseek-v4-flash:
+      provider: deepseek
+      model: deepseek-v4-flash
+    gpt-5.5:
+      provider: openai
+      model: gpt-5.5
+    mock-fast:
+      provider: mock
+      model: mock-fast
+    mock-reasoning:
+      provider: mock
+      model: mock-reasoning
+
+  fallback:
+    primary: mock
+    secondary: mock
+    final: mock
+
+  routing:
+    default:
+      provider: mock
+      model: mock-chat
+    technical_agent:
+      provider: mock
+      model: mock-chat
+    news_agent:
+      provider: mock
+      model: mock-chat
+    capital_agent:
+      provider: mock
+      model: mock-chat
+    emotion_agent:
+      provider: mock
+      model: mock-chat
+    overseas_agent:
+      provider: mock
+      model: mock-chat
+    risk_agent:
+      provider: mock
+      model: mock-chat
+    controller_agent:
+      provider: mock
+      model: mock-chat
+    daily_review_agent:
+      provider: mock
+      model: mock-chat
+
+  cache:
+    enabled: true
+    ttl_minutes: 30
+
+  budget:
+    daily_token_budget: 1800000
+    warning_percent: 80
+    limit_percent: 100
+    daily_cost_budget_usd: 8
+    gpt5_5_daily_budget_usd: 6
+    deepseek_daily_budget_usd: 2
+
+agent_routes:
+  light_screening_agent:
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+  technical_agent:
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+  news_agent:
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2500
+  capital_agent:
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+  emotion_agent:
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+  overseas_agent:
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+  risk_agent:
+    preferred_model_alias: gpt-5.5
+    phase0_model_alias: mock-reasoning
+    temperature: 0.1
+    max_tokens: 4000
+  controller_agent:
+    preferred_model_alias: gpt-5.5
+    phase0_model_alias: mock-reasoning
+    temperature: 0.1
+    max_tokens: 5000
+
+llm_light_screening:
+  enabled: true
+  provider: mock
+  model: mock-chat
+  batch_size: 20
+  output_top_n: 50
+  min_confidence: 0.50
+  persist_default: false
+  score_weights:
+    quant_signal: 0.30
+    event_catalyst: 0.20
+    sector_strength: 0.15
+    order_friendliness: 0.15
+    liquidity: 0.10
+    risk_penalty: 0.10
+
+ai_committee:
+  enabled: true
+  input_top_n: 50
+  final_top_n: 50
+  persist_default: false
+  batch_size: 10
+  agents:
+    technical_agent:
+      enabled: true
+      provider: mock
+      model: mock-chat
+      weight: 0.20
+    news_agent:
+      enabled: true
+      provider: mock
+      model: mock-chat
+      weight: 0.20
+    capital_agent:
+      enabled: true
+      provider: mock
+      model: mock-chat
+      weight: 0.20
+    emotion_agent:
+      enabled: true
+      provider: mock
+      model: mock-chat
+      weight: 0.15
+    overseas_agent:
+      enabled: true
+      provider: mock
+      model: mock-chat
+      weight: 0.10
+    risk_agent:
+      enabled: true
+      provider: mock
+      model: mock-chat
+      weight: 0.15
+  recommendation_thresholds:
+    strong_watch: 85
+    watch: 75
+    neutral: 60

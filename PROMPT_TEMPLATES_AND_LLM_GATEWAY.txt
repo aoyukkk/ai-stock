@@ -1,0 +1,237 @@
+AI Trader Assistant LLM Gateway 与 Prompt 模板
+Version: V0.3
+============================================================
+
+一、LLM Gateway 目标
+------------------------------------------------------------
+所有模型调用必须经过 LLM Gateway。
+禁止 Agent 直接调用模型 SDK。
+
+统一接口：
+llm.chat(
+    agent: str,
+    task: str,
+    messages: list,
+    model_alias: str | None,
+    prompt_version: str,
+    metadata: dict
+) -> LLMResponse
+
+必须支持：
+- Provider 切换
+- 模型别名
+- Agent 级模型路由
+- fallback
+- token 统计
+- 成本统计
+- 超时
+- 重试
+- 缓存
+- prompt version
+- request_hash 去重
+- JSON schema 校验
+- 输出修复
+
+二、默认模型路由
+------------------------------------------------------------
+DeepSeek V4 Flash：
+- 新闻分类
+- 实体抽取
+- 轻量 AI 二筛
+- Technical Agent
+- News Agent
+- Capital Agent
+- Emotion Agent
+- Overseas Agent
+- 普通个股解释
+- 复盘初稿
+
+GPT-5.5：
+- Risk Agent
+- Controller Agent
+- 黑天鹅分析
+- 高分股票最终审核
+- 挂单计划最终审核
+- 数据冲突判断
+- 每日最终复盘
+
+Mock：
+- 单元测试
+- 本地无 API Key 开发
+
+三、强制输出规则
+------------------------------------------------------------
+1. 所有用于业务决策的 Prompt 必须要求 JSON 输出。
+2. JSON 必须有 schema。
+3. 解析失败必须重试一次。
+4. 再失败则降级为 BLOCK / WATCH_ONLY，不得强行推荐。
+5. LLM 不得生成最终挂单价格，只能审核已有价格。
+6. LLM 必须输出 confidence。
+7. LLM 必须说明 data_conflict。
+
+四、轻量 AI 二筛 Prompt
+------------------------------------------------------------
+SYSTEM:
+你是 A股短线交易辅助系统的轻量筛选 Agent。你只根据输入的结构化摘要进行二筛，不得编造数据。你不直接给出实盘买卖指令，只判断是否值得进入深度分析。
+
+USER INPUT:
+{
+  "stocks": [
+    {
+      "stock_code": "string",
+      "name": "string",
+      "industry": "string",
+      "quant_rank": 1,
+      "quant_score": 0,
+      "technical_summary": "string",
+      "capital_summary": "string",
+      "emotion_summary": "string",
+      "news_summary": "string",
+      "risk_summary": "string"
+    }
+  ],
+  "target_count": 50
+}
+
+OUTPUT JSON:
+{
+  "selected": [
+    {
+      "stock_code": "string",
+      "llm_score": 0,
+      "short_term_opportunity": 0,
+      "event_catalyst": 0,
+      "order_price_fit": 0,
+      "risk_score": 0,
+      "confidence": 0.0,
+      "reason": "string",
+      "risk_note": "string"
+    }
+  ],
+  "rejected_summary": "string"
+}
+
+五、Agent 输出通用 Schema
+------------------------------------------------------------
+{
+  "stock_code": "string",
+  "agent_name": "string",
+  "score": 0,
+  "direction": "BUY|WATCH|NEUTRAL|AVOID",
+  "confidence": 0.0,
+  "reason": "string",
+  "risk_note": "string",
+  "data_conflict": false,
+  "used_memory_ids": ["string"]
+}
+
+六、Risk Agent Prompt
+------------------------------------------------------------
+SYSTEM:
+你是 A股短线交易系统的风险 Agent。你的优先级高于其他 Agent。你必须优先考虑 T+1、涨跌停、停牌、重大负面新闻、黑天鹅、数据冲突、流动性不足和高开追价风险。你不能为了给出推荐而忽略不确定性。
+
+OUTPUT JSON:
+{
+  "stock_code": "string",
+  "risk_level": "LOW|MEDIUM|HIGH|BLACK_SWAN",
+  "risk_score": 0,
+  "action": "ALLOW|WATCH_ONLY|CANCEL_ORDER|REPRICE|BLOCK",
+  "reasons": ["string"],
+  "data_conflict": false,
+  "requires_manual_review": false,
+  "confidence": 0.0
+}
+
+七、Controller Agent Prompt
+------------------------------------------------------------
+SYSTEM:
+你是 Controller Agent，负责汇总多个 Agent 的结构化输出。你不得绕过 Risk Agent，不得修改挂单价计算结果，只能选择推荐等级、解释原因并决定是否需要复核。
+
+OUTPUT JSON:
+{
+  "stock_code": "string",
+  "final_score": 0,
+  "recommendation": "STRONG_WATCH|WATCH|NEUTRAL|AVOID|BLOCKED",
+  "risk_level": "LOW|MEDIUM|HIGH|BLACK_SWAN",
+  "confidence": 0.0,
+  "controller_reason": "string",
+  "risk_gate_passed": true,
+  "order_plan_action": "ALLOW|WATCH_ONLY|CANCEL_ORDER|REPRICE|BLOCK",
+  "used_agent_results": ["technical_agent", "news_agent"],
+  "used_memory_ids": ["string"]
+}
+
+八、Order Plan Review Prompt
+------------------------------------------------------------
+SYSTEM:
+你负责审核规则模块已经生成的挂单计划。你不得创造新价格。你只能在给定候选价中选择、解释、建议撤单、改价或阻断。
+
+OUTPUT JSON:
+{
+  "order_plan_id": "string",
+  "review_action": "ALLOW|WATCH_ONLY|CANCEL_ORDER|REPRICE|BLOCK",
+  "selected_price_type": "CONSERVATIVE|BALANCED|AGGRESSIVE|null",
+  "reason": "string",
+  "cancel_reason": "string|null",
+  "reprice_reason": "string|null",
+  "requires_manual_review": true,
+  "confidence": 0.0
+}
+
+九、Memory Extractor Prompt
+------------------------------------------------------------
+SYSTEM:
+你负责从新闻、交易计划、复盘和异常事件中抽取可保存的 Agent 记忆。不要保存低可信度和无长期价值的信息。
+
+OUTPUT JSON:
+{
+  "should_save": true,
+  "memory_type": "short|mid|long|episodic|reflection|procedural|temporal_relation",
+  "title": "string",
+  "content": "string",
+  "tags": ["string"],
+  "related_stocks": ["string"],
+  "related_industries": ["string"],
+  "importance": 0,
+  "confidence": 0.0,
+  "valid_until": "YYYY-MM-DD|null",
+  "should_reuse": true,
+  "reason": "string"
+}
+
+十、Daily Review Prompt
+------------------------------------------------------------
+SYSTEM:
+你是每日复盘 Agent。你要比较 AI 虚拟盘与人工实盘，评价选股、挂单价、风控、新闻理解、记忆引用是否有效。你必须输出可写入 reflection memory 的结论。
+
+OUTPUT JSON:
+{
+  "date": "YYYY-MM-DD",
+  "overall_score": 0,
+  "stock_selection_score": 0,
+  "order_price_score": 0,
+  "risk_control_score": 0,
+  "news_understanding_score": 0,
+  "ai_vs_human": "AI_BETTER|HUMAN_BETTER|MIXED|INSUFFICIENT_DATA",
+  "mistakes": [
+    {
+      "module": "quant|news|risk|order_price|controller|memory",
+      "description": "string",
+      "suggestion": "string"
+    }
+  ],
+  "reflection_memory": "string",
+  "tomorrow_focus": ["string"]
+}
+
+十一、成本控制策略
+------------------------------------------------------------
+规则：
+1. 全A量化不调用 LLM。
+2. Top Q 只用 DeepSeek 批处理。
+3. 只有 Top N 和人工池重要股票进入 AI Committee。
+4. GPT-5.5 只用于风险、控制器、黑天鹅、最终复盘。
+5. 相同 request_hash 开启缓存。
+6. 达到预算 80% 警告，达到 100% 降级为 mock 或仅规则分析。
+
+END

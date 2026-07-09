@@ -1,17 +1,18 @@
-"""SQLAlchemy ORM models for the database schema V1.2."""
-
 from database.models.ai import (
     AIAnalysisResult,
-    AgentExecutionLog,
     DecisionSnapshot,
-    ExperimentRun,
-    LLMUsage,
     PredictionRecord,
     StockAIScore,
 )
 from database.models.factor import StockFactorDetail, StockFactorScore
 from database.models.finance import StockFinance
 from database.models.market import PreMarketAuction, StockMarketData
+from database.models.memory import (
+    AgentMemoryNote,
+    MemoryLink,
+    MemoryRetrievalLog,
+    StrategyPlaybook,
+)
 from database.models.news import News, NewsStockRelation
 from database.models.order_plan import (
     OrderPlan,
@@ -22,27 +23,27 @@ from database.models.order_plan import (
 from database.models.review import DailyReview, PredictionEvaluation
 from database.models.stock import StockMaster
 from database.models.system import (
-    AgentMemory,
+    AgentExecutionLog,
     ConfigHistory,
+    ExperimentRun,
+    LLMUsage,
     ModelVersion,
     PromptVersion,
+    SystemConfig,
 )
-from database.models.trading import (
-    Position,
-    TradeOrder,
-    TradeRecord,
-    TradingAccount,
-)
+from database.models.trading import Position, TradeOrder, TradeRecord, TradingAccount
 
 __all__ = [
     "AIAnalysisResult",
     "AgentExecutionLog",
-    "AgentMemory",
+    "AgentMemoryNote",
     "ConfigHistory",
     "DailyReview",
     "DecisionSnapshot",
     "ExperimentRun",
     "LLMUsage",
+    "MemoryLink",
+    "MemoryRetrievalLog",
     "ModelVersion",
     "News",
     "NewsStockRelation",
@@ -61,6 +62,8 @@ __all__ = [
     "StockFinance",
     "StockMarketData",
     "StockMaster",
+    "StrategyPlaybook",
+    "SystemConfig",
     "TradeOrder",
     "TradeRecord",
     "TradingAccount",

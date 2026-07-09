@@ -1,0 +1,335 @@
+AI Trader Assistant 项目总规格
+Version: V0.3 memory + config + order-plan enhanced edition
+============================================================
+
+一、项目定位
+------------------------------------------------------------
+本项目是一套面向 A股全市场短线交易场景的 AI 智能交易辅助系统。
+
+第一阶段定位：
+1. AI 辅助人工实盘交易。
+2. AI 不直接实盘下单。
+3. AI 独立运行虚拟盘，用自己的输出模拟挂单、撤单、改价、成交和复盘。
+4. 交易员人工决定是否采用 AI 的挂单建议、撤单建议和改价建议。
+5. 系统持续比较 AI 虚拟盘与人工实盘表现。
+
+项目核心从“推荐股票”升级为“推荐交易计划”：
+- 推荐股票
+- 推荐挂单价
+- 推荐有效条件
+- 推荐撤单/改价条件
+- 提供风险等级
+- 记录虚拟盘表现
+- 记录人工是否采纳
+- 每日复盘 AI 与人工差异
+
+二、交易边界
+------------------------------------------------------------
+市场范围：
+- A股全体，包含沪深北全部股票，具体范围由数据源返回的 stock universe 决定。
+
+交易风格：
+- 短线为主。
+- 重点关注盘后生成次日计划、盘前复核挂单、盘中低频监控和事件驱动风控。
+
+交易限制：
+- A股 T+1 必须内置。
+- 当日买入股票不得在虚拟盘中当日卖出。
+- 虚拟盘必须支持涨跌停、停牌、100股整数倍、手续费、卖出印花税、滑点、部分成交。
+
+第一阶段不做：
+- 不自动实盘下单。
+- 不绕过人工确认。
+- 不让 LLM 直接凭感觉生成买卖价格。
+- 不让人工修改 AI 评分。
+
+三、核心筛选流程 Q/L/N/R/W
+------------------------------------------------------------
+为了兼顾全A覆盖、成本控制和交易员可管理性，系统使用分层筛选。
+
+变量定义：
+Q = quant_top_n
+    量化初筛数量，默认 500。
+
+L = light_analysis_top_n
+    进入 DeepSeek V4 Flash 轻量 AI 二筛的数量，默认与 Q 相同，500。
+
+N = committee_analysis_top_n
+    进入 AI 专家委员会深度分析的数量，默认 50。
+
+R = final_recommend_top_n
+    最终推荐给交易员的系统推荐池数量，默认 50。
+
+W = manual_watchlist
+    交易员人工关注池，默认建议 50，软提示 100，不做硬限制。
+
+流程：
+全A股票池
+  ↓
+量化因子初筛，不调用 LLM
+  ↓
+Quant Top Q，例如 500
+  ↓
+DeepSeek V4 Flash 轻量 AI 二筛
+  ↓
+Light Top L / Committee Candidate
+  ↓
+AI 专家委员会深度分析
+  ↓
+Committee Top N，例如 50
+  ↓
+Controller Agent 汇总
+  ↓
+Final Recommend Top R，例如 50
+  ↓
+Order Price Evaluation Engine 生成挂单计划
+  ↓
+人工关注池 W 合并
+  ↓
+Hot Pool = Final Recommend Top R ∪ Manual Watch W ∪ Event Trigger Pool
+
+所有 Q/L/N/R/W 必须能在前端控制台修改，并持久化到数据库配置表。
+
+四、系统总体架构
+------------------------------------------------------------
+Data Providers
+  - 同花顺 iFinD / 同花顺API，主数据源
+  - Tushare / AKShare，备用或验证源
+  - 金十数据 / 同花顺资讯 / 公告源，新闻源
+  - OKX / 海外行情源，外围风险偏好和海外映射
+
+Data Layer
+  - 原始数据入库
+  - 标准化
+  - 去重
+  - 实体映射
+
+Quant Engine
+  - 全A初筛
+  - 技术、资金、情绪、动量、风险因子
+  - 不调用 LLM
+
+LLM Light Analysis
+  - 对 Top Q 做轻量二筛
+  - 主要使用 DeepSeek V4 Flash
+
+AI Committee
+  - Technical Agent
+  - News Agent
+  - Capital Agent
+  - Emotion Agent
+  - Overseas Agent
+  - Risk Agent
+  - Controller Agent
+
+Order Price Evaluation Engine
+  - ATR、VWAP、支撑阻力、涨跌停、风险收益比
+  - 输出三档价格：保守、均衡、激进
+  - 输出最高可追价、止损价、止盈价、撤单/改价条件
+
+Risk System
+  - T+1
+  - 涨跌停
+  - 黑天鹅
+  - 数据冲突
+  - 高开过大
+  - 新闻反转
+  - 流动性风险
+
+Virtual Broker
+  - AI 虚拟盘
+  - 挂单、撤单、改价、成交、未成交复盘
+
+Memory System
+  - MemoryOS 分层记忆
+  - A-MEM 动态关联记忆
+  - Reflexion 复盘反思记忆
+  - Temporal KG 时间知识图谱
+
+Frontend Trader Console
+  - Vue3 + Element Plus
+  - Electron 桌面壳
+  - FastAPI 后端
+
+五、交易时段流程
+------------------------------------------------------------
+1. 盘后流程：15:30 之后
+- 更新收盘行情。
+- 全A量化初筛。
+- DeepSeek 轻量二筛。
+- AI委员会深度分析。
+- 生成次日候选股票。
+- 计算次日挂单价草案。
+- 保存 order_plan、order_price_candidate、prediction_record、decision_snapshot。
+
+2. 盘前流程：09:00 - 09:25
+- 更新隔夜新闻。
+- 更新海外市场。
+- 更新公告、政策。
+- 如果数据源支持，更新集合竞价数据。
+- 重新评估挂单价。
+- 风控复核。
+- 输出盘前最终挂单建议。
+- 09:20-09:25 属于不可撤单高风险窗口，系统只提示风险，不给激进追单建议。
+
+3. 盘中流程
+盘中不做全A高频 LLM 重选股。
+盘中重点监控：
+- Final Recommend Top R
+- 人工关注 W
+- 已持仓股票
+- 已挂单股票
+- 异常事件触发股票
+
+默认刷新：
+- 全A轻量量化雷达：60分钟，可关闭。
+- 推荐池 R：30分钟，可配置。
+- 人工关注 W：15-30分钟，可配置。
+- 已持仓：15分钟。
+- 已挂单：5分钟。
+- 开盘/尾盘重点窗口：1-3分钟。
+- 异常事件：立即触发。
+
+六、AI委员会角色
+------------------------------------------------------------
+Technical Agent：
+- K线、趋势、技术指标、支撑压力、短线买卖结构。
+- 默认模型 DeepSeek V4 Flash。
+
+News Agent：
+- 新闻、公告、政策、传闻可信度、事件影响。
+- 默认模型 DeepSeek V4 Flash。
+
+Capital Agent：
+- 资金流、成交量、换手率、龙虎榜、机构行为。
+- 默认模型 DeepSeek V4 Flash。
+
+Emotion Agent：
+- 市场情绪、题材热度、涨停生态、板块梯队。
+- 默认模型 DeepSeek V4 Flash。
+
+Overseas Agent：
+- 海外龙头、美股、港股、商品、汇率、加密风险偏好。
+- 默认模型 DeepSeek V4 Flash。
+
+Risk Agent：
+- 黑天鹅、财务风险、政策风险、流动性风险、撤单/改价/禁止挂单。
+- 默认模型 GPT-5.5。
+
+Controller Agent：
+- 汇总各 Agent 结果。
+- 输出最终推荐等级。
+- 审核挂单计划。
+- 默认模型 GPT-5.5。
+
+七、量化评分
+------------------------------------------------------------
+默认因子权重：
+- technical: 0.25
+- capital: 0.25
+- emotion: 0.20
+- momentum: 0.15
+- risk: 0.15
+
+Quant Score = 0.25*Technical + 0.25*Capital + 0.20*Emotion + 0.15*Momentum + 0.15*Risk
+
+规则：
+- 权重总和必须等于 1。
+- 前端控制台可修改。
+- 修改写入 config_history。
+- 全A量化不调用 LLM。
+- 必须防止未来函数和数据泄漏。
+
+八、AI最终评分
+------------------------------------------------------------
+默认权重：
+- technical: 0.20
+- capital: 0.20
+- news: 0.20
+- emotion: 0.15
+- overseas: 0.10
+- risk: 0.15
+
+AI Score 输出：
+- stock_code
+- final_score
+- recommendation: STRONG_WATCH / WATCH / NEUTRAL / AVOID / BLOCKED
+- risk_level: LOW / MEDIUM / HIGH / BLACK_SWAN
+- confidence
+- controller_reason
+- 是否风险否决
+
+禁止人工修改 AI Score。
+人工只选择是否采用。
+
+九、挂单价模块原则
+------------------------------------------------------------
+挂单价由规则模型计算，LLM 只解释和审核。
+
+必须输出：
+- conservative_price
+- balanced_price
+- aggressive_price
+- recommended_price
+- max_acceptable_price
+- stop_loss_price
+- take_profit_1_price
+- take_profit_2_price
+- fill_probability
+- risk_reward
+- order_price_score
+- cancel_conditions
+- reprice_conditions
+
+十、记忆系统原则
+------------------------------------------------------------
+采用混合方案：
+- MemoryOS：短期/中期/长期分层。
+- A-MEM：动态标签、链接和关联记忆。
+- Reflexion：每日复盘反思记忆。
+- Temporal KG：股票、行业、海外映射、政策和事件关系带时间有效期。
+
+禁止只做一个向量库。
+
+十一、前端原则
+------------------------------------------------------------
+使用 Vue3 + Element Plus + Electron。
+必须有控制台页面，可以查看和修改：
+- Q/L/N/R/W
+- 模型选择
+- Agent 启用/禁用
+- 模型温度、max_tokens
+- 数据源开关
+- 刷新频率
+- 因子权重
+- 挂单价参数
+- 风控阈值
+- 虚拟盘资金
+- 记忆系统开关
+- 成本预算
+- 运行模式
+
+所有修改必须：
+1. 写入数据库配置。
+2. 写入 config_history。
+3. 可回滚。
+4. 不需要改代码。
+
+十二、第一阶段成功标准
+------------------------------------------------------------
+系统能够：
+1. 启动后端和前端。
+2. 使用 Mock 数据完成全流程。
+3. 同步股票基础信息。
+4. 用量化模块筛出 Top Q。
+5. 用 LLM Gateway mock 模型完成轻量二筛。
+6. 生成 Top N / Final R。
+7. 生成三档挂单价。
+8. 记录 prediction_record 和 decision_snapshot。
+9. 进入 AI 虚拟盘模拟挂单。
+10. 支持 T+1、涨跌停、手续费和印花税。
+11. 盘后生成复盘报告。
+12. 前端可以修改所有关键参数。
+13. 每个模块有测试。
+
+END

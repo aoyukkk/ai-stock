@@ -1,1 +1,1 @@
-"""Core backend utilities for configuration, logging, and exceptions."""
+"""Core backend infrastructure."""

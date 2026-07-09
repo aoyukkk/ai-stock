@@ -1,0 +1,66 @@
+memory:
+  enabled: true
+  default_storage: database
+
+  short_term:
+    enabled: true
+    ttl_hours: 24
+    storage: database
+
+  mid_term:
+    enabled: true
+    ttl_days: 20
+    storage: database
+
+  long_term:
+    enabled: true
+    storage: database
+
+  episodic:
+    enabled: true
+    storage: database
+
+  reflection:
+    enabled: true
+    source: daily_review
+    use_mock_llm: true
+    storage: database
+
+  retrieval:
+    top_k: 5
+    default_top_k: 5
+    min_quality_score: 50
+    include_expired: false
+    log_retrieval: true
+    filter_expired: true
+    filter_conflicted: true
+    filter_low_quality: true
+    write_retrieval_log: true
+
+  pollution_control:
+    enabled: true
+    block_conflict_status:
+      - CONFLICTED
+      - INVALIDATED
+    require_should_reuse: true
+
+  vector:
+    enabled: false
+    provider: chroma
+    storage: chroma
+    top_k: 5
+
+  graph:
+    enabled: false
+    provider: neo4j
+    storage: neo4j
+
+  temporal_kg:
+    enabled: true
+    storage: database
+
+  quality_control:
+    min_reuse_score: 50
+    mark_conflict_not_reuse: true
+    expire_low_quality_memory_days: 30
+    selective_add_delete: true

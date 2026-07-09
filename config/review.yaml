@@ -1,0 +1,23 @@
+review:
+  enabled: true
+  use_mock_llm_summary: true
+  prediction_horizon_days: 1
+  default_account_type: ai_simulation
+
+scoring:
+  prediction_accuracy_weight: 0.30
+  order_price_quality_weight: 0.30
+  portfolio_performance_weight: 0.25
+  risk_control_weight: 0.15
+
+order_price_quality:
+  filled_score: 80
+  missed_but_good_price_score: 60
+  too_aggressive_penalty: 20
+  too_conservative_penalty: 15
+  risk_avoided_bonus: 10
+
+thresholds:
+  good_review_score: 80
+  neutral_review_score: 60
+  max_acceptable_drawdown_percent: 8

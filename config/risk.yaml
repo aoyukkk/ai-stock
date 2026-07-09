@@ -1,0 +1,37 @@
+risk:
+  position_limit_mode: advisory_only
+
+  max_position:
+    enabled: false
+    single_stock_percent: 20
+    industry_percent: 40
+
+  stop_loss:
+    enabled: true
+    default_percent: -8
+
+  take_profit:
+    enabled: false
+    default_percent: 15
+
+  max_drawdown:
+    warning_percent: 10
+    critical_percent: 20
+
+  block_rules:
+    block_st: true
+    block_suspended: true
+    block_major_negative_news: true
+    block_black_swan: true
+    block_order_if_high_open_too_much: true
+
+risk_gate:
+  risk_levels:
+    - LOW
+    - MEDIUM
+    - HIGH
+    - BLACK_SWAN
+  blocked_levels:
+    - HIGH
+    - BLACK_SWAN
+  data_conflict_action: WATCH_ONLY

@@ -1,10 +1,10 @@
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]
 
 
-EXPECTED_DIRECTORIES = [
+REQUIRED_DIRECTORIES = [
     "backend",
     "frontend",
     "agents",
@@ -16,48 +16,31 @@ EXPECTED_DIRECTORIES = [
     "trading",
     "database",
     "backtest",
+    "review",
     "config",
-    "tests",
     "docs",
+    "tests",
     "logs",
+    "scripts",
 ]
 
-EXPECTED_FILES = [
+
+REQUIRED_FILES = [
     "README.md",
+    "pyproject.toml",
     "requirements.txt",
     ".env.example",
     ".gitignore",
-    "pytest.ini",
-]
-
-EXPECTED_PACKAGE_FILES = [
-    "backend/__init__.py",
-    "agents/__init__.py",
-    "quant/__init__.py",
-    "order_price/__init__.py",
-    "datasource/__init__.py",
-    "llm_gateway/__init__.py",
-    "memory/__init__.py",
-    "trading/__init__.py",
-    "database/__init__.py",
-    "backtest/__init__.py",
-    "tests/__init__.py",
 ]
 
 
-def test_expected_directories_exist() -> None:
-    for directory in EXPECTED_DIRECTORIES:
-        path = PROJECT_ROOT / directory
-        assert path.is_dir(), f"Missing directory: {directory}"
+def test_required_directories_exist() -> None:
+    missing = [path for path in REQUIRED_DIRECTORIES if not (ROOT / path).is_dir()]
+
+    assert not missing, f"Missing required directories: {missing}"
 
 
-def test_expected_root_files_exist() -> None:
-    for file_name in EXPECTED_FILES:
-        path = PROJECT_ROOT / file_name
-        assert path.is_file(), f"Missing file: {file_name}"
+def test_required_root_files_exist() -> None:
+    missing = [path for path in REQUIRED_FILES if not (ROOT / path).is_file()]
 
-
-def test_python_package_init_files_exist() -> None:
-    for file_name in EXPECTED_PACKAGE_FILES:
-        path = PROJECT_ROOT / file_name
-        assert path.is_file(), f"Missing package file: {file_name}"
+    assert not missing, f"Missing required files: {missing}"

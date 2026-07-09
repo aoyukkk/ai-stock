@@ -1,0 +1,167 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any
+
+from backend.core.config import get_app_config
+from backend.core.security import sanitize_config
+from llm_gateway.cache import InMemoryLLMCache
+from llm_gateway.prompt_manager import PromptManager
+from llm_gateway.registry import LLMProviderRegistry, get_llm_provider_registry
+from llm_gateway.router import LLMRouter, LLMRouterConfig
+from llm_gateway.schemas import LLMMessage, LLMRequest, LLMResponse
+
+
+@dataclass
+class UsageSummary:
+    call_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: float = 0.0
+    cached_count: int = 0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "call_count": self.call_count,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "cost_usd": round(self.cost_usd, 6),
+            "cached_count": self.cached_count,
+        }
+
+
+class LLMGatewayService:
+    def __init__(
+        self,
+        registry: LLMProviderRegistry | None = None,
+        prompt_manager: PromptManager | None = None,
+        cache: InMemoryLLMCache | None = None,
+        db_session=None,
+    ) -> None:
+        self.config = load_llm_router_config()
+        self.registry = registry or get_llm_provider_registry()
+        self.prompt_manager = prompt_manager or PromptManager()
+        self.cache = cache or InMemoryLLMCache()
+        self.router = LLMRouter(
+            config=self.config,
+            registry=self.registry,
+            cache=self.cache,
+            db_session=db_session,
+        )
+        self.usage = UsageSummary()
+
+    def chat(self, request: LLMRequest) -> LLMResponse:
+        response = self.router.chat(request)
+        self._update_usage(response)
+        return response
+
+    def chat_simple(
+        self,
+        agent_name: str,
+        task: str,
+        user_content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> LLMResponse:
+        prompt_version = None
+        try:
+            prompt = self.prompt_manager.get_active_prompt(agent_name)
+            system_content = prompt.template
+            prompt_version = prompt.version
+        except Exception:
+            system_content = "You are a mock LLM endpoint. Do not provide real trading instructions."
+
+        request = LLMRequest(
+            agent_name=agent_name,
+            task=task,
+            messages=[
+                LLMMessage(role="system", content=system_content),
+                LLMMessage(role="user", content=user_content),
+            ],
+            prompt_version=prompt_version,
+            metadata=metadata or {},
+        )
+        return self.chat(request)
+
+    def list_providers(self) -> list[dict[str, Any]]:
+        return sanitize_config(self.registry.list_provider_info())
+
+    def get_usage_summary(self) -> dict[str, Any]:
+        return self.usage.as_dict()
+
+    def status_summary(self) -> dict[str, Any]:
+        return sanitize_config(
+            {
+                "mock_only": self.config.mock_only,
+                "providers": self.list_providers(),
+                "default_provider": self.config.default_provider,
+                "routing_summary": self.config.routing,
+                "cache_enabled": self.config.cache_enabled,
+                "budgets": self.config.budgets,
+            }
+        )
+
+    def _update_usage(self, response: LLMResponse) -> None:
+        self.usage.call_count += 1
+        self.usage.input_tokens += response.input_tokens
+        self.usage.output_tokens += response.output_tokens
+        self.usage.total_tokens += response.total_tokens
+        self.usage.cost_usd += response.cost_usd
+        if response.cached:
+            self.usage.cached_count += 1
+
+
+@lru_cache(maxsize=1)
+def get_llm_gateway_service() -> LLMGatewayService:
+    return LLMGatewayService()
+
+
+def load_llm_router_config() -> LLMRouterConfig:
+    models_config = get_app_config().config_files.get("models", {})
+    gateway_config = models_config.get("llm_gateway", {})
+    llm_config = models_config.get("llm", {})
+    agent_routes = models_config.get("agent_routes", {})
+    routing = _load_routing(llm_config, agent_routes)
+    cache_config = llm_config.get("cache", {})
+    budget_config = llm_config.get("budget", {})
+
+    mock_only = bool(llm_config.get("mock_only", False)) or gateway_config.get("phase0_mode") == "mock_only"
+    ttl_minutes = int(llm_config.get("cache_ttl_minutes") or cache_config.get("ttl_minutes") or 30)
+    return LLMRouterConfig(
+        mock_only=mock_only,
+        default_provider=str(llm_config.get("default_provider") or "mock"),
+        default_model=str(llm_config.get("default_model") or "mock-chat"),
+        cache_enabled=bool(llm_config.get("enable_cache", cache_config.get("enabled", True))),
+        cache_ttl_seconds=ttl_minutes * 60,
+        routing=routing,
+        fallback=llm_config.get("fallback", {"primary": "mock", "secondary": "mock", "final": "mock"}),
+        budgets={
+            "daily_token_budget": budget_config.get("daily_token_budget", 1800000),
+            "warning_percent": budget_config.get("warning_percent", 80),
+            "daily_cost_budget_usd": budget_config.get("daily_cost_budget_usd", 8),
+        },
+    )
+
+
+def _load_routing(llm_config: dict[str, Any], agent_routes: dict[str, Any]) -> dict[str, dict[str, str]]:
+    routing = llm_config.get("routing")
+    if isinstance(routing, dict) and routing:
+        return {
+            name: {
+                "provider": str(route.get("provider", "mock")),
+                "model": str(route.get("model", "mock-chat")),
+            }
+            for name, route in routing.items()
+            if isinstance(route, dict)
+        }
+
+    converted = {"default": {"provider": "mock", "model": "mock-chat"}}
+    for agent_name, route in agent_routes.items():
+        if isinstance(route, dict):
+            converted[agent_name] = {
+                "provider": "mock",
+                "model": str(route.get("phase0_model_alias") or "mock-chat"),
+            }
+    return converted

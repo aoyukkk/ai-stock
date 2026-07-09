@@ -1,0 +1,240 @@
+AI Trader Assistant Agent 记忆系统设计
+Version: V0.3
+============================================================
+
+一、设计目标
+------------------------------------------------------------
+记忆系统用于支持 A股短线 Agent 的长期改进、事件关联、复盘学习和风险避免。
+
+禁止只做“向量库记忆”。
+V0.3 采用混合架构：
+1. MemoryOS：短期 / 中期 / 长期记忆分层。
+2. A-MEM：动态标签、链接、事件 note、记忆演化。
+3. Reflexion：每日复盘形成自然语言反思记忆。
+4. Temporal KG：股票、行业、海外龙头、政策、事件之间的时间关系。
+5. Selective Add/Delete：防止错误记忆污染。
+
+二、记忆层级
+------------------------------------------------------------
+1. Short-Term Memory
+存储：Redis + PostgreSQL backup。
+有效期：当日到 3 个交易日。
+内容：
+- 最新行情摘要
+- 最新新闻
+- 当前 Hot Pool 状态
+- 当日评分变化
+- 当日挂单状态
+- 当日风险事件
+
+2. Mid-Term Memory
+存储：PostgreSQL。
+有效期：3-20 个交易日。
+内容：
+- 最近推荐记录
+- 最近挂单价质量
+- 最近虚拟盘表现
+- 最近人工采纳情况
+- 最近行业热度变化
+
+3. Long-Term Memory
+存储：PostgreSQL + Chroma。
+有效期：长期，带 valid_until。
+内容：
+- 公司主营
+- 行业位置
+- 供应链关系
+- 海外映射
+- 历史重要事件
+- 策略稳定经验
+
+4. Episodic Memory
+存储：PostgreSQL + Chroma。
+内容：
+- 某次新闻事件
+- 某次异常波动
+- 某次挂单成功/失败
+- 某次黑天鹅处理
+
+5. Reflection Memory
+存储：PostgreSQL。
+来源：每日复盘。
+内容：
+- 今日选股是否正确
+- 挂单价是否太保守/太激进
+- 哪个 Agent 判断失误
+- 人工在哪些地方优于 AI
+- 明日应当调整哪些观察重点
+
+6. Procedural Memory / Strategy Playbook
+存储：PostgreSQL。
+内容：
+- 高开过多不追
+- 海外龙头大涨但A股高位滞涨时降低追价
+- 板块龙头开板且跟风不足时撤单
+- 新闻利好但盘口无承接时 watch_only
+
+7. Temporal Knowledge Graph
+存储：PostgreSQL 边表，Neo4j optional。
+内容：
+- 公司-行业
+- 公司-概念
+- 公司-上游
+- 公司-下游
+- 公司-海外龙头
+- 政策-行业
+- 商品-公司
+- 新闻事件-股票
+
+每条关系必须带：
+- confidence
+- source
+- valid_from
+- valid_to
+- last_verified_at
+- evidence_id
+
+三、记忆写入规则
+------------------------------------------------------------
+写短期记忆：
+- Hot Pool 变化。
+- 当日评分变化超过阈值。
+- 挂单状态变化。
+- 当日新闻命中。
+
+写事件记忆：
+- 重大公告。
+- 新闻重要性超过阈值。
+- 黑天鹅。
+- 异常成交量。
+- 盘前竞价异常。
+- 重大海外映射事件。
+
+写反思记忆：
+- 每日复盘结束后。
+- 每次交易计划复盘后。
+- 每次重大错误归因后。
+
+写流程记忆：
+- 某类场景连续验证有效。
+- 某类错误重复发生。
+- 人工交易员稳定优于 AI 的场景。
+
+禁止写长期记忆：
+- 低可信度传闻。
+- 未确认社媒消息。
+- 单次无意义价格波动。
+- 已被证伪的信息。
+
+四、记忆检索规则
+------------------------------------------------------------
+Stock Agent Run 默认检索：
+1. 该股最近 1-3 天短期记忆。
+2. 该股最近 20 交易日中期记忆。
+3. 该股重大历史事件。
+4. 该行业近期状态。
+5. 海外映射事件。
+6. 相似历史事件。
+7. 最近复盘反思。
+8. 策略 playbook。
+
+检索限制：
+- 不允许一次塞入过多记忆。
+- top_k 默认 5。
+- 必须过滤 expired / conflicted / low_quality memory。
+- 必须记录 memory_retrieval_log。
+
+五、记忆质量控制
+------------------------------------------------------------
+每条记忆有：
+- importance: 0-100
+- confidence: 0-1
+- quality_score: 0-1
+- reuse_score: 0-1
+- success_count
+- failure_count
+- conflict_status
+- valid_until
+- should_reuse
+- should_forget
+
+规则：
+- 成功复盘提升 quality_score。
+- 错误复盘降低 quality_score。
+- 数据冲突标记 conflict_status。
+- 过期事件不参与当前推荐，只保留历史。
+- 低质量记忆不进入 LLM 上下文。
+
+六、防记忆污染
+------------------------------------------------------------
+风险：Agent 容易照搬相似历史经验。
+
+控制：
+1. 检索时必须带 market_regime。
+2. 检索时必须带 event_validity。
+3. 对相似事件要检查当前价格位置和板块状态是否不同。
+4. 错误复盘不删除，但作为 negative experience。
+5. LLM 输出中必须说明引用了哪些记忆。
+6. 如果历史记忆与当前数据冲突，必须显示冲突。
+
+七、记忆数据库表
+------------------------------------------------------------
+核心表：
+- agent_memory_note
+- memory_tag
+- memory_link
+- memory_retrieval_log
+- memory_update_log
+- memory_quality_score
+- daily_reflection_memory
+- strategy_playbook
+- stock_temporal_relation
+- event_temporal_relation
+
+八、前端记忆控制台
+------------------------------------------------------------
+页面：Memory Console
+功能：
+- 查看某股票记忆。
+- 查看某行业记忆。
+- 查看某事件关联图。
+- 查看每日反思记忆。
+- 禁用某条记忆。
+- 标记某条记忆为错误。
+- 调整记忆有效期。
+- 查看某次推荐用了哪些记忆。
+- 搜索相似历史事件。
+
+九、记忆写入 Prompt 输出 Schema
+------------------------------------------------------------
+Memory Extractor 输出 JSON：
+{
+  "should_save": true,
+  "memory_type": "episodic|semantic|reflection|procedural|temporal_relation",
+  "title": "string",
+  "content": "string",
+  "tags": ["string"],
+  "related_stocks": ["string"],
+  "related_industries": ["string"],
+  "importance": 0,
+  "confidence": 0.0,
+  "valid_until": "YYYY-MM-DD|null",
+  "reason": "string"
+}
+
+十、第一版实现范围
+------------------------------------------------------------
+必须实现：
+- MemoryManager 接口。
+- PostgreSQL 结构化记忆。
+- Chroma 向量检索。
+- daily_reflection_memory。
+- memory_retrieval_log。
+- quality_score。
+
+可选实现：
+- Neo4j。
+- 可视化关系图。
+- 自动策略规则生成。
+
+END

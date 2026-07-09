@@ -1,0 +1,26 @@
+ai_score:
+  weights:
+    technical: 0.20
+    capital: 0.20
+    news: 0.20
+    emotion: 0.15
+    overseas: 0.10
+    risk: 0.15
+
+  recommendation_threshold:
+    strong_watch: 85
+    watch: 75
+    neutral: 60
+    avoid: 0
+
+  risk_gate:
+    enabled: true
+    block_if_risk_level:
+      - HIGH
+      - BLACK_SWAN
+    watch_only_if_risk_score_below: 70
+
+  persistence:
+    persist_prediction_record: true
+    persist_decision_snapshot: true
+    allow_manual_override: false

@@ -1,0 +1,41 @@
+market_data:
+  full_market_light_quant:
+    enabled: true
+    interval_minutes: 60
+
+  final_recommend_pool_refresh:
+    enabled: true
+    interval_minutes: 30
+
+  manual_watchlist_refresh:
+    enabled: true
+    interval_minutes: 15
+
+  holding_refresh:
+    enabled: true
+    interval_minutes: 15
+
+  pending_order_refresh:
+    enabled: true
+    interval_minutes: 5
+
+  news_refresh:
+    enabled: true
+    interval_minutes: 15
+
+  open_close_high_frequency:
+    enabled: true
+    interval_minutes: 2
+    windows:
+      - ["09:30", "10:00"]
+      - ["14:30", "15:00"]
+
+  trading_hours:
+    auction_open_start: "09:15"
+    auction_open_cancel_forbidden_start: "09:20"
+    auction_open_end: "09:25"
+    morning_start: "09:30"
+    morning_end: "11:30"
+    afternoon_start: "13:00"
+    close_auction_start: "14:57"
+    afternoon_end: "15:00"

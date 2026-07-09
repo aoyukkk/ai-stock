@@ -1,1 +1,1 @@
-"""Shared API schemas for AI Trader Assistant."""
+"""Pydantic schemas."""

@@ -3,83 +3,84 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Date, DateTime, Index, Numeric, String, Text
+from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Index, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from database.base import Base, CreatedAtMixin, UpdatedAtMixin
+from database.base import Base
+from database.models.mixins import IDMixin, ReprMixin, TimestampMixin
 
 
-class TradingAccount(Base, CreatedAtMixin, UpdatedAtMixin):
+PRICE = Numeric(12, 4)
+AMOUNT = Numeric(20, 2)
+
+
+class TradingAccount(IDMixin, TimestampMixin, ReprMixin, Base):
     __tablename__ = "trading_account"
+    __table_args__ = (Index("ix_trading_account_type", "type"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    name: Mapped[str | None] = mapped_column(String(100))
-    type: Mapped[str | None] = mapped_column(
-        String(30),
-        index=True,
-        comment="Allowed: human, ai_simulation",
-    )
-    cash: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
-    total_asset: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
-    initial_cash: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    cash: Mapped[Decimal | None] = mapped_column(AMOUNT)
+    total_asset: Mapped[Decimal | None] = mapped_column(AMOUNT)
+    initial_cash: Mapped[Decimal | None] = mapped_column(AMOUNT)
 
 
-class Position(Base, UpdatedAtMixin):
+class Position(IDMixin, TimestampMixin, ReprMixin, Base):
     __tablename__ = "position"
-    __table_args__ = (Index("ix_position_account_id_stock_code", "account_id", "stock_code"),)
+    __table_args__ = (
+        Index("ix_position_account_stock", "account_id", "stock_code"),
+        Index("ix_position_stock_code", "stock_code"),
+    )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    account_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
-    stock_code: Mapped[str | None] = mapped_column(String(20), index=True)
-    quantity: Mapped[int | None] = mapped_column()
-    cost_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
-    available_quantity: Mapped[int | None] = mapped_column()
+    account_id: Mapped[int] = mapped_column(ForeignKey("trading_account.id"), nullable=False)
+    stock_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cost_price: Mapped[Decimal | None] = mapped_column(PRICE)
+    available_quantity: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     buy_date: Mapped[date | None] = mapped_column(Date)
 
 
-class TradeRecord(Base, CreatedAtMixin):
-    __tablename__ = "trade_record"
-    __table_args__ = (
-        Index("ix_trade_record_account_id_time", "account_id", "time"),
-        Index("ix_trade_record_stock_code_time", "stock_code", "time"),
-    )
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    account_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
-    stock_code: Mapped[str | None] = mapped_column(String(20), index=True)
-    action: Mapped[str | None] = mapped_column(String(10), comment="Allowed: BUY, SELL")
-    price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
-    quantity: Mapped[int | None] = mapped_column()
-    amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
-    commission: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
-    stamp_tax: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
-    slippage: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
-    order_status: Mapped[str | None] = mapped_column(
-        String(30),
-        comment="Allowed: FILLED, PARTIAL_FILLED, FAILED, CANCELLED",
-    )
-    time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    reason: Mapped[str | None] = mapped_column(Text)
-    prediction_record_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
-    order_plan_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
-
-
-class TradeOrder(Base, CreatedAtMixin):
+class TradeOrder(IDMixin, TimestampMixin, ReprMixin, Base):
     __tablename__ = "trade_order"
     __table_args__ = (
-        Index("ix_trade_order_account_id_submit_time", "account_id", "submit_time"),
-        Index("ix_trade_order_stock_code_submit_time", "stock_code", "submit_time"),
+        Index("ix_trade_order_account_submit", "account_id", "submit_time"),
+        Index("ix_trade_order_stock_submit", "stock_code", "submit_time"),
+        Index("ix_trade_order_order_plan", "order_plan_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    account_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
-    stock_code: Mapped[str | None] = mapped_column(String(20), index=True)
-    action: Mapped[str | None] = mapped_column(String(10), comment="Allowed: BUY, SELL")
-    order_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
-    order_quantity: Mapped[int | None] = mapped_column()
-    filled_quantity: Mapped[int | None] = mapped_column()
-    status: Mapped[str | None] = mapped_column(String(30), index=True)
-    submit_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("trading_account.id"), nullable=False)
+    stock_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    order_price: Mapped[Decimal | None] = mapped_column(PRICE)
+    order_quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    filled_quantity: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    submit_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     filled_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     fail_reason: Mapped[str | None] = mapped_column(Text)
-    order_plan_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    order_plan_id: Mapped[int | None] = mapped_column(ForeignKey("order_plan.id"))
+
+
+class TradeRecord(IDMixin, TimestampMixin, ReprMixin, Base):
+    __tablename__ = "trade_record"
+    __table_args__ = (
+        Index("ix_trade_record_account_time", "account_id", "time"),
+        Index("ix_trade_record_stock_time", "stock_code", "time"),
+        Index("ix_trade_record_prediction", "prediction_record_id"),
+        Index("ix_trade_record_order_plan", "order_plan_id"),
+    )
+
+    account_id: Mapped[int] = mapped_column(ForeignKey("trading_account.id"), nullable=False)
+    stock_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    price: Mapped[Decimal | None] = mapped_column(PRICE)
+    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    amount: Mapped[Decimal | None] = mapped_column(AMOUNT)
+    commission: Mapped[Decimal | None] = mapped_column(AMOUNT)
+    stamp_tax: Mapped[Decimal | None] = mapped_column(AMOUNT)
+    slippage: Mapped[Decimal | None] = mapped_column(AMOUNT)
+    order_status: Mapped[str | None] = mapped_column(String(32))
+    time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    prediction_record_id: Mapped[int | None] = mapped_column(ForeignKey("prediction_record.id"))
+    order_plan_id: Mapped[int | None] = mapped_column(ForeignKey("order_plan.id"))

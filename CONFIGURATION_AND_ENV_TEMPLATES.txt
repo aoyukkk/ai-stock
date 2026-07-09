@@ -1,0 +1,231 @@
+AI Trader Assistant 配置与环境模板
+Version: V0.3
+============================================================
+
+一、.env.example
+------------------------------------------------------------
+APP_ENV=development
+APP_TIMEZONE=Asia/Shanghai
+APP_LOG_LEVEL=INFO
+
+DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/ai_trader
+REDIS_URL=redis://localhost:6379/0
+CHROMA_PATH=./data/chroma
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=
+NEO4J_ENABLED=false
+
+DEEPSEEK_API_KEY=
+OPENAI_API_KEY=
+CLAUDE_API_KEY=
+QWEN_API_KEY=
+
+IFIND_USERNAME=
+IFIND_PASSWORD=
+IFIND_API_KEY=
+TUSHARE_TOKEN=
+OKX_API_KEY=
+OKX_SECRET_KEY=
+OKX_PASSPHRASE=
+
+FRONTEND_DEV_SERVER=http://localhost:5173
+BACKEND_HOST=127.0.0.1
+BACKEND_PORT=8000
+
+二、config/app.yaml
+------------------------------------------------------------
+system:
+  name: AI Trader Assistant
+  version: 0.3
+  environment: development
+  timezone: Asia/Shanghai
+  language: zh-CN
+  log_level: INFO
+
+三、config/data_sources.yaml
+------------------------------------------------------------
+data_sources:
+  market_primary:
+    provider: ifind
+    enabled: false
+  market_fallback:
+    - provider: tushare
+      enabled: false
+    - provider: akshare
+      enabled: true
+  news:
+    - provider: ths_news
+      enabled: false
+    - provider: jinshi
+      enabled: false
+    - provider: mock
+      enabled: true
+  overseas:
+    - provider: okx
+      enabled: false
+    - provider: mock
+      enabled: true
+
+四、config/models.yaml
+------------------------------------------------------------
+llm:
+  providers:
+    deepseek:
+      enabled: true
+      api_key_env: DEEPSEEK_API_KEY
+    openai:
+      enabled: true
+      api_key_env: OPENAI_API_KEY
+    mock:
+      enabled: true
+  aliases:
+    deepseek-v4-flash:
+      provider: deepseek
+      model: deepseek-v4-flash
+    gpt-5.5:
+      provider: openai
+      model: gpt-5.5
+    mock-fast:
+      provider: mock
+      model: mock-fast
+
+五、config/stock_scan.yaml
+------------------------------------------------------------
+stock_scan:
+  quant_top_n: 500
+  light_analysis_top_n: 500
+  committee_analysis_top_n: 50
+  final_recommend_top_n: 50
+  manual_watchlist:
+    default_count: 50
+    hard_limit_enabled: false
+    soft_warning_count: 100
+  intraday_dynamic_entry:
+    enabled: false
+    max_new_entries_per_day: 20
+
+六、config/order_price.yaml
+------------------------------------------------------------
+order_price:
+  enabled: true
+  atr_window: 14
+  tick_size: 0.01
+  max_chase_percent: 0.05
+  min_risk_reward: 1.5
+  ideal_risk_reward: 2.0
+  max_stop_loss_percent: 0.08
+  default_position_percent: 0.10
+  order_score_weights:
+    expected_return: 0.35
+    fill_probability: 0.25
+    risk_reward: 0.20
+    emotion: 0.10
+    capital_confirmation: 0.10
+
+七、config/risk_rules.yaml
+------------------------------------------------------------
+risk:
+  position_limit_mode: advisory_only
+  max_position:
+    enabled: false
+    single_stock_percent: 20
+    industry_percent: 40
+  block_rules:
+    block_st: true
+    block_suspended: true
+    block_major_negative_news: true
+    block_black_swan: true
+    block_order_if_high_open_too_much: true
+
+event_trigger:
+  price:
+    rapid_rise_percent: 8
+    rapid_drop_percent: -5
+  volume:
+    abnormal_ratio: 3
+  turnover:
+    abnormal_ratio: 2
+  news:
+    importance_threshold: 80
+  order:
+    near_fill_threshold_percent: 0.3
+    reprice_threshold_percent: 1.5
+
+八、config/memory.yaml
+------------------------------------------------------------
+memory:
+  short_term:
+    storage: redis
+    ttl_hours: 24
+    enabled: true
+  vector:
+    storage: chroma
+    top_k: 5
+    enabled: true
+  long_term:
+    storage: postgresql
+    enabled: true
+  graph:
+    storage: neo4j
+    enabled: false
+  quality_control:
+    min_reuse_score: 0.60
+    mark_conflict_not_reuse: true
+
+九、config/paper_trading.yaml
+------------------------------------------------------------
+paper_trading:
+  enabled: true
+  initial_cash: 1000000
+  rules:
+    t_plus_one: true
+    price_limit: true
+    lot_size: 100
+    allow_partial_fill: true
+    support_pending_order: true
+    support_cancel_order: true
+    support_reprice_order: true
+  cost:
+    commission_rate: 0.0003
+    min_commission: 5
+    stamp_tax_rate: 0.001
+    stamp_tax_side: sell
+    slippage_rate: 0.0005
+
+十、config/frontend.yaml
+------------------------------------------------------------
+frontend:
+  stack: vue3_element_plus_electron
+  websocket_enabled: true
+  pages:
+    dashboard: true
+    stock_ranking: true
+    trading_plan: true
+    order_monitor: true
+    manual_watch: true
+    virtual_trading: true
+    stock_detail: true
+    news_events: true
+    daily_review: true
+    memory_console: true
+    model_management: true
+    system_config: true
+
+十一、配置加载规则
+------------------------------------------------------------
+ConfigService.get(key):
+1. 先查 runtime override。
+2. 再查数据库 active config。
+3. 再查 YAML。
+4. 再查 code default。
+
+ConfigService.update(key, value, user, reason):
+1. 校验 schema。
+2. 校验权重和等业务规则。
+3. 写 active config。
+4. 写 config_history。
+5. 通知订阅模块。
+6. 前端显示生效。
+
+END

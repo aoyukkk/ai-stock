@@ -1,4 +1,4 @@
-"""Database package for AI Trader Assistant."""
+"""Database infrastructure for AI Trader Assistant."""
 
 from database.base import Base
 

@@ -1,0 +1,83 @@
+order_price:
+  enabled: true
+  atr_window: 14
+  tick_size: 0.01
+  max_chase_percent: 0.05
+  min_risk_reward: 1.5
+  ideal_risk_reward: 2.0
+  max_stop_loss_percent: 0.08
+  default_position_percent: 0.10
+
+  llm_can_generate_price: false
+  requires_market_data: true
+  requires_rule_engine: true
+
+  price_levels:
+    conservative: true
+    balanced: true
+    aggressive: true
+
+  conservative:
+    support_atr_buffer: 0.05
+
+  balanced:
+    support_weight: 0.50
+    vwap_weight: 0.30
+    previous_close_weight: 0.20
+    positive_adjustment_atr: 0.10
+    negative_adjustment_atr: -0.10
+
+  aggressive:
+    breakout_tick_buffer: 0.01
+
+  max_buy_price:
+    use_limit_up: true
+    atr_multiplier: 0.80
+    max_chase_percent: 0.05
+
+  stop_loss:
+    atr_multiplier: 1.00
+    max_stop_loss_percent: 0.08
+
+  take_profit:
+    first_atr_multiplier: 1.00
+    second_atr_multiplier: 2.00
+
+  order_score_weights:
+    expected_return: 0.35
+    fill_probability: 0.25
+    risk_reward: 0.20
+    emotion: 0.10
+    capital_confirmation: 0.10
+
+  cancel_conditions:
+    high_open_percent: 6
+    major_negative_news: true
+    risk_level_block:
+      - HIGH
+      - BLACK_SWAN
+    sector_heat_drop: true
+    current_price_above_max_acceptable: true
+    data_source_conflict: true
+
+  reprice_conditions:
+    price_deviation_percent: 1.5
+    auction_changed: true
+    volatility_changed: true
+    vwap_or_support_changed: true
+    risk_reward_worsened: true
+
+  output_fields:
+    - conservative_price
+    - balanced_price
+    - aggressive_price
+    - recommended_price
+    - max_acceptable_price
+    - stop_loss_price
+    - take_profit_1_price
+    - take_profit_2_price
+    - fill_probability
+    - risk_reward
+    - order_price_score
+    - cancel_conditions
+    - reprice_conditions

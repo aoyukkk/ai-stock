@@ -1,0 +1,38 @@
+event_trigger:
+  price:
+    rapid_rise_percent: 8
+    rapid_drop_percent: -5
+    intraday_move_window_minutes: 10
+
+  volume:
+    abnormal_ratio: 3
+
+  turnover:
+    abnormal_ratio: 2
+
+  news:
+    importance_threshold: 80
+    major_negative_threshold: 85
+    require_multi_source_confirm_for_block: true
+
+  pre_market:
+    high_open_cancel_threshold_percent: 6
+    low_open_recheck_threshold_percent: -4
+    auction_abnormal_enabled: true
+
+  order:
+    near_fill_threshold_percent: 0.3
+    reprice_threshold_percent: 1.5
+
+  emergency_mode:
+    enabled: true
+    cooldown_minutes: 5
+    notify_user: true
+    block_new_buy_when_level:
+      - S3_MARKET_SHOCK
+      - S4_DATA_CONFLICT
+
+  recheck:
+    mode: advisory_only
+    allow_virtual_order_update: false
+    real_order_update_enabled: false

@@ -1,0 +1,603 @@
+AI Trader Assistant 数据库与 API 契约
+Version: V0.3
+============================================================
+
+一、数据库技术
+------------------------------------------------------------
+主数据库：PostgreSQL
+缓存：Redis
+向量：Chroma
+图谱：Neo4j optional，默认关闭
+离线分析：DuckDB/Parquet optional
+
+原则：
+1. AI建议必须可追溯。
+2. 模型调用必须记录成本。
+3. 交易计划必须可复盘。
+4. 配置修改必须可回滚。
+5. 重要 JSON 使用 JSONB。
+6. 高频查询必须建索引。
+
+二、核心表
+------------------------------------------------------------
+1. stock_master
+字段：
+- id
+- code unique
+- name
+- market
+- industry
+- concept_tags jsonb
+- list_date
+- status NORMAL/ST/SUSPENDED/DELISTED
+- created_at
+- updated_at
+索引：code, industry, status
+
+2. stock_market_data
+字段：
+- id
+- stock_code
+- datetime
+- open/high/low/close/pre_close
+- volume
+- amount
+- turnover_rate
+- change_percent
+- limit_up_price
+- limit_down_price
+- created_at
+索引：(stock_code, datetime), datetime
+
+3. market_snapshot
+字段：
+- id
+- stock_code
+- snapshot_time
+- current_price
+- bid_ask_json
+- volume
+- amount
+- turnover_rate
+- change_percent
+- raw_json
+索引：(stock_code, snapshot_time)
+
+4. pre_market_auction
+字段：
+- id
+- stock_code
+- trade_date
+- auction_time
+- auction_price
+- auction_volume
+- auction_amount
+- auction_change_percent
+- auction_strength_score
+- raw_json
+索引：(stock_code, trade_date)
+
+5. news_raw
+字段：
+- id
+- title
+- content
+- source
+- url
+- publish_time
+- raw_json
+- created_at
+索引：publish_time, source
+
+6. news_event
+字段：
+- id
+- raw_news_id
+- event_type
+- title
+- summary
+- source
+- publish_time
+- importance
+- sentiment
+- credibility
+- effective_horizon
+- created_at
+索引：event_type, publish_time, importance
+
+7. event_stock_link
+字段：
+- id
+- event_id
+- stock_code
+- industry
+- relation_type DIRECT/INDUSTRY/SUPPLY_CHAIN/OVERSEAS_MAPPING
+- impact_direction POSITIVE/NEGATIVE/NEUTRAL/UNKNOWN
+- impact_score
+- confidence
+- reason
+索引：(event_id, stock_code), (stock_code, impact_score)
+
+8. stock_factor_score
+字段：
+- id
+- stock_code
+- date
+- technical_score
+- capital_score
+- emotion_score
+- momentum_score
+- risk_score
+- total_score
+- factor_version
+- created_at
+索引：(stock_code, date), (date, total_score)
+
+9. stock_factor_detail
+字段：
+- id
+- stock_code
+- date
+- factor_group
+- factor_name
+- raw_value
+- normalized_value
+- score
+- weight
+- factor_version
+- explain_text
+索引：(stock_code, date), (factor_group, factor_name)
+
+10. ai_analysis_result
+字段：
+- id
+- stock_code
+- agent_name
+- model_name
+- score
+- direction BUY/WATCH/NEUTRAL/AVOID
+- confidence
+- reason
+- risk_note
+- analysis_time
+- prompt_version
+- model_version
+- llm_usage_id
+索引：(stock_code, analysis_time), (agent_name, analysis_time)
+
+11. stock_ai_score
+字段：
+- id
+- stock_code
+- time
+- technical_score
+- news_score
+- capital_score
+- emotion_score
+- overseas_score
+- risk_score
+- final_score
+- recommendation STRONG_WATCH/WATCH/NEUTRAL/AVOID/BLOCKED
+- risk_level LOW/MEDIUM/HIGH/BLACK_SWAN
+- confidence
+- controller_reason
+- decision_snapshot_id
+索引：(time, final_score), (stock_code, time)
+
+12. prediction_record
+用途：记录 AI 当时预测。
+字段：
+- id
+- stock_code
+- prediction_time
+- prediction_horizon_days
+- expected_direction UP/DOWN/SIDEWAYS/UNKNOWN
+- expected_return
+- expected_risk
+- score
+- confidence
+- recommendation
+- reason
+- valid_until
+- model_version
+- prompt_version
+- factor_version
+- data_snapshot_id
+- order_plan_id
+索引：(stock_code, prediction_time), valid_until
+
+13. decision_snapshot
+用途：保存 AI 决策时看到的数据。
+字段：
+- id
+- stock_code
+- snapshot_time
+- market_data_json jsonb
+- factor_json jsonb
+- news_json jsonb
+- agent_result_json jsonb
+- memory_json jsonb
+- order_price_json jsonb
+- final_score
+- risk_level
+- recommendation
+索引：(stock_code, snapshot_time)
+
+14. order_plan
+字段：
+- id
+- stock_code
+- plan_date
+- plan_session POST_MARKET/PRE_MARKET/INTRADAY_RECHECK
+- side BUY/SELL
+- strategy_type PULLBACK/BALANCED/BREAKOUT/RISK_EXIT/TAKE_PROFIT
+- recommended_price
+- price_range_low
+- price_range_high
+- max_acceptable_price
+- stop_loss_price
+- take_profit_1_price
+- take_profit_2_price
+- suggested_position_percent
+- confidence
+- reason
+- valid_conditions jsonb
+- cancel_conditions jsonb
+- reprice_conditions jsonb
+- status DRAFT/ACTIVE/CANCELLED/REPRICED/EXPIRED/EXECUTED/BLOCKED
+- decision_snapshot_id
+- created_at
+- updated_at
+索引：(stock_code, plan_date), (plan_date, status)
+
+15. order_price_candidate
+字段：
+- id
+- order_plan_id
+- price_type CONSERVATIVE/BALANCED/AGGRESSIVE/BREAKOUT/STOP_LOSS/TAKE_PROFIT
+- price
+- score
+- fill_probability
+- expected_return
+- risk_reward
+- expected_profit_price
+- stop_loss_price
+- reason
+索引：order_plan_id, (price_type, score)
+
+16. order_plan_evaluation
+字段：
+- id
+- order_plan_id
+- stock_code
+- evaluation_date
+- actual_open/high/low/close
+- actual_volume
+- was_filled
+- simulated_fill_price
+- best_possible_price
+- worst_possible_price
+- price_quality_score
+- missed_opportunity
+- risk_avoided
+- evaluation_reason
+索引：order_plan_id, (stock_code, evaluation_date)
+
+17. order_reassessment_log
+字段：
+- id
+- order_plan_id
+- stock_code
+- reassess_time
+- trigger_type PRE_MARKET_NEWS/AUCTION_CHANGE/PRICE_MOVE/VOLUME_ABNORMAL/RISK_EVENT/MANUAL_REFRESH
+- old_recommended_price
+- new_recommended_price
+- action KEEP/CANCEL/REPRICE/BLOCK
+- reason
+索引：(order_plan_id, reassess_time), (stock_code, reassess_time)
+
+18. virtual_account
+字段：
+- id
+- name
+- cash
+- total_asset
+- initial_cash
+- account_type AI_SIMULATION/HUMAN_REFERENCE
+
+19. virtual_order
+字段：
+- id
+- account_id
+- stock_code
+- action BUY/SELL
+- order_price
+- order_quantity
+- filled_quantity
+- status PENDING/FILLED/PARTIAL_FILLED/CANCELLED/FAILED/EXPIRED/REPRICED
+- submit_time
+- filled_time
+- fail_reason
+- order_plan_id
+索引：(account_id, submit_time), order_plan_id
+
+20. virtual_position
+字段：
+- id
+- account_id
+- stock_code
+- quantity
+- cost_price
+- available_quantity
+- buy_date
+- updated_at
+索引：(account_id, stock_code)
+
+21. virtual_trade_record
+字段：
+- id
+- account_id
+- stock_code
+- action
+- price
+- quantity
+- amount
+- commission
+- stamp_tax
+- slippage
+- order_status
+- time
+- reason
+- prediction_record_id
+- order_plan_id
+
+22. manual_trade
+字段：
+- id
+- stock_code
+- action BUY/SELL
+- price
+- quantity
+- trade_time
+- trader_name
+- related_order_plan_id
+- related_prediction_record_id
+- note
+
+23. daily_review
+字段：
+- id
+- date
+- market_summary
+- ai_summary
+- human_summary
+- prediction_accuracy
+- order_price_quality
+- ai_profit_loss
+- human_profit_loss
+- max_drawdown
+- win_rate
+- mistake_analysis
+- suggestion
+- reflection_memory_id
+
+24. prediction_evaluation
+字段：
+- id
+- prediction_record_id
+- stock_code
+- evaluation_date
+- actual_return
+- actual_max_drawdown
+- actual_direction
+- is_correct
+- error_reason
+
+25. agent_memory_note
+字段：
+- id
+- memory_type short/mid/long/episodic/reflection/procedural
+- title
+- content
+- stock_code nullable
+- industry nullable
+- tags jsonb
+- source_type
+- source_id
+- importance
+- confidence
+- quality_score
+- reuse_score
+- valid_from
+- valid_until
+- conflict_status
+- should_reuse
+- should_forget
+- embedding_id
+- created_at
+- updated_at
+索引：(stock_code, memory_type), (industry, memory_type), valid_until
+
+26. memory_link
+字段：
+- id
+- source_memory_id
+- target_memory_id
+- link_type SIMILAR/CAUSE/EVIDENCE/CONFLICT/UPDATE
+- confidence
+- reason
+
+27. memory_retrieval_log
+字段：
+- id
+- task_id
+- stock_code
+- query
+- returned_memory_ids jsonb
+- used_memory_ids jsonb
+- created_at
+
+28. stock_temporal_relation
+字段：
+- id
+- source_entity
+- source_type
+- target_entity
+- target_type
+- relation_type
+- confidence
+- source
+- evidence_id
+- valid_from
+- valid_to
+- last_verified_at
+
+29. strategy_playbook
+字段：
+- id
+- name
+- scenario
+- rule_text
+- evidence_json
+- success_count
+- failure_count
+- quality_score
+- enabled
+
+30. llm_usage
+字段：
+- id
+- provider
+- model_name
+- agent_name
+- task
+- input_tokens
+- output_tokens
+- cached_input_tokens
+- total_tokens
+- cost_usd
+- latency_ms
+- status
+- error_message
+- request_hash
+- created_at
+
+31. prompt_version
+字段：
+- id
+- agent_name
+- version
+- content_hash
+- description
+- is_active
+- created_at
+
+32. config_history
+字段：
+- id
+- user
+- config_key
+- old_value jsonb
+- new_value jsonb
+- reason
+- source WEB_UI/API/YAML_IMPORT/DB_MIGRATION
+- time
+
+三、API 契约
+------------------------------------------------------------
+通用响应：
+{
+  "success": true,
+  "data": {},
+  "error": null,
+  "trace_id": "string"
+}
+
+1. Health
+GET /health
+
+2. Config
+GET /api/config
+GET /api/config/{key}
+PUT /api/config/{key}
+POST /api/config/reload
+GET /api/config/history
+POST /api/config/rollback/{history_id}
+
+3. Stock Pool
+GET /api/stocks
+GET /api/pools/quant-top
+GET /api/pools/final-recommend
+GET /api/pools/manual-watch
+POST /api/pools/manual-watch
+DELETE /api/pools/manual-watch/{stock_code}
+POST /api/pools/run-quant
+POST /api/pools/run-llm-screening
+
+4. Trading Plan
+GET /api/order-plans?date=YYYY-MM-DD
+GET /api/order-plans/{id}
+POST /api/order-plans/generate-post-market
+POST /api/order-plans/pre-market-recheck
+POST /api/order-plans/{id}/reassess
+POST /api/order-plans/{id}/mark-human-action
+
+5. Order Price
+POST /api/order-price/evaluate
+GET /api/order-price/candidates/{order_plan_id}
+GET /api/order-price/evaluations
+
+6. Virtual Trading
+GET /api/virtual/account
+GET /api/virtual/orders
+POST /api/virtual/orders
+POST /api/virtual/orders/{id}/cancel
+POST /api/virtual/orders/{id}/reprice
+GET /api/virtual/positions
+GET /api/virtual/trades
+
+7. Manual Trade
+GET /api/manual-trades
+POST /api/manual-trades
+PUT /api/manual-trades/{id}
+DELETE /api/manual-trades/{id}
+
+8. Agents / LLM
+GET /api/models
+PUT /api/models/agent-config
+POST /api/models/test
+GET /api/llm/usage
+GET /api/prompts
+POST /api/prompts
+
+9. Memory
+GET /api/memory?stock_code=&industry=&type=
+GET /api/memory/{id}
+POST /api/memory/{id}/disable
+POST /api/memory/{id}/mark-wrong
+POST /api/memory/search
+GET /api/memory/retrieval-log/{decision_snapshot_id}
+
+10. News / Events
+GET /api/news
+GET /api/events
+POST /api/events/process-sample
+
+11. Review
+GET /api/reviews/daily?date=
+POST /api/reviews/daily/run
+GET /api/reviews/order-price
+GET /api/reviews/prediction
+
+12. WebSocket
+/ws/alerts
+推送类型：
+- RISK_ALERT
+- ORDER_NEAR_FILL
+- REPRICE_REQUIRED
+- CANCEL_REQUIRED
+- EMERGENCY_MODE
+- COST_WARNING
+- DATA_SOURCE_ERROR
+
+END

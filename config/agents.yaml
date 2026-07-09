@@ -1,0 +1,72 @@
+agents:
+  light_screening_agent:
+    enabled: true
+    model_alias: mock-fast
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+
+  technical_agent:
+    enabled: true
+    model_alias: mock-fast
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+
+  news_agent:
+    enabled: true
+    model_alias: mock-fast
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2500
+
+  capital_agent:
+    enabled: true
+    model_alias: mock-fast
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+
+  emotion_agent:
+    enabled: true
+    model_alias: mock-fast
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+
+  overseas_agent:
+    enabled: true
+    model_alias: mock-fast
+    preferred_model_alias: deepseek-v4-flash
+    phase0_model_alias: mock-fast
+    temperature: 0.2
+    max_tokens: 2000
+
+  risk_agent:
+    enabled: true
+    model_alias: mock-reasoning
+    preferred_model_alias: gpt-5.5
+    phase0_model_alias: mock-reasoning
+    temperature: 0.1
+    max_tokens: 4000
+
+  controller_agent:
+    enabled: true
+    model_alias: mock-reasoning
+    preferred_model_alias: gpt-5.5
+    phase0_model_alias: mock-reasoning
+    temperature: 0.1
+    max_tokens: 5000
+
+  daily_review_agent:
+    enabled: true
+    model_alias: mock-reasoning
+    preferred_model_alias: gpt-5.5
+    phase0_model_alias: mock-reasoning
+    temperature: 0.1
+    max_tokens: 4000

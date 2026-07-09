@@ -1,0 +1,183 @@
+AI Trader Assistant 测试与验收清单
+Version: V0.3
+============================================================
+
+一、全局测试命令
+------------------------------------------------------------
+后端：
+python -m pytest
+python -m pytest tests/test_health.py
+python -m pytest tests/test_config_service.py
+python -m pytest tests/test_quant_engine.py
+python -m pytest tests/test_order_price.py
+python -m pytest tests/test_virtual_broker.py
+
+前端：
+npm run test
+npm run build
+
+集成：
+python scripts/run_mock_day.py
+python scripts/run_post_market_workflow.py
+python scripts/run_pre_market_recheck.py
+python scripts/run_daily_review.py
+
+二、配置系统验收
+------------------------------------------------------------
+必须通过：
+[ ] YAML 可加载。
+[ ] DB 配置可覆盖 YAML。
+[ ] Web UI 修改可覆盖 DB 和 YAML。
+[ ] 修改写入 config_history。
+[ ] 权重和不等于1时拒绝保存。
+[ ] 支持回滚。
+[ ] 修改 Q/L/N/R/W 后无需改代码。
+
+三、数据源验收
+------------------------------------------------------------
+[ ] Mock Market Provider 可返回股票列表。
+[ ] Mock Market Provider 可返回 K线。
+[ ] Mock News Provider 可返回新闻。
+[ ] 外部 Provider 未配置时系统不崩溃。
+[ ] 数据源异常写日志并前端提醒。
+
+四、量化引擎验收
+------------------------------------------------------------
+[ ] 全A输入可运行。
+[ ] 不调用 LLM。
+[ ] 输出 Top Q 数量正确。
+[ ] 因子权重来自配置。
+[ ] 保存 stock_factor_score。
+[ ] 保存 stock_factor_detail。
+[ ] 防止未来数据泄漏。
+
+五、LLM Gateway 验收
+------------------------------------------------------------
+[ ] Agent 不能直接调用模型。
+[ ] mock provider 可用。
+[ ] request_hash 缓存可用。
+[ ] fallback 可用。
+[ ] 记录 llm_usage。
+[ ] 成本预算达到阈值时警告。
+[ ] JSON 输出解析失败会重试。
+
+六、轻量 AI 二筛验收
+------------------------------------------------------------
+[ ] 输入 Top Q。
+[ ] 输出候选 Top N。
+[ ] 输出 JSON。
+[ ] 失败时降级为规则排序。
+[ ] 不处理全A。
+
+七、AI委员会验收
+------------------------------------------------------------
+[ ] Technical Agent 输出 score/direction/confidence/reason。
+[ ] News Agent 输出结构化结果。
+[ ] Risk Agent 能否决。
+[ ] Controller Agent 不绕过 Risk Agent。
+[ ] 保存 ai_analysis_result。
+[ ] 保存 stock_ai_score。
+
+八、挂单价验收
+------------------------------------------------------------
+[ ] 生成保守/均衡/激进价格。
+[ ] max_buy_price 不超过涨停价。
+[ ] 风险收益比计算正确。
+[ ] 止损止盈计算正确。
+[ ] 每个候选价有评分。
+[ ] 保存 order_plan。
+[ ] 保存 order_price_candidate。
+[ ] LLM 不直接生成价格。
+
+九、风控验收
+------------------------------------------------------------
+[ ] ST 阻断。
+[ ] 停牌阻断。
+[ ] 重大负面新闻阻断。
+[ ] 黑天鹅进入 BLOCK。
+[ ] 数据冲突进入 WATCH_ONLY 或 BLOCK。
+[ ] 高开超过阈值触发 CANCEL_ORDER 或 WATCH_ONLY。
+[ ] 触发记录写 decision_snapshot。
+
+十、虚拟盘验收
+------------------------------------------------------------
+[ ] 买入必须 100 股整数倍。
+[ ] 买入当日 available_quantity = 0。
+[ ] 下一交易日 available_quantity 更新。
+[ ] 涨停买入可能失败。
+[ ] 跌停卖出可能失败。
+[ ] 支持部分成交。
+[ ] 支持撤单。
+[ ] 支持改价。
+[ ] 佣金计算正确。
+[ ] 卖出印花税计算正确。
+[ ] 保存 virtual_order 和 virtual_trade_record。
+
+十一、盘后工作流验收
+------------------------------------------------------------
+[ ] 能用 mock 数据跑完整盘后计划。
+[ ] 输出 Quant Top Q。
+[ ] 输出 LLM Top N。
+[ ] 输出 Final Recommend R。
+[ ] 输出 order_plan。
+[ ] 输出 decision_snapshot。
+[ ] 前端能查看。
+
+十二、盘前复核验收
+------------------------------------------------------------
+[ ] 隔夜正面新闻能提高关注。
+[ ] 负面新闻能触发 CANCEL/BLOCK。
+[ ] 高开过大能触发撤单建议。
+[ ] 竞价变化能触发改价。
+[ ] 保存 order_reassessment_log。
+
+十三、盘中监控验收
+------------------------------------------------------------
+[ ] 推荐池按配置刷新。
+[ ] 人工关注池按配置刷新。
+[ ] 持仓按配置刷新。
+[ ] 已挂单按 5 分钟刷新。
+[ ] 异常事件立即触发。
+[ ] WebSocket 推送提醒。
+
+十四、记忆系统验收
+------------------------------------------------------------
+[ ] 可保存 agent_memory_note。
+[ ] 可按股票检索记忆。
+[ ] 可按行业检索记忆。
+[ ] 低质量记忆不返回。
+[ ] 冲突记忆不参与推荐。
+[ ] 检索记录写 memory_retrieval_log。
+[ ] 日复盘能生成 reflection memory。
+
+十五、前端验收
+------------------------------------------------------------
+[ ] Dashboard 可见市场状态。
+[ ] Trading Plan 可见三档挂单价。
+[ ] System Config 可修改 Q/L/N/R/W。
+[ ] Model Management 可修改 Agent 模型。
+[ ] Order Monitor 可见撤单/改价提醒。
+[ ] Memory Console 可禁用记忆。
+[ ] Daily Review 可显示 AI vs 人工。
+[ ] 所有配置修改写入历史。
+
+十六、端到端验收
+------------------------------------------------------------
+Mock Day 流程：
+1. 导入 mock 股票和行情。
+2. 运行盘后计划。
+3. 生成 order_plan。
+4. 运行盘前复核。
+5. 模拟盘中价格波动。
+6. VirtualBroker 执行虚拟挂单。
+7. 记录人工交易。
+8. 运行每日复盘。
+9. 生成 reflection memory。
+
+验收通过条件：
+[ ] 全流程无异常。
+[ ] 数据库有完整记录。
+[ ] 前端能展示核心结果。
+[ ] 测试全部通过。
+
+END

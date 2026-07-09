@@ -1,0 +1,338 @@
+AI Trader Assistant 前端控制台规格
+Version: V0.3
+============================================================
+
+一、前端技术栈
+------------------------------------------------------------
+推荐：
+- Vue3
+- TypeScript
+- Element Plus
+- Pinia
+- ECharts
+- Axios
+- WebSocket
+- Electron 桌面壳
+
+理由：
+- 控制台表单复杂，Vue + Element Plus 更适合。
+- 交易计划表、配置表、模型管理、复盘页都可以快速开发。
+- Electron 可打包 Windows 桌面应用。
+
+二、主导航
+------------------------------------------------------------
+1. Dashboard 首页
+2. Stock Ranking 股票排序
+3. Trading Plan 今日/次日交易计划
+4. Order Monitor 挂单监控
+5. Manual Watch 人工关注池
+6. Virtual Trading AI虚拟盘
+7. Stock Detail 个股详情
+8. News & Events 新闻事件
+9. Daily Review 每日复盘
+10. Memory Console 记忆控制台
+11. Model Management 模型管理
+12. System Config 系统配置
+13. Data Source 数据源状态
+14. Logs & Audit 日志审计
+
+三、Dashboard 首页
+------------------------------------------------------------
+显示：
+- 今日市场状态
+- 当前交易时段
+- 数据源状态
+- LLM成本状态
+- 今日推荐 Top R
+- 人工关注 W
+- 已挂单数量
+- 已持仓数量
+- 风险提醒
+- Emergency Mode 状态
+- AI虚拟盘当日盈亏
+- 人工实盘记录对比
+
+按钮：
+- 手动刷新 Hot Pool
+- 手动运行盘前复核
+- 手动运行盘后计划
+- 进入 Emergency Mode
+- 退出 Emergency Mode
+- 导出今日报告
+
+四、System Config 页面
+------------------------------------------------------------
+必须全部可视化显示并可编辑。
+
+A. 股票筛选配置
+- quant_top_n Q：数字输入，默认 500
+- light_analysis_top_n L：数字输入，默认 500
+- committee_analysis_top_n N：数字输入，默认 50
+- final_recommend_top_n R：数字输入，默认 50
+- manual_watchlist_default W：数字输入，默认 50
+- manual_watchlist_soft_warning：默认 100
+- 是否启用人工池硬限制：开关，默认关闭
+- 是否允许盘中新股动态入池：开关，默认关闭
+- 每日最大动态入池数量：数字输入
+
+B. 刷新频率配置
+- 全A轻量量化雷达：启用/关闭，分钟输入
+- 推荐池刷新：分钟输入
+- 人工关注池刷新：分钟输入
+- 持仓刷新：分钟输入
+- 挂单刷新：分钟输入
+- 新闻刷新：分钟输入
+- 开盘/尾盘高频刷新：启用/关闭，分钟输入
+
+C. 因子权重配置
+- technical
+- capital
+- emotion
+- momentum
+- risk
+要求：前端校验权重和 = 1。
+
+D. AI评分权重配置
+- technical
+- capital
+- news
+- emotion
+- overseas
+- risk
+要求：前端校验权重和 = 1。
+
+E. 挂单价配置
+- ATR window
+- tick size
+- max chase percent
+- min risk reward
+- ideal risk reward
+- max stop loss percent
+- default position percent
+- conservative support buffer
+- balanced support/vwap/previous close weights
+- aggressive breakout tick buffer
+- stop loss ATR multiplier
+- take profit ATR multipliers
+- order score weights
+- cancel condition thresholds
+- reprice condition thresholds
+
+F. 风控配置
+- 仓位上限模式：disabled / advisory_only / hard_block
+- 单股最大仓位百分比
+- 行业最大仓位百分比
+- 是否阻断 ST
+- 是否阻断停牌
+- 是否阻断重大负面新闻
+- 是否阻断黑天鹅
+- 高开过大是否禁止挂单
+- 止损默认百分比
+- 最大回撤预警
+
+G. 事件触发配置
+- 快速上涨阈值
+- 快速下跌阈值
+- 成交量异常倍数
+- 换手异常倍数
+- 新闻重要性阈值
+- 重大负面阈值
+- 高开撤单阈值
+- 低开复核阈值
+- 接近成交阈值
+- 改价偏离阈值
+- Emergency Mode cooldown
+
+H. 虚拟盘配置
+- 是否启用
+- 初始资金
+- 手续费率
+- 最低佣金
+- 卖出印花税
+- 滑点率
+- 是否允许部分成交
+- 是否支持撤单
+- 是否支持改价
+- 是否模拟涨停买不进
+- 是否模拟跌停卖不出
+
+I. 记忆配置
+- 短期记忆开关
+- 中期记忆开关
+- 向量记忆开关
+- 长期记忆开关
+- 图谱记忆开关
+- top_k
+- min_reuse_score
+- 是否过滤冲突记忆
+- 低质量记忆过期天数
+
+J. 成本预算
+- 每日 token 预算
+- warning 百分比
+- hard limit 百分比
+- GPT-5.5 日预算
+- DeepSeek 日预算
+- 缓存开关
+- 缓存时间
+
+所有配置修改弹窗必须要求填写：
+- 修改原因
+- 是否立即生效
+- 是否保存为默认
+
+保存后：
+- PUT /api/config/{key}
+- 写 config_history
+- 显示旧值、新值、修改人、时间
+
+五、Model Management 页面
+------------------------------------------------------------
+功能：
+- Provider 开关：DeepSeek / OpenAI / Claude / Qwen / Mock
+- API Key 状态显示：只显示是否已配置，不显示明文
+- Agent → 模型选择
+- Agent → temperature
+- Agent → max_tokens
+- Agent → prompt_version
+- fallback 顺序
+- 测试模型连通性
+- 查看 token 用量
+- 查看成本曲线
+- 查看失败调用
+
+Agent 列表：
+- Technical Agent
+- News Agent
+- Capital Agent
+- Emotion Agent
+- Overseas Agent
+- Risk Agent
+- Controller Agent
+- Memory Extractor
+- Daily Reviewer
+
+六、Trading Plan 页面
+------------------------------------------------------------
+表格字段：
+- 股票代码
+- 股票名称
+- 行业
+- 推荐等级
+- 综合评分
+- 风险等级
+- 推荐时段
+- 保守价
+- 均衡价
+- 激进价
+- 推荐价
+- 最高可接受价
+- 止损价
+- 止盈1
+- 止盈2
+- 成交概率
+- 风险收益比
+- 撤单条件
+- 改价条件
+- 虚拟盘状态
+- 人工是否采纳
+
+按钮：
+- 查看详情
+- 加入人工关注
+- 创建 AI 虚拟挂单
+- 标记人工采纳
+- 标记人工放弃
+- 手动重评估
+- 导出计划
+
+七、Order Monitor 页面
+------------------------------------------------------------
+显示：
+- pending order
+- 接近成交提醒
+- 需要撤单
+- 需要改价
+- 已成交
+- 部分成交
+- 未成交
+- 已取消
+
+按钮：
+- AI虚拟撤单
+- AI虚拟改价
+- 人工标记已撤单
+- 人工标记已改价
+- 手动复核
+
+八、Manual Watch 页面
+------------------------------------------------------------
+功能：
+- 搜索股票并加入人工池
+- 编辑关注理由
+- 设置优先级
+- 设置是否参与虚拟盘
+- 设置是否参与盘中高频提醒
+- 移除股票
+- 批量导入股票代码
+
+九、Stock Detail 页面
+------------------------------------------------------------
+显示：
+- K线图
+- 分时图
+- 盘口摘要
+- 量化评分拆解
+- AI评分拆解
+- 新闻事件
+- 产业链/海外映射
+- 记忆摘要
+- 决策快照
+- 挂单价计算依据
+- 历史推荐记录
+- 虚拟盘记录
+- 人工记录
+
+十、Memory Console 页面
+------------------------------------------------------------
+功能：
+- 按股票查看记忆
+- 按行业查看记忆
+- 按事件查看记忆
+- 查看复盘反思
+- 查看策略 playbook
+- 禁用记忆
+- 标记错误记忆
+- 修改 valid_until
+- 查看某次决策引用了哪些记忆
+
+十一、Daily Review 页面
+------------------------------------------------------------
+显示：
+- 今日 AI 推荐表现
+- 今日人工表现
+- AI vs 人工对比
+- 预测准确率
+- 挂单价质量
+- 成交率
+- 未成交错过机会
+- 风险规避成功次数
+- Agent错误归因
+- 明日建议
+
+十二、权限与审计
+------------------------------------------------------------
+第一版可以本地单用户，但代码结构预留用户角色：
+- admin
+- trader
+- viewer
+
+必须审计：
+- 配置修改
+- 模型修改
+- Prompt版本切换
+- 人工交易记录修改
+- 记忆禁用
+- 手动触发 Emergency Mode
+
+END

@@ -1,1 +1,5 @@
-"""Quant package for AI Trader Assistant."""
+"""Quant engine package."""
+
+from quant.service import QuantService
+
+__all__ = ["QuantService"]

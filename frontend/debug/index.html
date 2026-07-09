@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Trader Assistant Debug Panel</title>
+    <style>
+      body {
+        margin: 24px;
+        background: #f5f7fb;
+        color: #17202a;
+        font-family: Arial, "Microsoft YaHei", sans-serif;
+      }
+
+      .panel {
+        max-width: 1080px;
+        margin: 0 auto;
+      }
+
+      .controls,
+      .buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 14px 0;
+      }
+
+      label {
+        display: grid;
+        gap: 4px;
+        font-size: 13px;
+      }
+
+      input,
+      select,
+      button {
+        min-height: 34px;
+        border: 1px solid #cfd6e4;
+        border-radius: 6px;
+        background: #fff;
+        padding: 6px 10px;
+        font-size: 14px;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      pre {
+        min-height: 360px;
+        overflow: auto;
+        border: 1px solid #dfe3eb;
+        border-radius: 8px;
+        background: #101828;
+        color: #d1fadf;
+        padding: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="panel">
+      <h1>AI Trader Assistant Debug Panel</h1>
+      <p>Manual debug mode only. No scheduler and no automatic market task is started here.</p>
+
+      <section class="controls">
+        <label>
+          Provider
+          <select id="provider">
+            <option value="mock">mock</option>
+            <option value="akshare">akshare</option>
+            <option value="baostock">baostock</option>
+            <option value="ths_stub">ths_stub</option>
+          </select>
+        </label>
+        <label>
+          Stock Code
+          <input id="stockCode" value="000001" />
+        </label>
+      </section>
+
+      <section class="buttons">
+        <button data-path="/api/datasource/providers">获取 Provider 列表</button>
+        <button data-path="/api/manual/status">获取手动运行状态</button>
+        <button data-action="stock-list">获取股票列表</button>
+        <button data-action="realtime">获取实时行情</button>
+        <button data-action="kline">获取K线</button>
+        <button data-action="finance">获取财务数据</button>
+        <button data-action="capital-flow">获取资金流</button>
+        <button data-action="market-emotion">获取市场情绪</button>
+        <button data-action="limit-price">获取涨跌停价</button>
+        <button data-action="pre-market-auction">获取盘前竞价</button>
+      </section>
+
+      <pre id="output">Click a button to run a manual debug request.</pre>
+    </main>
+
+    <script>
+      const output = document.querySelector("#output");
+      const provider = document.querySelector("#provider");
+      const stockCode = document.querySelector("#stockCode");
+
+      document.querySelectorAll("button").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const path = button.dataset.path || buildPath(button.dataset.action);
+          output.textContent = `GET ${path}\nLoading...`;
+          try {
+            const response = await fetch(path);
+            const json = await response.json();
+            output.textContent = JSON.stringify(json, null, 2);
+          } catch (error) {
+            output.textContent = String(error);
+          }
+        });
+      });
+
+      function buildPath(action) {
+        const params = new URLSearchParams({ provider: provider.value });
+        if (action !== "stock-list" && action !== "market-emotion") {
+          params.set("stock_code", stockCode.value || "000001");
+        }
+        if (action === "kline") {
+          params.set("start_date", "2025-01-01");
+          params.set("end_date", "2025-03-01");
+          params.set("frequency", "daily");
+        }
+        return `/api/datasource/${action}?${params.toString()}`;
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+token:
+  daily_budget:
+    default: 1800000
+    warning_percent: 80
+    limit_percent: 100
+
+cost_control:
+  daily_cost_budget_usd: 8
+  gpt5_5_daily_budget_usd: 6
+  deepseek_daily_budget_usd: 2
+
+  gpt_call_policy:
+    enabled: true
+    only_if:
+      - stock_in_committee_top_n
+      - risk_uncertain
+      - final_score_above_threshold
+      - black_swan_event
+      - order_plan_final_review
+      - daily_review
+      - high_trade_impact
+    final_score_above_threshold: 80

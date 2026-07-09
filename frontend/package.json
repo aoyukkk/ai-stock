@@ -1,0 +1,38 @@
+{
+  "name": "ai-trader-assistant-frontend",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:web\" \"npm:dev:electron\"",
+    "dev:web": "vite --host 127.0.0.1 --port 5173",
+    "dev:electron": "wait-on tcp:5173 && npm run build:electron && electron .",
+    "electron:dev": "npm run dev:electron",
+    "build:electron": "tsc -p tsconfig.node.json",
+    "build": "vue-tsc --noEmit && npm run build:electron && vite build",
+    "electron:build": "npm run build && npx electron-builder --config electron-builder.config.js --publish never",
+    "package:win": "npm run build && npx electron-builder --config electron-builder.config.js --win --publish never",
+    "typecheck": "vue-tsc --noEmit",
+    "preview": "vite preview --host 127.0.0.1 --port 4173"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "axios": "^1.7.9",
+    "dayjs": "^1.11.13",
+    "element-plus": "^2.9.3",
+    "pinia": "^2.3.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vue-tsc": "^2.1.10",
+    "wait-on": "^8.0.1"
+  }
+}

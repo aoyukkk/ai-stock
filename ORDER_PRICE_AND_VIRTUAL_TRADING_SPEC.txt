@@ -1,0 +1,270 @@
+AI Trader Assistant 挂单价与虚拟盘设计
+Version: V0.3
+============================================================
+
+一、模块定位
+------------------------------------------------------------
+Order Price Evaluation Engine 负责生成盘后、盘前、盘中的挂单价计划。
+LLM 不直接生成价格，只能解释、审核和风控。
+
+VirtualBroker 负责根据 AI 的 order_plan 独立运行虚拟盘，用于和人工实盘对比。
+
+二、挂单价输入
+------------------------------------------------------------
+每次生成 order_plan 至少需要：
+- stock_code
+- previous_close
+- open / high / low / close
+- volume / amount / turnover_rate
+- VWAP
+- ATR
+- support
+- resistance
+- MA5 / MA20 / MA60
+- limit_up_price / limit_down_price
+- current_price
+- bid/ask if available
+- sector_strength_score
+- news_score
+- emotion_score
+- capital_score
+- risk_level
+- auction_price if available
+- T+1 status if holding exists
+
+三、核心公式
+------------------------------------------------------------
+1. True Range
+TR = max(
+  High - Low,
+  abs(High - Previous_Close),
+  abs(Low - Previous_Close)
+)
+
+2. ATR
+ATR_N = Average(TR, N)
+默认 N = 14
+
+3. 保守买入价 Conservative
+Buy_Conservative = Support + conservative.support_atr_buffer * ATR
+默认 support_atr_buffer = 0.05
+
+4. 均衡买入价 Balanced
+Buy_Balanced =
+  balanced.support_weight * Support
++ balanced.vwap_weight * VWAP
++ balanced.previous_close_weight * Previous_Close
++ Adjustment
+
+Adjustment：
+- 利好新闻或强情绪：+0.10 * ATR
+- 风险升高：-0.10 * ATR
+- 中性：0
+
+5. 激进买入价 Aggressive
+Buy_Aggressive = Resistance + Tick_Size
+
+6. 最高可接受买入价 Max Buy Price
+Max_Buy_Price = min(
+  Limit_Up_Price,
+  Previous_Close + 0.8 * ATR,
+  Previous_Close * (1 + Max_Chase_Percent)
+)
+
+7. 止损价 Stop Loss
+Stop_Loss = max(
+  Entry_Price - 1.0 * ATR,
+  Entry_Price * (1 - Max_Stop_Loss_Percent)
+)
+
+说明：
+对买入价而言，取较高止损价代表更严格止损。
+
+8. 止盈价
+Take_Profit_1 = Entry_Price + 1.0 * ATR
+Take_Profit_2 = Entry_Price + 2.0 * ATR
+
+9. 风险收益比
+Risk_Reward = (Target_Price - Entry_Price) / (Entry_Price - Stop_Loss_Price)
+默认要求 >= 1.5，理想 >= 2.0。
+
+四、挂单价评分
+------------------------------------------------------------
+Order Price Score =
+  0.35 * Expected_Return_Score
++ 0.25 * Fill_Probability
++ 0.20 * Risk_Reward_Score
++ 0.10 * Emotion_Score
++ 0.10 * Capital_Confirmation_Score
+
+每个候选价都要输出：
+- price_type: CONSERVATIVE / BALANCED / AGGRESSIVE / BREAKOUT / STOP_LOSS / TAKE_PROFIT
+- price
+- score
+- fill_probability
+- expected_return
+- risk_reward
+- expected_profit_price
+- stop_loss_price
+- reason
+
+五、推荐价选择逻辑
+------------------------------------------------------------
+默认推荐 balanced_price。
+
+可切换模式：
+1. 保守模式
+   使用 conservative_price。
+   适合高波动、风险高、板块热度下降。
+
+2. 均衡模式
+   使用 balanced_price。
+   默认。
+
+3. 激进模式
+   使用 aggressive_price。
+   仅当强趋势、强板块、强资金、风险低时允许。
+
+4. 禁止买入
+   风险等级 HIGH / BLACK_SWAN / 数据冲突时不输出买入价，只输出风险说明。
+
+六、撤单条件
+------------------------------------------------------------
+系统必须给出 cancel_conditions。
+默认条件：
+- 盘前高开超过 high_open_percent，例如 6%。
+- 重大负面新闻。
+- 风险等级变为 HIGH / BLACK_SWAN。
+- 板块热度明显下降。
+- 海外映射突然反转。
+- 集合竞价量价不匹配。
+- 当前价超过 max_acceptable_price。
+- 数据源冲突无法确认。
+
+七、改价条件
+------------------------------------------------------------
+默认条件：
+- 当前价偏离原推荐价超过 1.5%。
+- 集合竞价价格发生明显变化。
+- 波动率显著变化。
+- VWAP 或支撑位发生明显变化。
+- 挂单接近成交但风险收益比恶化。
+
+输出 action：
+- KEEP
+- CANCEL
+- REPRICE
+- BLOCK
+
+八、盘后固定价格与隔夜委托
+------------------------------------------------------------
+系统要区分：
+1. 支持盘后固定价格交易的股票：判断是否接受收盘价成交。
+2. 普通隔夜委托：本质是次日预埋单，不是当日成交。
+
+配置必须做成交易规则，不要硬编码板块。
+
+九、VirtualBroker 规则
+------------------------------------------------------------
+必须支持：
+- buy()
+- sell()
+- cancel_order()
+- reprice_order()
+- get_position()
+- get_cash()
+- get_orders()
+- get_account_status()
+
+A股规则：
+- T+1
+- 涨跌停限制
+- 100股整数倍
+- 停牌禁止交易
+- 涨停买入可能无法成交
+- 跌停卖出可能无法成交
+- 支持部分成交
+- 支持滑点
+- 支持佣金
+- 卖出收印花税
+
+十、成交模拟
+------------------------------------------------------------
+买入挂单：
+- 如果 low <= order_price，视为有成交可能。
+- 如果股票涨停且买入，可能无法成交。
+- 如果盘口数据可用，根据挂单价、盘口深度、成交量估计部分成交。
+- 无盘口时使用简化成交概率。
+
+卖出挂单：
+- 如果 high >= order_price，视为有成交可能。
+- 如果股票跌停且卖出，可能无法成交。
+
+集合竞价：
+- 如果有 auction_price，用 auction_price 判断。
+- 否则用 open price 模拟。
+
+部分成交：
+- 根据成交量比例、盘口深度、fill_probability 决定 filled_quantity。
+
+十一、T+1 实现
+------------------------------------------------------------
+position 表中必须有：
+- quantity
+- available_quantity
+- buy_date
+
+买入当日：
+- quantity 增加。
+- available_quantity 不增加。
+
+下一交易日：
+- available_quantity 更新为可卖数量。
+
+虚拟盘不得卖出 available_quantity = 0 的持仓。
+
+十二、费用
+------------------------------------------------------------
+默认：
+- commission_rate = 0.0003
+- min_commission = 5
+- stamp_tax_rate = 0.001
+- stamp_tax_side = sell
+- slippage_rate = 0.0005
+
+买入成本：
+amount + commission + slippage
+
+卖出收入：
+amount - commission - stamp_tax - slippage
+
+十三、挂单复盘
+------------------------------------------------------------
+每日生成 order_plan_evaluation。
+字段：
+- was_filled
+- simulated_fill_price
+- best_possible_price
+- worst_possible_price
+- price_quality_score
+- missed_opportunity
+- risk_avoided
+- evaluation_reason
+
+价格质量评分：
+- 成交且后续上涨：高分。
+- 未成交但股票大涨：扣分，标记挂单过保守。
+- 成交后立即大幅下跌：扣分，标记追价过高或风险识别不足。
+- 撤单避免大跌：加分，标记风险规避成功。
+
+十四、人工 vs AI 对比
+------------------------------------------------------------
+每日比较：
+- AI 推荐股票 vs 人工买入股票。
+- AI 挂单价 vs 人工成交价。
+- AI 虚拟盘收益 vs 人工实盘收益。
+- AI 未成交错过机会。
+- AI 成交后风险暴露。
+- 人工是否优于 Agent。
+
+END

@@ -1,0 +1,37 @@
+stock_scan:
+  market: A_SHARE
+  stock_pool: all
+
+  # Q/L/N/R/W must be editable from Web UI and persisted to database config.
+  quant_top_n: 500
+  light_analysis_top_n: 500
+  committee_analysis_top_n: 50
+  final_recommend_top_n: 50
+
+  manual_watchlist:
+    default_count: 50
+    hard_limit_enabled: false
+    soft_warning_count: 100
+
+  hot_pool:
+    sources:
+      - final_recommend
+      - manual_watchlist
+      - event_trigger
+
+  intraday_dynamic_entry:
+    enabled: false
+    require_quant_reentry: true
+    require_llm_fast_check: true
+    max_new_entries_per_day: 20
+
+  exclude:
+    st: true
+    suspended: true
+    delisted: true
+    min_listing_days: 60
+    min_daily_amount: 50000000
+
+  validation:
+    prevent_future_data_leakage: true
+    quant_stage_calls_llm: false

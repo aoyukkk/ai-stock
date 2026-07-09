@@ -1,0 +1,66 @@
+quant_factor:
+  factor_version: v0.3-phase4
+  weights:
+    technical: 0.25
+    capital: 0.25
+    emotion: 0.20
+    momentum: 0.15
+    risk: 0.15
+
+  normalize:
+    method: percentile
+    score_range:
+      min: 0
+      max: 100
+
+  filter:
+    exclude_st: true
+    exclude_suspended: true
+    min_listing_days: 60
+    min_daily_amount: 50000000
+
+  validation:
+    require_weight_sum_one: true
+    weight_tolerance: 0.0001
+    prevent_future_data_leakage: true
+
+technical_factor:
+  ma:
+    enabled: true
+    windows: [5, 20, 60]
+  macd:
+    enabled: true
+    fast: 12
+    slow: 26
+    signal: 9
+  rsi:
+    enabled: true
+    window: 14
+  atr:
+    enabled: true
+    window: 14
+  vwap:
+    enabled: true
+
+capital_factor:
+  main_money_flow:
+    enabled: true
+  volume_ratio:
+    enabled: true
+    window: 5
+  turnover_rate:
+    enabled: true
+
+emotion_factor:
+  limit_up_count:
+    enabled: true
+  limit_down_count:
+    enabled: true
+
+momentum_factor:
+  r5_weight: 0.60
+  r20_weight: 0.40
+
+risk_factor:
+  volatility_window: 20
+  drawdown_window: 20

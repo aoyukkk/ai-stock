@@ -1,0 +1,21 @@
+frontend:
+  stack: vue3_element_plus_electron
+  websocket_enabled: true
+  default_language: zh-CN
+  supported_languages:
+    - zh-CN
+    - en-US
+
+  pages:
+    dashboard: true
+    stock_ranking: true
+    trading_plan: true
+    order_monitor: true
+    manual_watch: true
+    virtual_trading: true
+    stock_detail: true
+    news_events: true
+    daily_review: true
+    memory_console: true
+    model_management: true
+    system_config: true

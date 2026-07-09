@@ -1,0 +1,76 @@
+system:
+  name: AI Trader Assistant
+  version: "0.3"
+  environment: development
+  timezone: Asia/Shanghai
+  language: zh-CN
+  log_level: INFO
+  trading_market: A_SHARE
+  first_stage_mode: HUMAN_REAL_TRADE_AI_PAPER_TRADE
+
+runtime:
+  execution_mode: manual
+  enable_scheduler: false
+  enable_auto_market_tasks: false
+
+manual_run:
+  enabled: true
+  allow_provider_selection: true
+  default_provider: mock
+
+configuration:
+  priority:
+    - web_ui
+    - database
+    - config_file
+    - default
+  require_config_history: true
+  hot_reload_enabled: true
+  editable_from_frontend: true
+
+safety:
+  enable_real_trading: false
+  ai_auto_real_order_enabled: false
+  require_human_confirmation: true
+  audit_all_ai_outputs: true
+  persist_prediction_record: true
+  persist_decision_snapshot: true
+  external_data_requires_adapter: true
+  llm_requires_gateway: true
+  order_price_requires_rule_engine: true
+
+schedule:
+  post_market_plan:
+    enabled: true
+    start_time: "15:30"
+  pre_market_recheck:
+    enabled: true
+    start_time: "09:00"
+    end_time: "09:25"
+  intraday_monitor:
+    enabled: true
+  noon_review:
+    enabled: true
+    start_time: "11:35"
+  daily_review:
+    enabled: true
+    start_time: "15:45"
+
+refresh_frequency:
+  full_market_light_quant_minutes: 60
+  final_recommend_pool_minutes: 30
+  manual_watchlist_minutes: 15
+  holding_minutes: 15
+  pending_order_minutes: 5
+  news_minutes: 15
+  open_close_high_frequency_minutes: 2
+
+trading_hours:
+  auction_open_start: "09:15"
+  auction_open_cancel_forbidden_start: "09:20"
+  auction_open_end: "09:25"
+  morning_start: "09:30"
+  morning_end: "11:30"
+  afternoon_start: "13:00"
+  close_auction_start: "14:57"
+  afternoon_end: "15:00"

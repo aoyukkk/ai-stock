@@ -1,0 +1,509 @@
+AI Trader Assistant Codex 分模块开发提示词
+Version: V0.3
+============================================================
+
+重要规则
+------------------------------------------------------------
+Codex 在执行任何阶段前必须阅读：
+1. PROJECT_SPECIFICATION.txt
+2. SYSTEM_CONFIG_DESIGN.txt
+3. DATABASE_AND_API_CONTRACTS.txt
+4. 当前阶段相关文档
+
+硬性要求：
+1. 不要一次重写整个项目。
+2. 只修改当前阶段相关文件。
+3. 不要删除已有测试。
+4. 不要硬编码配置。
+5. 外部数据源必须使用 Adapter。
+6. 模型调用必须经过 LLM Gateway。
+7. 挂单价必须由规则模块计算。
+8. LLM 只能解释/审核/风控挂单价。
+9. 所有 AI 建议必须保存 prediction_record 和 decision_snapshot。
+10. 每阶段完成后必须运行测试并输出开发报告。
+
+开发报告格式：
+Phase:
+Completed:
+Files changed:
+Features:
+Tests:
+Problems:
+Known limitations:
+Next step:
+Suggested git commit message:
+
+PHASE 0 项目初始化
+------------------------------------------------------------
+目标：创建基础项目结构。
+
+创建目录：
+backend/
+frontend/
+agents/
+quant/
+order_price/
+datasource/
+llm_gateway/
+memory/
+trading/
+database/
+review/
+config/
+tests/
+docs/
+logs/
+scripts/
+
+创建文件：
+README.md
+requirements.txt
+.env.example
+.gitignore
+pyproject.toml
+
+自测：
+python -m pytest
+
+验收：
+项目能安装依赖，pytest 能运行，即使暂时无测试也不能报导入错误。
+
+PHASE 1 后端基础
+------------------------------------------------------------
+目标：FastAPI 后端可启动。
+
+实现：
+backend/main.py
+backend/api/router.py
+backend/core/config.py
+backend/core/logging.py
+backend/core/response.py
+backend/core/exceptions.py
+
+接口：
+GET /health
+GET /api/version
+
+自测：
+uvicorn backend.main:app --reload
+curl http://127.0.0.1:8000/health
+pytest tests/test_health.py
+
+验收：
+返回 {"status":"ok"}。
+
+PHASE 2 配置系统
+------------------------------------------------------------
+目标：实现 Web UI > Database > Config File > Default 的配置优先级。
+
+实现：
+backend/core/config_service.py
+config/*.yaml
+database model: system_config, config_history
+API:
+GET /api/config
+GET /api/config/{key}
+PUT /api/config/{key}
+GET /api/config/history
+POST /api/config/rollback/{history_id}
+
+要求：
+- 修改必须写 config_history。
+- 权重类配置必须校验和为 1。
+- 支持热更新。
+
+自测：
+pytest tests/test_config_service.py
+
+PHASE 3 数据库基础
+------------------------------------------------------------
+目标：建立 SQLAlchemy ORM、session、迁移脚本。
+
+实现核心模型：
+stock_master
+stock_market_data
+news_raw
+news_event
+event_stock_link
+stock_factor_score
+stock_factor_detail
+ai_analysis_result
+stock_ai_score
+prediction_record
+decision_snapshot
+order_plan
+order_price_candidate
+order_plan_evaluation
+order_reassessment_log
+virtual_account
+virtual_order
+virtual_position
+virtual_trade_record
+manual_trade
+daily_review
+agent_memory_note
+memory_link
+llm_usage
+prompt_version
+config_history
+
+自测：
+- 创建 SQLite 测试库。
+- 插入股票、评分、挂单计划、记忆。
+- 查询成功。
+
+PHASE 4 数据源抽象
+------------------------------------------------------------
+目标：创建统一 DataProvider。
+
+实现：
+datasource/interfaces/market_provider.py
+datasource/interfaces/news_provider.py
+datasource/providers/mock_market.py
+datasource/providers/mock_news.py
+datasource/providers/ifind_provider.py placeholder
+
+接口：
+get_stock_list()
+get_realtime(stock_codes)
+get_kline(stock_code, start, end, freq)
+get_limit_price(stock_code)
+get_pre_market_auction(stock_codes)
+get_news(start, end)
+
+要求：
+- 第一版使用 Mock 可跑全流程。
+- 不依赖同花顺真实 API。
+
+自测：
+pytest tests/test_data_provider.py
+
+PHASE 5 量化初筛 Quant Engine
+------------------------------------------------------------
+目标：全A量化初筛，不调用 LLM。
+
+实现：
+quant/factors.py
+quant/normalizer.py
+quant/ranking.py
+quant/engine.py
+
+默认因子：
+technical, capital, emotion, momentum, risk
+
+要求：
+- 读取 config quant_top_n。
+- 权重来自配置。
+- 输出 Top Q。
+- 保存 stock_factor_score 和 stock_factor_detail。
+- 防止未来数据泄漏。
+
+自测：
+pytest tests/test_quant_engine.py
+验证 no LLM call。
+
+PHASE 6 LLM Gateway
+------------------------------------------------------------
+目标：统一模型调用系统。
+
+实现：
+llm_gateway/router.py
+llm_gateway/providers/mock.py
+llm_gateway/providers/deepseek.py
+llm_gateway/providers/openai.py
+llm_gateway/token_counter.py
+llm_gateway/cache.py
+llm_gateway/cost_control.py
+
+要求：
+- 支持 model_alias。
+- 支持 fallback。
+- 支持 request_hash 缓存。
+- 记录 llm_usage。
+- 测试时使用 mock。
+
+自测：
+pytest tests/test_llm_gateway.py
+
+PHASE 7 轻量 AI 二筛
+------------------------------------------------------------
+目标：Quant Top Q -> LLM Light Screening。
+
+实现：
+agents/light_screening_agent.py
+prompts/light_screening.yaml
+services/llm_screening_service.py
+
+要求：
+- 输入结构化摘要。
+- 输出 JSON。
+- 不处理全A，只处理 Top Q。
+- 默认模型 DeepSeek V4 Flash / mock。
+
+自测：
+pytest tests/test_light_screening.py
+
+PHASE 8 AI委员会
+------------------------------------------------------------
+目标：对 Top N 进行多 Agent 分析。
+
+实现：
+agents/technical_agent.py
+agents/news_agent.py
+agents/capital_agent.py
+agents/emotion_agent.py
+agents/overseas_agent.py
+agents/risk_agent.py
+agents/controller_agent.py
+agents/orchestrator.py
+
+要求：
+- Agent 不直接调用模型。
+- 输出统一 JSON。
+- Risk Agent 可否决。
+- Controller 保存 stock_ai_score。
+
+自测：
+pytest tests/test_agent_orchestrator.py
+
+PHASE 9 新闻事件处理
+------------------------------------------------------------
+目标：新闻清洗、实体抽取、股票映射、事件触发。
+
+实现：
+services/news_cleaner.py
+services/entity_linker.py
+services/event_classifier.py
+services/event_trigger_service.py
+
+要求：
+- 新闻进入 news_raw。
+- 事件进入 news_event。
+- 关系进入 event_stock_link。
+- 命中 Hot Pool 触发重评估。
+
+自测：
+pytest tests/test_news_event_pipeline.py
+
+PHASE 10 挂单价模块
+------------------------------------------------------------
+目标：规则生成三档挂单价。
+
+实现：
+order_price/atr_model.py
+order_price/support_resistance.py
+order_price/price_level_calculator.py
+order_price/execution_probability.py
+order_price/order_score.py
+order_price/order_plan_generator.py
+
+要求：
+- 不调用 LLM。
+- 输出 conservative/balanced/aggressive。
+- 验证 max_buy_price 不超过涨停价。
+- 验证 risk_reward。
+- 保存 order_plan 和 order_price_candidate。
+
+自测：
+pytest tests/test_order_price.py
+
+PHASE 11 风控与黑天鹅
+------------------------------------------------------------
+目标：RiskGate 和 Emergency Mode。
+
+实现：
+risk/risk_gate.py
+risk/event_rules.py
+risk/emergency_mode.py
+
+要求：
+- 支持 T+1 标签。
+- 支持 HIGH/BLACK_SWAN 阻断。
+- 支持数据冲突。
+- 支持撤单/改价建议。
+
+自测：
+pytest tests/test_risk_gate.py
+
+PHASE 12 虚拟盘 VirtualBroker
+------------------------------------------------------------
+目标：AI虚拟盘支持A股规则。
+
+实现：
+trading/broker_interface.py
+trading/virtual_broker.py
+trading/fill_model.py
+trading/cost_model.py
+trading/t_plus_one.py
+
+要求：
+- 100股整数倍。
+- T+1 available_quantity。
+- 涨跌停无法成交模拟。
+- 佣金、印花税、滑点。
+- 支持挂单、撤单、改价、部分成交。
+
+自测：
+pytest tests/test_virtual_broker.py
+
+PHASE 13 盘后计划工作流
+------------------------------------------------------------
+目标：完整生成次日交易计划草案。
+
+流程：
+收盘数据 -> 量化 Top Q -> LLM 二筛 -> AI委员会 -> 挂单价 -> 风控 -> 保存计划
+
+实现：
+services/post_market_workflow.py
+
+自测：
+pytest tests/test_post_market_workflow.py
+
+PHASE 14 盘前复核工作流
+------------------------------------------------------------
+目标：基于隔夜新闻、海外和竞价重评估挂单计划。
+
+实现：
+services/pre_market_recheck_workflow.py
+
+要求：
+- 保存 order_reassessment_log。
+- 输出 KEEP/CANCEL/REPRICE/BLOCK。
+
+自测：
+pytest tests/test_pre_market_recheck.py
+
+PHASE 15 盘中监控工作流
+------------------------------------------------------------
+目标：只监控 R/W/持仓/挂单/异常事件。
+
+实现：
+services/intraday_monitor.py
+scheduler/jobs.py
+
+要求：
+- 已挂单 5分钟刷新。
+- 持仓 15分钟刷新。
+- 推荐池 30分钟刷新。
+- 异常立即触发。
+
+自测：
+pytest tests/test_intraday_monitor.py
+
+PHASE 16 记忆系统
+------------------------------------------------------------
+目标：实现 V0.3 最小可用记忆系统。
+
+实现：
+memory/memory_manager.py
+memory/retriever.py
+memory/updater.py
+memory/quality.py
+memory/reflection_memory.py
+memory/temporal_relation.py
+
+要求：
+- 保存 agent_memory_note。
+- 检索 top_k。
+- 过滤冲突和低质量记忆。
+- 记录 memory_retrieval_log。
+
+自测：
+pytest tests/test_memory_system.py
+
+PHASE 17 每日复盘
+------------------------------------------------------------
+目标：复盘 AI 虚拟盘与人工实盘。
+
+实现：
+review/daily_review_service.py
+review/order_plan_evaluator.py
+review/prediction_evaluator.py
+
+要求：
+- 评价挂单价质量。
+- 评价预测正确性。
+- 生成 reflection memory。
+
+自测：
+pytest tests/test_daily_review.py
+
+PHASE 18 后端 API 完整化
+------------------------------------------------------------
+目标：实现前端所需 API。
+
+实现 routers：
+config, stocks, pools, order_plans, virtual_trading, manual_trades, models, memory, news, reviews
+
+自测：
+pytest tests/test_api_contracts.py
+
+PHASE 19 前端 Vue 控制台
+------------------------------------------------------------
+目标：实现交易员工作台。
+
+页面：
+Dashboard
+Stock Ranking
+Trading Plan
+Order Monitor
+Manual Watch
+Virtual Trading
+Stock Detail
+News Events
+Daily Review
+Memory Console
+Model Management
+System Config
+
+要求：
+- 所有关键参数可见。
+- 可修改配置并写 history。
+- 模型可选择。
+- WebSocket 风险提醒。
+
+自测：
+npm run test
+npm run build
+
+PHASE 20 Electron 打包
+------------------------------------------------------------
+目标：Windows 桌面应用。
+
+实现：
+- Electron main process
+- 启动本地 FastAPI 后端
+- 打包前端
+- 配置本地路径
+
+自测：
+npm run electron:build
+在干净 Windows 环境运行。
+
+PHASE 21 稳定性与日志
+------------------------------------------------------------
+目标：生产加固。
+
+实现：
+- 全局异常处理
+- 日志轮转
+- 数据库备份脚本
+- LLM成本报警
+- 数据源异常报警
+- 24小时稳定性模拟
+
+自测：
+pytest tests/test_stability.py
+
+PHASE 22 文档与交付
+------------------------------------------------------------
+目标：完善 README、部署说明、运维说明。
+
+输出：
+- README.md
+- docs/deployment.md
+- docs/user_manual.md
+- docs/developer_guide.md
+- docs/troubleshooting.md
+
+END
