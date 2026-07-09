@@ -13,6 +13,11 @@ class MarketStockInfo(DataSourceModel):
     market: str
     industry: str = ""
     status: str = "NORMAL"
+    latest_price: float | None = None
+    amount: float | None = None
+    volume: int | None = None
+    source: str = ""
+    raw_data: dict | None = None
 
 
 class RealtimeQuote(DataSourceModel):
@@ -26,6 +31,8 @@ class RealtimeQuote(DataSourceModel):
     amount: float
     change_percent: float
     datetime: str
+    source: str = ""
+    raw_data: dict | None = None
 
 
 class KLineBar(DataSourceModel):
@@ -40,6 +47,8 @@ class KLineBar(DataSourceModel):
     amount: float
     turnover_rate: float
     change_percent: float
+    source: str = ""
+    raw_data: dict | None = None
 
 
 class FinanceData(DataSourceModel):
@@ -50,6 +59,8 @@ class FinanceData(DataSourceModel):
     pb: float
     roe: float
     debt_ratio: float
+    source: str = ""
+    raw_data: dict | None = None
 
 
 class CapitalFlowData(DataSourceModel):
@@ -58,6 +69,8 @@ class CapitalFlowData(DataSourceModel):
     large_order_net_inflow: float
     amount: float
     turnover_rate: float
+    source: str = ""
+    raw_data: dict | None = None
 
 
 class MarketEmotionData(DataSourceModel):
@@ -66,6 +79,10 @@ class MarketEmotionData(DataSourceModel):
     consecutive_limit_up_height: int
     break_board_rate: float
     hot_industries: list[str] = Field(default_factory=list)
+    source: str = ""
+    source_status: str = "ok"
+    message: str = ""
+    raw_data: dict | None = None
 
 
 class LimitPriceData(DataSourceModel):
@@ -73,6 +90,10 @@ class LimitPriceData(DataSourceModel):
     limit_up_price: float
     limit_down_price: float
     trade_date: str
+    source: str = ""
+    source_status: str = "ok"
+    message: str = ""
+    raw_data: dict | None = None
 
 
 class PreMarketAuctionData(DataSourceModel):
@@ -83,3 +104,5 @@ class PreMarketAuctionData(DataSourceModel):
     auction_amount: float
     auction_change_percent: float
     auction_strength_score: float
+    source: str = ""
+    raw_data: dict | None = None

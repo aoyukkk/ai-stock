@@ -28,6 +28,7 @@ No endpoint below performs real trading. No endpoint requires or returns a real 
 | Data Sources | GET | `/api/v1/data-sources/mock/quotes` | Mock quote snapshot | Mock Provider only | No | No |
 | Quant | GET | `/api/v1/quant/scan` | Rule-based quant ranking | Mock data only | Optional when `persist=true` | No |
 | Quant | GET | `/api/v1/quant/config` | Quant config summary | Mock-only | No | No |
+| Quant | POST | `/api/pools/run-quant-real` | Manual AKShare/BaoStock quant Top500 debug run | Manual real data debug, no LLM | Optional when `save_to_db=true` | No |
 | LLM | GET | `/api/v1/llm/status` | LLM Gateway status | Mock LLM only | No | No |
 | LLM | POST | `/api/v1/llm/mock-chat` | Mock chat response | Mock LLM only | Optional usage log | No |
 | LLM | GET | `/api/v1/llm/usage-summary` | Mock usage summary | Mock LLM only | No | No |

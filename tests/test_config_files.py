@@ -88,6 +88,7 @@ def test_key_v03_config_skeletons_exist() -> None:
     risk = load_yaml(CONFIG_DIR / "risk.yaml")
     ui = load_yaml(CONFIG_DIR / "ui.yaml")
     frontend = load_yaml(CONFIG_DIR / "frontend.yaml")
+    data_sources = load_yaml(CONFIG_DIR / "data_sources.yaml")
 
     assert system["configuration"]["priority"] == [
         "web_ui",
@@ -115,6 +116,10 @@ def test_key_v03_config_skeletons_exist() -> None:
     assert risk["risk"]["position_limit_mode"] == "advisory_only"
     assert ui["ui"]["config_change"]["write_history"] is True
     assert "zh-CN" in frontend["frontend"]["supported_languages"]
+    assert data_sources["data_sources"]["market_primary"]["provider"] == "akshare"
+    assert data_sources["data_sources"]["market_primary"]["manual_only"] is True
+    assert data_sources["data_sources"]["market_history"]["provider"] == "baostock"
+    assert data_sources["data_sources"]["market_history"]["manual_only"] is True
 
 
 def test_real_trading_defaults_disabled() -> None:

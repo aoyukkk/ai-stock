@@ -1,18 +1,43 @@
 data_sources:
   adapter_required: true
-  phase0_mode: mock_only
+  mode: manual_debug
+  phase0_mode: manual_debug_with_mock_fallback
 
   market_primary:
-    provider: ifind
-    enabled: false
+    provider: akshare
+    enabled: true
+    manual_only: true
+
+  market_history:
+    provider: baostock
+    enabled: true
+    manual_only: true
 
   market_fallback:
-    - provider: tushare
-      enabled: false
-    - provider: akshare
-      enabled: false
     - provider: mock
       enabled: true
+
+  ifind:
+    enabled: false
+    reason: "iFinD API not approved yet"
+
+  akshare:
+    enabled: true
+    manual_only: true
+    cache_enabled: true
+    cache_path: data/cache/akshare
+    request_interval_seconds: 0.2
+    proxy_mode: env
+    allow_no_proxy_test: true
+    request_timeout_seconds: 10
+
+  baostock:
+    enabled: true
+    manual_only: true
+    cache_enabled: true
+    cache_path: data/cache/baostock
+    request_interval_seconds: 0.2
+    max_lookback_days: 15
 
   news:
     - provider: ths_news

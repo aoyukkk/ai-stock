@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.datasource import router as legacy_datasource_router
 from backend.api.manual_run import router as manual_run_router
+from backend.api.real_quant import router as real_quant_router
 from backend.api.router import api_router, api_v1_router
 from backend.api.v1.health import router as health_router
 from backend.core.config import AppConfig, get_app_config
@@ -36,6 +37,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(manual_run_router)
     app.include_router(legacy_datasource_router)
+    app.include_router(real_quant_router)
     app.include_router(api_router)
     app.include_router(api_v1_router)
     return app

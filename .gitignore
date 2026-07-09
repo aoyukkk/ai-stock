@@ -23,6 +23,9 @@ logs/*
 !logs/.gitkeep
 data/*
 !data/.gitkeep
+data/cache/
+data/reports/*.tmp
+data/reports/*_debug_raw.json
 *.db
 *.sqlite
 

@@ -91,27 +91,46 @@ def _check_config_files(root: Path, report: CheckReport) -> None:
     else:
         report.add_error("config/llm.yaml llm.mock_only must be true")
 
-    enabled_real_sources = [
+    provider_configs = list(_iter_provider_configs(data_sources))
+    enabled_real_sources = sorted({
         provider
-        for provider, enabled in _iter_provider_enabled(data_sources)
+        for provider, enabled, _manual_only in provider_configs
         if provider != "mock" and enabled
-    ]
-    mock_enabled = any(provider == "mock" and enabled for provider, enabled in _iter_provider_enabled(data_sources))
-    if mock_enabled and not enabled_real_sources:
-        report.add_info("data sources are mock-only")
+    })
+    unsafe_real_sources = sorted({
+        provider
+        for provider, enabled, manual_only in provider_configs
+        if provider != "mock" and enabled and not manual_only
+    })
+    mock_enabled = any(provider == "mock" and enabled for provider, enabled, _ in provider_configs)
+    if mock_enabled and not unsafe_real_sources:
+        if enabled_real_sources:
+            report.add_info(f"manual debug data sources enabled: {enabled_real_sources}")
+        else:
+            report.add_info("data sources are mock-only")
     else:
-        report.add_error(f"non-mock data sources enabled: {enabled_real_sources}")
+        report.add_error(f"non-manual real data sources enabled: {unsafe_real_sources}")
 
 
-def _iter_provider_enabled(value):
+def _iter_provider_configs(value, inherited_manual_only: bool = False):
     if isinstance(value, dict):
+        manual_only = inherited_manual_only or bool(value.get("manual_only", False))
         if "provider" in value:
-            yield str(value.get("provider")), bool(value.get("enabled", False))
+            yield str(value.get("provider")), bool(value.get("enabled", False)), manual_only
+        elif any(key in value for key in ("akshare", "baostock", "ifind", "tushare")):
+            for provider_name in ("akshare", "baostock", "ifind", "tushare"):
+                provider_value = value.get(provider_name)
+                if isinstance(provider_value, dict) and "enabled" in provider_value:
+                    yield (
+                        provider_name,
+                        bool(provider_value.get("enabled", False)),
+                        manual_only or bool(provider_value.get("manual_only", False)),
+                    )
         for child in value.values():
-            yield from _iter_provider_enabled(child)
+            yield from _iter_provider_configs(child, manual_only)
     elif isinstance(value, list):
         for child in value:
-            yield from _iter_provider_enabled(child)
+            yield from _iter_provider_configs(child, inherited_manual_only)
 
 
 def _check_sensitive_env_values(root: Path, report: CheckReport) -> None:

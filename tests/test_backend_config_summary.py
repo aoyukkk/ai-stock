@@ -35,7 +35,8 @@ def test_config_summary_returns_safe_summary() -> None:
     assert data["llm"]["mock_enabled"] is True
     assert data["llm"]["real_providers_enabled"] == []
     assert data["data_sources"]["mock_enabled"] is True
-    assert data["data_sources"]["real_sources_enabled"] == []
+    assert set(data["data_sources"]["manual_debug_sources"]) == {"akshare", "baostock"}
+    assert set(data["data_sources"]["real_sources_enabled"]) == {"akshare", "baostock"}
     assert data["virtual_trading"]["enabled"] is True
     assert data["virtual_trading"]["real_trading_enabled"] is False
 

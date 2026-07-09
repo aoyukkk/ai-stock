@@ -264,24 +264,40 @@ def _summarize_llm(llm: dict[str, Any]) -> dict[str, Any]:
 
 def _summarize_data_sources(data_sources: dict[str, Any]) -> dict[str, Any]:
     providers = list(_iter_provider_configs(data_sources))
-    real_sources_enabled = [
+    real_sources_enabled = sorted({
         provider
-        for provider, enabled in providers
+        for provider, enabled, _manual_only in providers
         if provider != "mock" and enabled
-    ]
-    mock_enabled = any(provider == "mock" and enabled for provider, enabled in providers)
+    })
+    manual_debug_sources = sorted({
+        provider
+        for provider, enabled, manual_only in providers
+        if provider != "mock" and enabled and manual_only
+    })
+    mock_enabled = any(provider == "mock" and enabled for provider, enabled, _ in providers)
     return {
-        "mode": data_sources.get("phase0_mode", "mock_only"),
+        "mode": data_sources.get("mode") or data_sources.get("phase0_mode", "mock_only"),
         "mock_enabled": mock_enabled,
         "real_sources_enabled": real_sources_enabled,
+        "manual_debug_sources": manual_debug_sources,
         "enabled_data_sources": (["mock"] if mock_enabled else []) + real_sources_enabled,
     }
 
 
 def _iter_provider_configs(obj: Any):
     if isinstance(obj, dict):
+        manual_only = bool(obj.get("manual_only", False))
         if "provider" in obj:
-            yield str(obj.get("provider")), bool(obj.get("enabled", False))
+            yield str(obj.get("provider")), bool(obj.get("enabled", False)), manual_only
+        elif any(key in obj for key in ("akshare", "baostock", "ifind", "tushare")):
+            for provider_name in ("akshare", "baostock", "ifind", "tushare"):
+                provider_value = obj.get(provider_name)
+                if isinstance(provider_value, dict) and "enabled" in provider_value:
+                    yield (
+                        provider_name,
+                        bool(provider_value.get("enabled", False)),
+                        bool(provider_value.get("manual_only", False)),
+                    )
         for value in obj.values():
             yield from _iter_provider_configs(value)
     elif isinstance(obj, list):

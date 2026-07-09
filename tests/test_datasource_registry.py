@@ -28,13 +28,14 @@ def test_unregistered_provider_raises_clear_error() -> None:
         registry.get_provider("missing")
 
 
-def test_real_providers_are_not_enabled_by_default() -> None:
+def test_real_providers_are_manual_debug_or_disabled_by_default() -> None:
     registry = create_default_registry()
     statuses = {provider.name: provider.health_check() for provider in registry.list_providers()}
 
     assert statuses["ths"].enabled is False
     assert statuses["tushare"].enabled is False
-    assert statuses["akshare"].enabled is False
+    assert statuses["akshare"].enabled is True
+    assert statuses["akshare"].status == "manual_debug"
     assert statuses["ths_news"].enabled is False
     assert statuses["okx"].enabled is False
 
