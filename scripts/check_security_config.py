@@ -24,6 +24,7 @@ from scripts._common import (
 
 SENSITIVE_ENV_PARTS = ("API_KEY", "PASSWORD", "SECRET", "TOKEN", "PASSPHRASE")
 SAFE_PLACEHOLDERS = {"", "mock", "disabled", "changeme", "placeholder", "example"}
+ALLOWED_LOCAL_SECRET_KEYS = {"TUSHARE_TOKEN"}
 
 
 def run_checks(root: Path = ROOT_DIR) -> CheckReport:
@@ -143,7 +144,9 @@ def _check_sensitive_env_values(root: Path, report: CheckReport) -> None:
     for key, value in values.items():
         if any(part in key.upper() for part in SENSITIVE_ENV_PARTS):
             normalized = value.strip().lower()
-            if normalized not in SAFE_PLACEHOLDERS:
+            if key in ALLOWED_LOCAL_SECRET_KEYS and normalized not in SAFE_PLACEHOLDERS:
+                report.add_info(f"local manual data-source credential configured: {key}")
+            elif normalized not in SAFE_PLACEHOLDERS:
                 report.add_error(f"sensitive environment value is populated: {key}")
 
 

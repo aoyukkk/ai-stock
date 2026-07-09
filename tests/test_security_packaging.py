@@ -56,6 +56,32 @@ def test_security_check_accepts_minimal_safe_tree(tmp_path: Path) -> None:
     assert report.ok
 
 
+def test_security_check_allows_local_tushare_token_only(tmp_path: Path) -> None:
+    _write_minimal_tree(tmp_path, enable_real_trading="false")
+    (tmp_path / ".env").write_text(
+        "ENABLE_REAL_TRADING=false\nTUSHARE_TOKEN=local-token-for-manual-data\n",
+        encoding="utf-8",
+    )
+
+    report = run_checks(tmp_path)
+
+    assert report.ok
+    assert any("TUSHARE_TOKEN" in info for info in report.info)
+
+
+def test_security_check_rejects_other_populated_secrets(tmp_path: Path) -> None:
+    _write_minimal_tree(tmp_path, enable_real_trading="false")
+    (tmp_path / ".env").write_text(
+        "ENABLE_REAL_TRADING=false\nOPENAI_API_KEY=real-looking-key\n",
+        encoding="utf-8",
+    )
+
+    report = run_checks(tmp_path)
+
+    assert not report.ok
+    assert any("OPENAI_API_KEY" in error for error in report.errors)
+
+
 def _write_minimal_tree(root: Path, enable_real_trading: str) -> None:
     (root / "config").mkdir(parents=True)
     (root / "frontend").mkdir()

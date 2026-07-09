@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import os
 import time
@@ -116,6 +117,11 @@ class TushareMarketDataProvider(MarketDataProvider):
         self.last_error_message: str | None = None
         self.last_fallback_used = False
         self.last_fallback_reason: str | None = None
+        self.cache_hit_count = 0
+        self.cache_miss_count = 0
+        self.cache_refresh_count = 0
+        self.cache_insufficient_count = 0
+        self.api_status_counts: dict[str, int] = {}
         self._pro_client: Any | None = None
         self._fallback = MockMarketDataProvider()
 
@@ -144,6 +150,7 @@ class TushareMarketDataProvider(MarketDataProvider):
             "cache_enabled": self.cache_enabled,
             "request_interval_seconds": self.request_interval_seconds,
             "timeout_seconds": self.timeout_seconds,
+            "api_status_counts": dict(self.api_status_counts),
         }
 
     def token_configured(self) -> bool:
@@ -169,12 +176,16 @@ class TushareMarketDataProvider(MarketDataProvider):
                 if limit is not None:
                     records = records[:limit]
                 self._mark_success("cache")
-                return _endpoint_result(api_name, records, required, source_status="cache")
+                self.cache_hit_count += 1
+                result = _endpoint_result(api_name, records, required, source_status="cache")
+                self._record_api_status(result.status)
+                return result
             except (OSError, json.JSONDecodeError, TypeError):
                 pass
 
         if not self._token():
             self._mark_error("MissingToken", MISSING_TOKEN_MESSAGE)
+            self._record_api_status("not_configured")
             return TushareEndpointResult(
                 api_name=api_name,
                 status="not_configured",
@@ -192,9 +203,14 @@ class TushareMarketDataProvider(MarketDataProvider):
                     records = records[:limit]
                 result = _endpoint_result(api_name, records, required)
                 self._mark_success(result.status)
+                if self.cache_enabled:
+                    self.cache_miss_count += 1
                 if self.cache_enabled and result.status in {"available", "empty"}:
                     self.cache_dir.mkdir(parents=True, exist_ok=True)
+                    if cache_path.exists():
+                        self.cache_refresh_count += 1
                     cache_path.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+                self._record_api_status(result.status)
                 return result
             except Exception as exc:
                 last_exc = exc
@@ -206,6 +222,7 @@ class TushareMarketDataProvider(MarketDataProvider):
         error_type = _error_type(last_exc)
         error_message = self._redact(str(last_exc))
         self._mark_error(error_type, error_message)
+        self._record_api_status(status)
         return TushareEndpointResult(
             api_name=api_name,
             status=status,
@@ -573,7 +590,8 @@ class TushareMarketDataProvider(MarketDataProvider):
 
     def _cache_path(self, api_name: str, params: dict[str, Any], fields: str | None) -> Path:
         key = json.dumps({"api_name": api_name, "params": params, "fields": fields}, ensure_ascii=False, sort_keys=True)
-        return self.cache_dir / f"{_safe_cache_key(key)}.json"
+        digest = hashlib.sha1(key.encode("utf-8")).hexdigest()
+        return self.cache_dir / f"{api_name}_{digest}.json"
 
     def _mark_success(self, status: str) -> None:
         self.last_source_status = status
@@ -594,6 +612,16 @@ class TushareMarketDataProvider(MarketDataProvider):
     def _respect_request_interval(self) -> None:
         if self.request_interval_seconds > 0:
             time.sleep(self.request_interval_seconds)
+
+    def reset_cache_stats(self) -> None:
+        self.cache_hit_count = 0
+        self.cache_miss_count = 0
+        self.cache_refresh_count = 0
+        self.cache_insufficient_count = 0
+        self.api_status_counts = {}
+
+    def _record_api_status(self, status: str) -> None:
+        self.api_status_counts[status] = self.api_status_counts.get(status, 0) + 1
 
 
 TushareProvider = TushareMarketDataProvider

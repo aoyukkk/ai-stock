@@ -77,6 +77,7 @@ def run_real_quant_top500(
     effective_factor_workers = _effective_factor_workers(factor_workers)
     performance = _initial_performance(effective_data_fetch_workers, effective_factor_workers)
     kline_fetch_attempts = 0
+    baostock_backup_used_count = 0
 
     if int(data_fetch_workers or 1) > effective_data_fetch_workers:
         warnings.append("data_fetch_workers reduced to 1 for BaoStock session safety.")
@@ -153,6 +154,7 @@ def run_real_quant_top500(
             filtered_count=0,
             scored_count=0,
             top_n=top_n,
+            sample_limit=sample_limit,
             selected=[],
             skipped_count=0,
             failed_count=1,
@@ -174,6 +176,8 @@ def run_real_quant_top500(
             fallback_reason="; ".join(fallback_reasons),
             tushare_permission_summary=report_context["tushare_permission_summary"],
             factor_data_coverage=factor_data_coverage,
+            tushare_api_counts=_tushare_api_counts(market_provider, history, backup_history),
+            baostock_backup_used_count=baostock_backup_used_count,
         )
         _write_report(output_path, report, performance, run_started)
         return report
@@ -220,6 +224,8 @@ def run_real_quant_top500(
                     kline_fetch_attempts += 1
                 if stock_fallback_used:
                     fallback_used = True
+                    if kline_source == "baostock":
+                        baostock_backup_used_count += 1
                     fallback_reasons.append(f"{stock.code}:{stock_fallback_reason}")
                 if kline_source == "tushare" and bars:
                     factor_data_coverage["daily"] = True
@@ -297,6 +303,7 @@ def run_real_quant_top500(
         filtered_count=filtered_count,
         scored_count=len(results),
         top_n=top_n,
+        sample_limit=sample_limit,
         selected=selected,
         skipped_count=skipped_count,
         failed_count=failed_count,
@@ -318,6 +325,8 @@ def run_real_quant_top500(
         fallback_reason="; ".join(fallback_reasons[:20]),
         tushare_permission_summary=report_context["tushare_permission_summary"],
         factor_data_coverage=factor_data_coverage,
+        tushare_api_counts=_tushare_api_counts(market_provider, history, backup_history),
+        baostock_backup_used_count=baostock_backup_used_count,
     )
     _write_report(output_path, report, performance, run_started)
     return report
@@ -475,6 +484,8 @@ def _initial_performance(data_fetch_workers: int, factor_compute_workers: int) -
 def _initial_factor_data_coverage() -> dict[str, bool]:
     return {
         "daily": False,
+        "adj_factor": False,
+        "stk_limit": False,
         "daily_basic": False,
         "moneyflow": False,
         "concept": False,
@@ -525,6 +536,25 @@ def _merge_cache_stats(performance: dict[str, Any], *providers) -> None:
         int(getattr(provider, "cache_insufficient_count", 0)) for provider in providers
     )
     performance["cache_refresh_count"] = sum(int(getattr(provider, "cache_refresh_count", 0)) for provider in providers)
+
+
+def _tushare_api_counts(*providers) -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for provider in providers:
+        if provider is None or not isinstance(provider, TushareMarketDataProvider):
+            continue
+        for status, count in getattr(provider, "api_status_counts", {}).items():
+            totals[status] = totals.get(status, 0) + int(count)
+    error_count = sum(
+        count
+        for status, count in totals.items()
+        if status not in {"available", "empty", "cache"}
+    )
+    return {
+        "success": totals.get("available", 0) + totals.get("cache", 0),
+        "empty": totals.get("empty", 0),
+        "error": error_count,
+    }
 
 
 def _finalize_performance(
@@ -592,23 +622,33 @@ def _filter_stock_universe(stocks: list[MarketStockInfo]) -> list[MarketStockInf
 
 
 def _safe_realtime(provider, stock: MarketStockInfo, latest_bar: CanonicalKLineBar) -> CanonicalRealtimeQuote:
+    if isinstance(provider, TushareMarketDataProvider):
+        return _quote_from_latest_bar(stock, latest_bar, reason="tushare_realtime_derived_from_cached_kline")
     try:
         return provider.get_realtime(stock.code)
     except Exception:
-        return CanonicalRealtimeQuote(
-            stock_code=stock.code,
-            price=latest_bar.close,
-            open=latest_bar.open,
-            high=latest_bar.high,
-            low=latest_bar.low,
-            pre_close=latest_bar.pre_close,
-            volume=latest_bar.volume,
-            amount=latest_bar.amount,
-            change_percent=latest_bar.change_percent,
-            datetime=latest_bar.datetime,
-            source="derived_from_kline",
-            raw_data={"reason": "realtime unavailable"},
-        )
+        return _quote_from_latest_bar(stock, latest_bar, reason="realtime unavailable")
+
+
+def _quote_from_latest_bar(
+    stock: MarketStockInfo,
+    latest_bar: CanonicalKLineBar,
+    reason: str,
+) -> CanonicalRealtimeQuote:
+    return CanonicalRealtimeQuote(
+        stock_code=stock.code,
+        price=latest_bar.close,
+        open=latest_bar.open,
+        high=latest_bar.high,
+        low=latest_bar.low,
+        pre_close=latest_bar.pre_close,
+        volume=latest_bar.volume,
+        amount=latest_bar.amount,
+        change_percent=latest_bar.change_percent,
+        datetime=latest_bar.datetime,
+        source="derived_from_kline",
+        raw_data={"reason": reason},
+    )
 
 
 def _safe_market_emotion(provider) -> MarketEmotionData | None:
@@ -755,6 +795,7 @@ def _build_report(
     filtered_count: int,
     scored_count: int,
     top_n: int,
+    sample_limit: int,
     selected: list,
     skipped_count: int,
     failed_count: int,
@@ -776,7 +817,10 @@ def _build_report(
     fallback_reason: str | None = None,
     tushare_permission_summary: dict[str, Any] | None = None,
     factor_data_coverage: dict[str, bool] | None = None,
+    tushare_api_counts: dict[str, int] | None = None,
+    baostock_backup_used_count: int = 0,
 ) -> dict[str, Any]:
+    api_counts = tushare_api_counts or {"success": 0, "empty": 0, "error": 0}
     return {
         "provider": provider,
         "history_provider": history_provider,
@@ -789,12 +833,17 @@ def _build_report(
         "akshare_proxy_env_detected": akshare_proxy_env_detected,
         "fallback_used": fallback_used,
         "fallback_reason": fallback_reason or "",
+        "baostock_backup_used_count": baostock_backup_used_count,
         "tushare_permission_summary": tushare_permission_summary or {},
+        "tushare_api_success_count": api_counts.get("success", 0),
+        "tushare_api_empty_count": api_counts.get("empty", 0),
+        "tushare_api_error_count": api_counts.get("error", 0),
         "factor_data_coverage": factor_data_coverage or _initial_factor_data_coverage(),
         "universe_count": universe_count,
         "filtered_count": filtered_count,
         "scored_count": scored_count,
         "top_n": top_n,
+        "sample_limit": sample_limit,
         "top_count": len(selected),
         "skipped_count": skipped_count,
         "failed_count": failed_count,
