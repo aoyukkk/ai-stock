@@ -8,3 +8,4 @@ SQLAlchemy>=2.0,<3.0
 akshare
 baostock
 pandas
+tushare

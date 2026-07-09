@@ -14,8 +14,9 @@ from scripts.run_real_quant_top500 import _parse_bool_arg
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke wrapper for real quant Top500 debug run.")
-    parser.add_argument("--provider", choices=["mock", "akshare", "baostock"], default="akshare")
-    parser.add_argument("--history-provider", choices=["mock", "akshare", "baostock"], default="baostock")
+    parser.add_argument("--provider", choices=["mock", "akshare", "baostock", "tushare"], default="tushare")
+    parser.add_argument("--history-provider", choices=["mock", "akshare", "baostock", "tushare"], default="tushare")
+    parser.add_argument("--backup-history-provider", choices=["mock", "akshare", "baostock", "tushare"], default="baostock")
     parser.add_argument("--top-n", type=int, default=500)
     parser.add_argument("--sample-limit", type=int, default=0)
     parser.add_argument("--start-date", default=None)
@@ -33,6 +34,7 @@ def main() -> int:
     report = run_real_quant_top500(
         provider=args.provider,
         history_provider=args.history_provider,
+        backup_history_provider=args.backup_history_provider,
         top_n=args.top_n,
         sample_limit=args.sample_limit,
         start_date=args.start_date,
@@ -51,9 +53,11 @@ def main() -> int:
     print(
         "summary: "
         f"provider={report['provider']} history_provider={report['history_provider']} "
+        f"backup_history_provider={report.get('backup_history_provider', args.backup_history_provider)} "
         f"universe_count={report['universe_count']} filtered_count={report['filtered_count']} "
         f"scored_count={report['scored_count']} top_count={report['top_count']} "
         f"no_llm_call_verified={report['no_llm_call_verified']} "
+        f"fallback_used={report.get('fallback_used', False)} "
         f"total_seconds={performance.get('total_seconds', 0.0)} "
         f"cache_hit_count={performance.get('cache_hit_count', 0)} "
         f"cache_miss_count={performance.get('cache_miss_count', 0)} "

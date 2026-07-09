@@ -4,14 +4,23 @@ data_sources:
   phase0_mode: manual_debug_with_mock_fallback
 
   market_primary:
-    provider: akshare
+    provider: tushare
     enabled: true
     manual_only: true
 
   market_history:
-    provider: baostock
+    provider: tushare
     enabled: true
     manual_only: true
+
+  market_backup:
+    - provider: baostock
+      enabled: true
+      manual_only: true
+    - provider: akshare
+      enabled: false
+      manual_only: true
+      reason: "Disabled due to EastMoney/proxy route issue"
 
   market_fallback:
     - provider: mock
@@ -21,9 +30,21 @@ data_sources:
     enabled: false
     reason: "iFinD API not approved yet"
 
-  akshare:
+  tushare:
     enabled: true
     manual_only: true
+    token_env: TUSHARE_TOKEN
+    cache_enabled: true
+    cache_path: data/cache/tushare
+    request_interval_seconds: 0.25
+    max_retry: 3
+    timeout_seconds: 30
+    permission_probe_enabled: true
+
+  akshare:
+    enabled: false
+    manual_only: true
+    reason: "Disabled due to EastMoney/proxy route issue"
     cache_enabled: true
     cache_path: data/cache/akshare
     request_interval_seconds: 0.2

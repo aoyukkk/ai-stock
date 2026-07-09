@@ -22,7 +22,7 @@ def test_datasource_providers_returns_debug_providers() -> None:
     response = client.get("/api/datasource/providers")
 
     names = {provider["name"] for provider in response.json()["data"]["providers"]}
-    assert {"mock", "akshare", "baostock", "ths_stub"}.issubset(names)
+    assert {"mock", "tushare", "akshare", "baostock", "ths_stub"}.issubset(names)
 
 
 def test_datasource_mock_stock_list_returns_data() -> None:

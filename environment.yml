@@ -16,3 +16,4 @@ dependencies:
       - akshare
       - baostock
       - pandas
+      - tushare

@@ -16,6 +16,7 @@ if str(ROOT_BOOTSTRAP) not in sys.path:
 from datasource.akshare_provider import AKShareMarketDataProvider
 from datasource.baostock_provider import BaoStockMarketDataProvider
 from datasource.mock.market_provider import MockMarketDataProvider
+from datasource.tushare_provider import TushareMarketDataProvider
 from datasource.models.market import (
     CapitalFlowData,
     FinanceData,
@@ -43,8 +44,9 @@ MIN_KLINE_BARS = 20
 
 
 def run_real_quant_top500(
-    provider: str = "akshare",
-    history_provider: str = "baostock",
+    provider: str = "tushare",
+    history_provider: str = "tushare",
+    backup_history_provider: str | None = "baostock",
     top_n: int = 500,
     sample_limit: int = 0,
     start_date: str | None = None,
@@ -66,6 +68,7 @@ def run_real_quant_top500(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     Path("data/cache/akshare").mkdir(parents=True, exist_ok=True)
     Path("data/cache/baostock").mkdir(parents=True, exist_ok=True)
+    Path("data/cache/tushare").mkdir(parents=True, exist_ok=True)
 
     warnings: list[str] = []
     errors_sample: list[dict[str, Any]] = []
@@ -92,6 +95,18 @@ def run_real_quant_top500(
         use_cache=use_cache,
         refresh_cache=refresh_cache,
     )
+    backup_history = (
+        _provider(
+            backup_history_provider,
+            akshare_no_proxy=akshare_no_proxy,
+            use_cache=use_cache,
+            refresh_cache=refresh_cache,
+        )
+        if backup_history_provider
+        else None
+    )
+    if isinstance(history, TushareMarketDataProvider):
+        history.backup_provider = backup_history
     quant_config = load_quant_config()
     engine = QuantRankingEngine(config=quant_config)
     quant_mode = _quant_mode(provider, history_provider)
@@ -101,7 +116,11 @@ def run_real_quant_top500(
         "baostock_date_attempts": [],
         "akshare_proxy_mode": "no_proxy" if akshare_no_proxy else "env",
         "akshare_proxy_env_detected": _proxy_env_detected_from_provider(market_provider, history),
+        "tushare_permission_summary": {},
     }
+    fallback_used = False
+    fallback_reasons: list[str] = []
+    factor_data_coverage = _initial_factor_data_coverage()
     if quant_mode == "baostock_historical_degraded":
         warnings.extend(
             [
@@ -122,13 +141,14 @@ def run_real_quant_top500(
     except Exception as exc:
         performance["universe_fetch_seconds"] = _round_seconds(time.perf_counter() - universe_started)
         _append_error(errors_sample, provider, exc.__class__.__name__, str(exc))
-        _merge_provider_diagnostics(report_context, market_provider, history)
-        _merge_cache_stats(performance, market_provider, history)
+        _merge_provider_diagnostics(report_context, market_provider, history, backup_history)
+        _merge_cache_stats(performance, market_provider, history, backup_history)
         _finalize_performance(performance, run_started, scored_count=0, kline_fetch_attempts=0)
         finished_at = datetime.now(timezone.utc)
         report = _build_report(
             provider=provider,
             history_provider=history_provider,
+            backup_history_provider=backup_history_provider,
             universe_count=0,
             filtered_count=0,
             scored_count=0,
@@ -150,10 +170,14 @@ def run_real_quant_top500(
             akshare_proxy_mode=report_context["akshare_proxy_mode"],
             akshare_proxy_env_detected=report_context["akshare_proxy_env_detected"],
             performance=performance,
+            fallback_used=fallback_used,
+            fallback_reason="; ".join(fallback_reasons),
+            tushare_permission_summary=report_context["tushare_permission_summary"],
+            factor_data_coverage=factor_data_coverage,
         )
         _write_report(output_path, report, performance, run_started)
         return report
-    _merge_provider_diagnostics(report_context, market_provider, history)
+    _merge_provider_diagnostics(report_context, market_provider, history, backup_history)
     universe_count = len(stocks)
     if universe_count < 4000 and sample_limit == 0 and provider != "mock":
         warnings.append(f"universe_count below expected full A-share size: {universe_count}")
@@ -175,6 +199,7 @@ def run_real_quant_top500(
     skipped_count = 0
     failed_count = 0
     _start_provider_session(history)
+    _start_provider_session(backup_history)
     try:
         for index, stock in enumerate(filtered_stocks, start=1):
             if progress and (index == 1 or index % 50 == 0 or index == len(filtered_stocks)):
@@ -182,28 +207,43 @@ def run_real_quant_top500(
             try:
                 kline_started = time.perf_counter()
                 try:
-                    bars = history.get_kline(stock.code, start.isoformat(), end.isoformat(), frequency="daily")
+                    bars, stock_fallback_used, stock_fallback_reason, kline_source = _get_kline_with_backup(
+                        history,
+                        backup_history,
+                        stock.code,
+                        start.isoformat(),
+                        end.isoformat(),
+                        frequency="daily",
+                    )
                 finally:
                     performance["kline_fetch_seconds"] += time.perf_counter() - kline_started
                     kline_fetch_attempts += 1
+                if stock_fallback_used:
+                    fallback_used = True
+                    fallback_reasons.append(f"{stock.code}:{stock_fallback_reason}")
+                if kline_source == "tushare" and bars:
+                    factor_data_coverage["daily"] = True
                 if len(bars) < MIN_KLINE_BARS:
                     skipped_count += 1
                     _append_error(errors_sample, stock.code, "INSUFFICIENT_KLINE", f"bars={len(bars)}")
                     continue
                 factor_started = time.perf_counter()
                 quote = _safe_realtime(market_provider, stock, bars[-1])
+                finance = _safe_finance(market_provider, stock.code)
+                flow = _safe_capital_flow(market_provider, stock.code)
+                _merge_factor_coverage_from_data(factor_data_coverage, finance, flow)
                 factor_input = QuantFactorInput(
                     stock_code=stock.code,
                     stock_name=stock.name,
                     industry=stock.industry,
                     realtime_quote=_to_legacy_quote(quote, stock),
                     kline_bars=[_to_legacy_bar(bar) for bar in bars],
-                    finance_snapshot=_to_legacy_finance(_safe_finance(market_provider, stock.code)),
+                    finance_snapshot=_to_legacy_finance(finance),
                     capital_flow=_capital_flow_for_mode(
                         quant_mode,
                         stock.code,
                         bars,
-                        _safe_capital_flow(market_provider, stock.code),
+                        flow,
                         end,
                     ),
                     market_emotion=market_emotion,
@@ -216,6 +256,7 @@ def run_real_quant_top500(
                 continue
     finally:
         _end_provider_session(history)
+        _end_provider_session(backup_history)
 
     ranking_started = time.perf_counter()
     results.sort(key=lambda item: item.total_score, reverse=True)
@@ -238,7 +279,8 @@ def run_real_quant_top500(
         finally:
             session.close()
     performance["ranking_seconds"] = _round_seconds(time.perf_counter() - ranking_started)
-    _merge_cache_stats(performance, market_provider, history)
+    _merge_provider_diagnostics(report_context, market_provider, history, backup_history)
+    _merge_cache_stats(performance, market_provider, history, backup_history)
     _finalize_performance(
         performance,
         run_started,
@@ -250,6 +292,7 @@ def run_real_quant_top500(
     report = _build_report(
         provider=provider,
         history_provider=history_provider,
+        backup_history_provider=backup_history_provider,
         universe_count=universe_count,
         filtered_count=filtered_count,
         scored_count=len(results),
@@ -271,6 +314,10 @@ def run_real_quant_top500(
         akshare_proxy_mode=report_context["akshare_proxy_mode"],
         akshare_proxy_env_detected=report_context["akshare_proxy_env_detected"],
         performance=performance,
+        fallback_used=fallback_used,
+        fallback_reason="; ".join(fallback_reasons[:20]),
+        tushare_permission_summary=report_context["tushare_permission_summary"],
+        factor_data_coverage=factor_data_coverage,
     )
     _write_report(output_path, report, performance, run_started)
     return report
@@ -278,8 +325,9 @@ def run_real_quant_top500(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run manual real-data quant Top500 debug test.")
-    parser.add_argument("--provider", choices=["mock", "akshare", "baostock"], default="akshare")
-    parser.add_argument("--history-provider", choices=["mock", "akshare", "baostock"], default="baostock")
+    parser.add_argument("--provider", choices=["mock", "akshare", "baostock", "tushare"], default="tushare")
+    parser.add_argument("--history-provider", choices=["mock", "akshare", "baostock", "tushare"], default="tushare")
+    parser.add_argument("--backup-history-provider", choices=["mock", "akshare", "baostock", "tushare"], default="baostock")
     parser.add_argument("--top-n", type=int, default=500)
     parser.add_argument("--sample-limit", type=int, default=0)
     parser.add_argument("--start-date", default=None)
@@ -298,6 +346,7 @@ def main() -> int:
     report = run_real_quant_top500(
         provider=args.provider,
         history_provider=args.history_provider,
+        backup_history_provider=args.backup_history_provider,
         top_n=args.top_n,
         sample_limit=args.sample_limit,
         start_date=args.start_date,
@@ -315,9 +364,11 @@ def main() -> int:
     print(
         "summary: "
         f"provider={report['provider']} history_provider={report['history_provider']} "
+        f"backup_history_provider={report['backup_history_provider']} "
         f"universe_count={report['universe_count']} filtered_count={report['filtered_count']} "
         f"scored_count={report['scored_count']} top_count={report['top_count']} "
         f"skipped_count={report['skipped_count']} failed_count={report['failed_count']} "
+        f"fallback_used={report['fallback_used']} "
         f"total_seconds={report['performance']['total_seconds']} "
         f"cache_hit_count={report['performance']['cache_hit_count']} "
         f"cache_miss_count={report['performance']['cache_miss_count']} "
@@ -339,10 +390,14 @@ def _provider(
         return AKShareMarketDataProvider(proxy_mode="no_proxy" if akshare_no_proxy else "env")
     if normalized == "baostock":
         return BaoStockMarketDataProvider(use_kline_cache=use_cache, refresh_kline_cache=refresh_cache)
+    if normalized == "tushare":
+        return TushareMarketDataProvider(cache_enabled=use_cache)
     raise ValueError(f"Unsupported provider: {name}")
 
 
 def _quant_mode(provider: str, history_provider: str) -> str:
+    if provider.lower() == "tushare" or history_provider.lower() == "tushare":
+        return "tushare_primary"
     if provider.lower() == "baostock" and history_provider.lower() == "baostock":
         return "baostock_historical_degraded"
     return "standard"
@@ -352,6 +407,37 @@ def _get_stock_list(provider, trade_date: str | None, max_lookback_days: int) ->
     if isinstance(provider, BaoStockMarketDataProvider):
         return provider.get_stock_list(trade_date=trade_date, max_lookback_days=max_lookback_days)
     return provider.get_stock_list()
+
+
+def _get_kline_with_backup(
+    history,
+    backup_history,
+    stock_code: str,
+    start_date: str,
+    end_date: str,
+    frequency: str = "daily",
+) -> tuple[list[CanonicalKLineBar], bool, str | None, str]:
+    try:
+        bars = history.get_kline(stock_code, start_date, end_date, frequency=frequency)
+        if getattr(history, "last_fallback_used", False):
+            return (
+                bars,
+                True,
+                getattr(history, "last_fallback_reason", "tushare_provider_fallback"),
+                getattr(backup_history, "name", ""),
+            )
+        if len(bars) >= MIN_KLINE_BARS:
+            return bars, False, None, getattr(history, "name", "")
+        if backup_history is not None and getattr(history, "name", "") == "tushare":
+            fallback_bars = backup_history.get_kline(stock_code, start_date, end_date, frequency=frequency)
+            if len(fallback_bars) > len(bars):
+                return fallback_bars, True, f"tushare_insufficient_bars:{len(bars)}", getattr(backup_history, "name", "")
+        return bars, False, None, getattr(history, "name", "")
+    except Exception as exc:
+        if backup_history is not None:
+            fallback_bars = backup_history.get_kline(stock_code, start_date, end_date, frequency=frequency)
+            return fallback_bars, True, f"tushare_error:{exc.__class__.__name__}", getattr(backup_history, "name", "")
+        raise
 
 
 def _start_provider_session(provider) -> None:
@@ -384,6 +470,35 @@ def _initial_performance(data_fetch_workers: int, factor_compute_workers: int) -
         "cache_insufficient_count": 0,
         "cache_refresh_count": 0,
     }
+
+
+def _initial_factor_data_coverage() -> dict[str, bool]:
+    return {
+        "daily": False,
+        "daily_basic": False,
+        "moneyflow": False,
+        "concept": False,
+        "top_list": False,
+        "margin": False,
+        "pledge": False,
+        "unlock": False,
+        "chip": False,
+        "tushare_factor": False,
+    }
+
+
+def _merge_factor_coverage_from_data(
+    coverage: dict[str, bool],
+    finance: FinanceData | None,
+    flow: CapitalFlowData | None,
+) -> None:
+    if finance is not None and getattr(finance, "source", "") == "tushare":
+        raw = finance.raw_data or {}
+        coverage["daily_basic"] = coverage["daily_basic"] or bool(raw.get("daily_basic"))
+    if flow is not None and getattr(flow, "source", "") == "tushare":
+        raw = flow.raw_data or {}
+        coverage["moneyflow"] = coverage["moneyflow"] or bool(raw.get("moneyflow"))
+        coverage["daily_basic"] = coverage["daily_basic"] or bool(raw.get("daily_basic"))
 
 
 def _effective_data_fetch_workers(history_provider: str, requested: int) -> int:
@@ -635,6 +750,7 @@ def _score_to_report(item) -> dict[str, Any]:
 def _build_report(
     provider: str,
     history_provider: str,
+    backup_history_provider: str | None,
     universe_count: int,
     filtered_count: int,
     scored_count: int,
@@ -656,16 +772,25 @@ def _build_report(
     akshare_proxy_mode: str = "env",
     akshare_proxy_env_detected: bool = False,
     performance: dict[str, Any] | None = None,
+    fallback_used: bool = False,
+    fallback_reason: str | None = None,
+    tushare_permission_summary: dict[str, Any] | None = None,
+    factor_data_coverage: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     return {
         "provider": provider,
         "history_provider": history_provider,
+        "backup_history_provider": backup_history_provider,
         "quant_mode": quant_mode,
         "requested_trade_date": requested_trade_date,
         "actual_trade_date": actual_trade_date,
         "baostock_date_attempts": baostock_date_attempts or [],
         "akshare_proxy_mode": akshare_proxy_mode,
         "akshare_proxy_env_detected": akshare_proxy_env_detected,
+        "fallback_used": fallback_used,
+        "fallback_reason": fallback_reason or "",
+        "tushare_permission_summary": tushare_permission_summary or {},
+        "factor_data_coverage": factor_data_coverage or _initial_factor_data_coverage(),
         "universe_count": universe_count,
         "filtered_count": filtered_count,
         "scored_count": scored_count,
@@ -695,6 +820,8 @@ def _append_error(errors: list[dict[str, Any]], stock_code: str, code: str, mess
 
 def _merge_provider_diagnostics(report_context: dict[str, Any], *providers) -> None:
     for provider in providers:
+        if provider is None:
+            continue
         if isinstance(provider, BaoStockMarketDataProvider):
             if provider.last_actual_trade_date:
                 report_context["actual_trade_date"] = provider.last_actual_trade_date
@@ -704,10 +831,20 @@ def _merge_provider_diagnostics(report_context: dict[str, Any], *providers) -> N
             diagnostics = provider.diagnostics()
             report_context["akshare_proxy_mode"] = diagnostics["proxy_mode"]
             report_context["akshare_proxy_env_detected"] = diagnostics["proxy_env_detected"]
+        if isinstance(provider, TushareMarketDataProvider):
+            diagnostics = provider.diagnostics()
+            report_context["tushare_permission_summary"] = {
+                "source_status": diagnostics["source_status"],
+                "error_type": diagnostics["error_type"],
+                "fallback_used": diagnostics["fallback_used"],
+                "fallback_reason": diagnostics["fallback_reason"],
+            }
 
 
 def _proxy_env_detected_from_provider(*providers) -> bool:
     for provider in providers:
+        if provider is None:
+            continue
         if isinstance(provider, AKShareMarketDataProvider):
             return provider.diagnostics()["proxy_env_detected"]
     return False

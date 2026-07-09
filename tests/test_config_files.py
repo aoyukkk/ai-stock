@@ -116,10 +116,13 @@ def test_key_v03_config_skeletons_exist() -> None:
     assert risk["risk"]["position_limit_mode"] == "advisory_only"
     assert ui["ui"]["config_change"]["write_history"] is True
     assert "zh-CN" in frontend["frontend"]["supported_languages"]
-    assert data_sources["data_sources"]["market_primary"]["provider"] == "akshare"
+    assert data_sources["data_sources"]["market_primary"]["provider"] == "tushare"
     assert data_sources["data_sources"]["market_primary"]["manual_only"] is True
-    assert data_sources["data_sources"]["market_history"]["provider"] == "baostock"
+    assert data_sources["data_sources"]["market_history"]["provider"] == "tushare"
     assert data_sources["data_sources"]["market_history"]["manual_only"] is True
+    assert data_sources["data_sources"]["market_backup"][0]["provider"] == "baostock"
+    assert data_sources["data_sources"]["tushare"]["token_env"] == "TUSHARE_TOKEN"
+    assert data_sources["data_sources"]["akshare"]["enabled"] is False
 
 
 def test_real_trading_defaults_disabled() -> None:

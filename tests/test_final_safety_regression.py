@@ -36,7 +36,7 @@ def test_mock_provider_and_no_real_broker_are_default() -> None:
         if provider["name"] != "mock" and provider["enabled"] is True
     ]
 
-    assert {provider["name"] for provider in enabled_real_providers}.issubset({"akshare"})
+    assert {provider["name"] for provider in enabled_real_providers}.issubset({"tushare", "baostock"})
     assert any(provider["name"] == "mock" and provider["enabled"] for provider in providers)
     assert llm["data"]["mock_only"] is True
     assert llm["data"]["default_provider"] == "mock"

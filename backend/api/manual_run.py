@@ -25,7 +25,7 @@ def manual_status(request: Request) -> dict:
                 "limit_price",
                 "pre_market_auction",
             ],
-            "available_providers": ["mock", "akshare", "baostock", "ths_stub"],
+            "available_providers": ["mock", "tushare", "baostock", "akshare", "ths_stub"],
         },
         message="manual debug mode",
         trace_id=request.state.trace_id,

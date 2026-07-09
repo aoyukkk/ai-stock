@@ -33,9 +33,11 @@ def test_real_providers_are_manual_debug_or_disabled_by_default() -> None:
     statuses = {provider.name: provider.health_check() for provider in registry.list_providers()}
 
     assert statuses["ths"].enabled is False
-    assert statuses["tushare"].enabled is False
-    assert statuses["akshare"].enabled is True
-    assert statuses["akshare"].status == "manual_debug"
+    assert statuses["tushare"].enabled is True
+    assert statuses["tushare"].status == "manual_debug"
+    assert statuses["baostock"].enabled is True
+    assert statuses["baostock"].status == "manual_debug"
+    assert statuses["akshare"].enabled is False
     assert statuses["ths_news"].enabled is False
     assert statuses["okx"].enabled is False
 

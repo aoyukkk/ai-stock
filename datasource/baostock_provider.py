@@ -20,6 +20,7 @@ from datasource.models.market import (
     PreMarketAuctionData,
     RealtimeQuote,
 )
+from datasource.schemas import ProviderStatus
 
 
 CACHE_DIR = Path("data/cache/baostock")
@@ -30,6 +31,7 @@ class BaoStockMarketDataProvider(MarketDataProvider):
 
     def __init__(
         self,
+        enabled: bool = True,
         cache_enabled: bool = True,
         cache_dir: Path | str = CACHE_DIR,
         request_interval_seconds: float = 0.0,
@@ -38,7 +40,7 @@ class BaoStockMarketDataProvider(MarketDataProvider):
     ) -> None:
         self.name = "baostock"
         self.provider_type = "market_history_debug"
-        self.enabled = True
+        self.enabled = enabled
         self.is_mock = False
         self.cache_enabled = cache_enabled
         self.cache_dir = Path(cache_dir)
@@ -55,6 +57,20 @@ class BaoStockMarketDataProvider(MarketDataProvider):
         self.last_error_message: str | None = None
         self._session_bs: Any | None = None
         self._fallback = MockMarketDataProvider()
+
+    def health_check(self) -> ProviderStatus:
+        return ProviderStatus(
+            name=self.name,
+            provider_type=self.provider_type,
+            enabled=self.enabled,
+            is_mock=self.is_mock,
+            healthy=self.enabled,
+            status="manual_debug" if self.enabled else "disabled",
+            message="BaoStock manual historical backup provider.",
+        )
+
+    def get_provider_info(self) -> ProviderStatus:
+        return self.health_check()
 
     @staticmethod
     def to_baostock_code(stock_code: str) -> str:

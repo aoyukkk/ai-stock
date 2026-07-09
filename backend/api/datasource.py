@@ -11,6 +11,7 @@ from datasource.akshare_provider import AKShareMarketDataProvider
 from datasource.baostock_provider import BaoStockMarketDataProvider
 from datasource.mock.market_provider import MockMarketDataProvider
 from datasource.ths.adapter import THSMarketDataProvider
+from datasource.tushare_provider import TushareMarketDataProvider
 
 
 router = APIRouter(prefix="/api/datasource", tags=["datasource-debug"])
@@ -22,8 +23,9 @@ def providers(request: Request) -> dict:
         data={
             "providers": [
                 {"name": "mock", "type": "mock", "enabled": True},
-                {"name": "akshare", "type": "debug", "enabled": True},
+                {"name": "tushare", "type": "debug", "enabled": True},
                 {"name": "baostock", "type": "debug", "enabled": True},
+                {"name": "akshare", "type": "debug", "enabled": False},
                 {"name": "ths_stub", "type": "stub", "enabled": True},
             ]
         },
@@ -137,6 +139,8 @@ def _provider(name: str) -> Any:
     normalized = name.lower()
     if normalized == "mock":
         return MockMarketDataProvider()
+    if normalized == "tushare":
+        return TushareMarketDataProvider()
     if normalized == "akshare":
         return AKShareMarketDataProvider()
     if normalized == "baostock":

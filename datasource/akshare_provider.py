@@ -64,6 +64,7 @@ class AKShareMarketDataProvider(MarketDataProvider):
 
     def __init__(
         self,
+        enabled: bool = True,
         cache_enabled: bool = True,
         cache_dir: Path | str = CACHE_DIR,
         proxy_mode: str = "env",
@@ -71,7 +72,7 @@ class AKShareMarketDataProvider(MarketDataProvider):
     ) -> None:
         self.name = "akshare"
         self.provider_type = "market_debug"
-        self.enabled = True
+        self.enabled = enabled
         self.is_mock = False
         self.cache_enabled = cache_enabled
         self.cache_dir = Path(cache_dir)

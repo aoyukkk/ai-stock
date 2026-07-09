@@ -7,6 +7,7 @@ from typing import Any
 import yaml
 
 from datasource.akshare_provider import AKShareProvider
+from datasource.baostock_provider import BaoStockProvider
 from datasource.base import BaseDataProvider, MarketDataProvider, NewsDataProvider, OverseasDataProvider
 from datasource.exceptions import ProviderNotFoundError
 from datasource.mock_provider import MockDataProvider
@@ -63,8 +64,9 @@ def create_default_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
     registry.register_provider(MockDataProvider(enabled=_mock_enabled(config)))
     registry.register_provider(THSProvider())
-    registry.register_provider(TushareProvider())
-    registry.register_provider(AKShareProvider())
+    registry.register_provider(TushareProvider(enabled=bool(_provider_enabled(config, "tushare"))))
+    registry.register_provider(BaoStockProvider(enabled=bool(_provider_enabled(config, "baostock"))))
+    registry.register_provider(AKShareProvider(enabled=bool(_provider_enabled(config, "akshare"))))
     registry.register_provider(RealNewsProvider(name="ths_news"))
     registry.register_provider(RealNewsProvider(name="jinshi"))
     registry.register_provider(RealOverseasProvider(name="okx"))
