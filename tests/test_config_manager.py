@@ -26,6 +26,7 @@ def test_effective_config_reads_yaml_defaults(config_manager: ConfigManager) -> 
     assert effective["values"]["stock_scan.quant_top_n"] == 500
     assert effective["values"]["llm.mock_only"] is True
     assert effective["values"]["llm.default_provider"] == "mock"
+    assert effective["values"]["llm.budgets.daily_token_budget"] == 5_000_000
     assert effective["values"]["paper_trading.real_trading_enabled"] is False
 
 

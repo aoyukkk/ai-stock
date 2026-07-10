@@ -71,6 +71,25 @@ class ModelValidationLLMAudit(IDMixin, TimestampMixin, ReprMixin, Base):
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
     latency_ms: Mapped[int] = mapped_column(default=0, nullable=False)
     cache_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_category: Mapped[str | None] = mapped_column(String(64))
+    error_field: Mapped[str | None] = mapped_column(String(160))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    diagnostics: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class ModelValidationFailureAudit(IDMixin, TimestampMixin, ReprMixin, Base):
+    __tablename__ = "model_validation_failure_audit"
+    __table_args__ = (Index("ix_model_validation_failure_run_stock", "validation_run_id", "stock_code"),)
+    validation_run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    stock_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    task: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_category: Mapped[str] = mapped_column(String(64), nullable=False)
+    error_field: Mapped[str] = mapped_column(String(160), nullable=False)
+    error_message: Mapped[str] = mapped_column(Text, nullable=False)
+    diagnostics: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
 
 class ModelValidationOrderPlan(IDMixin, TimestampMixin, ReprMixin, Base):
@@ -100,6 +119,11 @@ class ModelValidationOrderPlan(IDMixin, TimestampMixin, ReprMixin, Base):
     take_profit_2_price: Mapped[Decimal | None] = mapped_column(PRICE)
     fill_probability: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
     risk_reward: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    risk_reward_to_tp1: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    risk_reward_to_tp2: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    active_risk_reward: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    active_target_mode: Mapped[str | None] = mapped_column(String(32))
+    unrounded_stop_loss_price: Mapped[Decimal | None] = mapped_column(PRICE)
     order_price_score: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
     support: Mapped[Decimal | None] = mapped_column(PRICE)
     resistance: Mapped[Decimal | None] = mapped_column(PRICE)
@@ -145,3 +169,57 @@ class ModelValidationAllocation(IDMixin, TimestampMixin, ReprMixin, Base):
     estimated_max_loss: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
     binding_constraints: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     warnings: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+
+class ProResumeRun(IDMixin, TimestampMixin, ReprMixin, Base):
+    __tablename__ = "pro_resume_run"
+    __table_args__ = (Index("ix_pro_resume_run_run_id", "run_id", unique=True),)
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    pipeline_run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    quant_run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    flash_validation_run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_failed_run_id: Mapped[str | None] = mapped_column(String(64))
+    pro_contract_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    portfolio_prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    base_trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    target_trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    top20_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    manual_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_set_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_count: Mapped[int] = mapped_column(nullable=False)
+    chunk_size: Mapped[int] = mapped_column(nullable=False)
+    chunk_count: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    config_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    portfolio_result: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    warnings: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+
+class ProCandidateReview(IDMixin, TimestampMixin, ReprMixin, Base):
+    __tablename__ = "pro_candidate_review"
+    __table_args__ = (
+        Index("ix_pro_candidate_resume_code", "pro_resume_run_id", "stock_code", unique=True),
+    )
+    pro_resume_run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    flash_validation_run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    chunk_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    contract_version: Mapped[str | None] = mapped_column(String(64))
+    candidate_input_hash: Mapped[str | None] = mapped_column(String(64))
+    stock_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    pro_score: Mapped[Decimal] = mapped_column(Numeric(8, 4), nullable=False)
+    pro_rank: Mapped[int | None] = mapped_column()
+    ranking_tie_break_reason: Mapped[str | None] = mapped_column(String(256))
+    ranking_version: Mapped[str | None] = mapped_column(String(64))
+    priority: Mapped[str] = mapped_column(String(32), nullable=False)
+    final_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    key_strengths: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    key_risks: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    fundamental_quality: Mapped[str] = mapped_column(String(32), nullable=False)
+    quant_llm_consistency: Mapped[str] = mapped_column(String(32), nullable=False)
+    manual_review_priority: Mapped[str] = mapped_column(String(32), nullable=False)
+    data_conflict: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    actual_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False)

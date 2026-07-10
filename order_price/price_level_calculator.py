@@ -62,12 +62,15 @@ def calculate_max_buy_price(context: OrderPriceInput, atr: Decimal, config: Orde
 
 
 def calculate_stop_loss(entry_price: Decimal, atr: Decimal, config: OrderPriceConfig) -> Decimal:
+    return round_to_tick(calculate_stop_loss_unrounded(entry_price, atr, config), config.tick_size)
+
+
+def calculate_stop_loss_unrounded(entry_price: Decimal, atr: Decimal, config: OrderPriceConfig) -> Decimal:
     stop_config = config.stop_loss
-    raw = max(
+    return max(
         entry_price - stop_config["atr_multiplier"] * atr,
         entry_price * (Decimal("1") - stop_config["max_stop_loss_percent"]),
     )
-    return round_to_tick(raw, config.tick_size)
 
 
 def calculate_take_profit_prices(entry_price: Decimal, atr: Decimal, config: OrderPriceConfig) -> tuple[Decimal, Decimal]:

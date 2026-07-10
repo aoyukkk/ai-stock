@@ -149,8 +149,14 @@ class PositionSizingEngine:
             return "DATA_CONFLICT"
         if item.stop_price >= item.entry_price:
             return "INVALID_STOP_LOSS"
-        stop_distance = (item.entry_price - item.stop_price) / item.entry_price
-        if stop_distance > self.config.max_stop_loss_percent:
+        raw_stop = item.unrounded_stop_price if item.unrounded_stop_price is not None else item.stop_price
+        raw_stop_distance = (item.entry_price - raw_stop) / item.entry_price
+        rounded_stop_distance = (item.entry_price - item.stop_price) / item.entry_price
+        tolerance = item.tick_size * Decimal(item.stop_validation_tolerance_ticks) / item.entry_price
+        if (
+            raw_stop_distance > self.config.max_stop_loss_percent
+            or rounded_stop_distance > self.config.max_stop_loss_percent + tolerance
+        ):
             return "UPSTREAM_STOP_LOSS_CONFLICT"
         if item.max_acceptable_price is not None and item.entry_price > item.max_acceptable_price:
             return "ENTRY_ABOVE_MAX_ACCEPTABLE_PRICE"

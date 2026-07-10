@@ -188,7 +188,7 @@ def load_llm_router_config() -> LLMRouterConfig:
         },
         fallback=llm_config.get("fallback", {"primary": "mock", "secondary": "mock", "final": "mock"}),
         budgets={
-            "daily_token_budget": budget_config.get("daily_token_budget", 1800000),
+            "daily_token_budget": budget_config.get("daily_token_budget", 5000000),
             "warning_percent": budget_config.get("warning_percent", 80),
             "limit_percent": budget_config.get("limit_percent", 100),
             "daily_cost_budget_usd": budget_config.get("daily_cost_budget_usd", 8),

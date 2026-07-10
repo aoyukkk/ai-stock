@@ -1,6 +1,6 @@
 token:
   daily_budget:
-    default: 1800000
+    default: 5000000
     warning_percent: 80
     limit_percent: 100
 

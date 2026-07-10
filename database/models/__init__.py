@@ -43,10 +43,13 @@ from database.models.trading import Position, TradeOrder, TradeRecord, TradingAc
 from database.models.temporal import RunDataManifestRecord
 from database.models.validation import (
     ModelValidationAllocation,
+    ModelValidationFailureAudit,
     ModelValidationLLMAudit,
     ModelValidationOrderPlan,
     ModelValidationRun,
     ModelValidationSample,
+    ProCandidateReview,
+    ProResumeRun,
     ValidationAccountSnapshot,
 )
 
@@ -65,10 +68,13 @@ __all__ = [
     "MemoryLink",
     "MemoryRetrievalLog",
     "ModelValidationAllocation",
+    "ModelValidationFailureAudit",
     "ModelValidationLLMAudit",
     "ModelValidationOrderPlan",
     "ModelValidationRun",
     "ModelValidationSample",
+    "ProCandidateReview",
+    "ProResumeRun",
     "ModelVersion",
     "News",
     "NewsStockRelation",

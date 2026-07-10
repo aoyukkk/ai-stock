@@ -49,6 +49,13 @@ class PriceLevelCandidate(OrderPriceModel):
     risk_reward: Decimal
     expected_profit_price: Decimal
     stop_loss_price: Decimal
+    unrounded_stop_loss_price: Decimal | None = None
+    take_profit_1_price: Decimal | None = None
+    take_profit_2_price: Decimal | None = None
+    risk_reward_to_tp1: Decimal | None = None
+    risk_reward_to_tp2: Decimal | None = None
+    active_risk_reward: Decimal | None = None
+    active_target_mode: str = "TAKE_PROFIT_2"
     reason: str
 
 
@@ -66,6 +73,11 @@ class OrderPlanDraft(OrderPriceModel):
     stop_loss_price: Decimal | None
     take_profit_1_price: Decimal | None
     take_profit_2_price: Decimal | None
+    unrounded_stop_loss_price: Decimal | None = None
+    risk_reward_to_tp1: Decimal | None = None
+    risk_reward_to_tp2: Decimal | None = None
+    active_risk_reward: Decimal | None = None
+    active_target_mode: str = "TAKE_PROFIT_2"
     suggested_position_percent: Decimal
     confidence: Decimal = Field(ge=0, le=1)
     reason: str

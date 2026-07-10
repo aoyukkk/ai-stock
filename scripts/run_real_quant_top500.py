@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import json
 import os
 import sys
@@ -35,7 +36,9 @@ from datasource.models.market import (
     RealtimeQuote as CanonicalRealtimeQuote,
 )
 from database.session import get_session
-from quant.config import load_quant_config
+from quant.config import QuantConfig, load_quant_config
+from quant.price_adjustment import ADJUSTMENT_MODES, RAW, AdjustedPriceSeries, build_adjusted_price_series
+from quant.price_limit import build_price_limit_risk
 from quant.persistence import save_factor_scores
 from quant.ranking import QuantRankingEngine
 from quant.schemas import QuantFactorInput, QuantFactorScore, QuantRankingResult
@@ -70,6 +73,8 @@ def run_real_quant_top500(
     refresh_cache: bool = False,
     data_fetch_workers: int = 1,
     factor_workers: str | int = "1",
+    price_adjustment_mode: str | None = None,
+    price_limit_risk_enabled: bool | None = None,
 ) -> dict[str, Any]:
     _load_local_tushare_token()
     started_at = datetime.now(timezone.utc)
@@ -119,7 +124,11 @@ def run_real_quant_top500(
     )
     if isinstance(history, TushareMarketDataProvider):
         history.backup_provider = backup_history
-    quant_config = load_quant_config()
+    quant_config = _quant_config_with_runtime_overrides(
+        load_quant_config(),
+        price_adjustment_mode=price_adjustment_mode,
+        price_limit_risk_enabled=price_limit_risk_enabled,
+    )
     engine = QuantRankingEngine(config=quant_config)
     quant_mode = _quant_mode(provider, history_provider)
     report_context = {
@@ -167,6 +176,7 @@ def run_real_quant_top500(
             top_n=top_n,
             sample_limit=sample_limit,
             selected=[],
+            scored_results=[],
             skipped_count=0,
             failed_count=1,
             filters_applied=filters_applied,
@@ -292,12 +302,31 @@ def run_real_quant_top500(
                     flow = flow or _safe_capital_flow(market_provider, stock.code)
                 _merge_factor_coverage_from_data(factor_data_coverage, finance, flow)
                 _merge_factor_coverage_from_batch(factor_data_coverage, trade_date_batch_context)
+                raw_legacy_bars = [_to_legacy_bar(bar) for bar in bars]
+                adjustment = _technical_price_series(
+                    trade_date_batch_context,
+                    stock.code,
+                    raw_legacy_bars,
+                    quant_config,
+                    decision_time=started_at,
+                )
+                legacy_quote = _to_legacy_quote(quote, stock)
+                if adjustment.active:
+                    legacy_quote = legacy_quote.model_copy(
+                        update={"current_price": adjustment.bars[-1].close}
+                    )
+                limit_summary = _price_limit_summary(
+                    trade_date_batch_context,
+                    stock.code,
+                    raw_legacy_bars,
+                    quant_config,
+                )
                 factor_input = QuantFactorInput(
                     stock_code=stock.code,
                     stock_name=stock.name,
                     industry=stock.industry,
-                    realtime_quote=_to_legacy_quote(quote, stock),
-                    kline_bars=[_to_legacy_bar(bar) for bar in bars],
+                    realtime_quote=legacy_quote,
+                    kline_bars=adjustment.bars,
                     finance_snapshot=_to_legacy_finance(finance),
                     capital_flow=_capital_flow_for_mode(
                         quant_mode,
@@ -307,9 +336,22 @@ def run_real_quant_top500(
                         end,
                     ),
                     market_emotion=market_emotion,
+                    raw_kline_bars=raw_legacy_bars,
+                    price_adjustment=_adjustment_metadata(adjustment),
+                    price_limit_risk=limit_summary,
                 )
                 results.append(engine.calculate_stock_score(factor_input))
-                _append_tushare_explanation_details(results[-1], trade_date_batch_context, stock.code, bars)
+                _append_tushare_explanation_details(
+                    results[-1],
+                    trade_date_batch_context,
+                    stock.code,
+                    bars,
+                    adjustment=adjustment,
+                    limit_summary=limit_summary,
+                    price_limit_enabled=bool(
+                        quant_config.raw.get("risk_factor", {}).get("price_limit", {}).get("enabled", False)
+                    ),
+                )
                 performance["factor_compute_seconds"] += time.perf_counter() - factor_started
             except Exception as exc:
                 failed_count += 1
@@ -321,9 +363,9 @@ def run_real_quant_top500(
 
     ranking_started = time.perf_counter()
     results.sort(key=lambda item: item.total_score, reverse=True)
-    selected = results[: min(top_n, len(results))]
-    for rank, item in enumerate(selected, start=1):
+    for rank, item in enumerate(results, start=1):
         item.rank = rank
+    selected = results[: min(top_n, len(results))]
 
     ranking = QuantRankingResult(
         generated_at=datetime.now(timezone.utc),
@@ -360,6 +402,7 @@ def run_real_quant_top500(
         top_n=top_n,
         sample_limit=sample_limit,
         selected=selected,
+        scored_results=results,
         skipped_count=skipped_count,
         failed_count=failed_count,
         filters_applied=filters_applied,
@@ -384,6 +427,12 @@ def run_real_quant_top500(
         baostock_backup_used_count=baostock_backup_used_count,
         trade_date_cache_stats=_trade_date_cache_stats(market_provider, history, backup_history),
     )
+    report["price_adjustment_mode"] = str(
+        quant_config.raw.get("technical_factor", {}).get("price_adjustment", {}).get("mode", RAW)
+    )
+    report["price_limit_risk_enabled"] = bool(
+        quant_config.raw.get("risk_factor", {}).get("price_limit", {}).get("enabled", False)
+    )
     _write_report(output_path, report, performance, run_started)
     return report
 
@@ -406,6 +455,8 @@ def main() -> int:
     parser.add_argument("--refresh-cache", action="store_true")
     parser.add_argument("--data-fetch-workers", type=int, default=1)
     parser.add_argument("--factor-workers", default="1")
+    parser.add_argument("--price-adjustment-mode", choices=sorted(ADJUSTMENT_MODES), default=None)
+    parser.add_argument("--price-limit-risk", action=argparse.BooleanOptionalAction, default=None)
     args = parser.parse_args()
 
     report = run_real_quant_top500(
@@ -425,6 +476,8 @@ def main() -> int:
         refresh_cache=args.refresh_cache,
         data_fetch_workers=args.data_fetch_workers,
         factor_workers=args.factor_workers,
+        price_adjustment_mode=args.price_adjustment_mode,
+        price_limit_risk_enabled=args.price_limit_risk,
     )
     print(
         "summary: "
@@ -476,6 +529,78 @@ def _quant_mode(provider: str, history_provider: str) -> str:
     if provider.lower() == "baostock" and history_provider.lower() == "baostock":
         return "baostock_historical_degraded"
     return "standard"
+
+
+def _quant_config_with_runtime_overrides(
+    config: QuantConfig,
+    *,
+    price_adjustment_mode: str | None,
+    price_limit_risk_enabled: bool | None,
+) -> QuantConfig:
+    if price_adjustment_mode is None and price_limit_risk_enabled is None:
+        return config
+    raw = deepcopy(config.raw)
+    if price_adjustment_mode is not None:
+        adjustment = raw.setdefault("technical_factor", {}).setdefault("price_adjustment", {})
+        adjustment["mode"] = price_adjustment_mode
+        adjustment["enabled"] = price_adjustment_mode != RAW
+    if price_limit_risk_enabled is not None:
+        raw.setdefault("risk_factor", {}).setdefault("price_limit", {})["enabled"] = price_limit_risk_enabled
+    return QuantConfig(raw=raw)
+
+
+def _technical_price_series(
+    context: dict[str, Any],
+    stock_code: str,
+    raw_bars: list[KlineBar],
+    config: QuantConfig,
+    *,
+    decision_time: datetime,
+) -> AdjustedPriceSeries:
+    adjustment = config.raw.get("technical_factor", {}).get("price_adjustment", {})
+    enabled = bool(adjustment.get("enabled", False))
+    mode = str(adjustment.get("mode", RAW)) if enabled else RAW
+    records = context.get("adj_factor_by_stock", {}).get(_tushare_plain_code(stock_code), {})
+    return build_adjusted_price_series(
+        raw_bars,
+        records,
+        mode=mode,
+        decision_time=decision_time,
+        base_market_trade_date=raw_bars[-1].trade_date if raw_bars else None,
+        point_in_time_required=bool(adjustment.get("point_in_time_required", True)),
+        fallback_to_raw=bool(adjustment.get("fallback_to_raw", True)),
+    )
+
+
+def _adjustment_metadata(series: AdjustedPriceSeries) -> dict[str, Any]:
+    return {
+        "mode": series.mode,
+        "technical_price_basis": series.technical_price_basis,
+        "adjusted_series_version": series.adjusted_series_version,
+        "factor_as_of_trade_date": series.factor_as_of_trade_date,
+        "factor_available_at": series.factor_available_at,
+        "adjustment_anchor_date": series.adjustment_anchor_date,
+        "point_in_time_status": series.point_in_time_status,
+        "warning": series.warning,
+        "active": series.active,
+    }
+
+
+def _price_limit_summary(
+    context: dict[str, Any],
+    stock_code: str,
+    bars: list[KlineBar],
+    config: QuantConfig,
+) -> dict[str, Any]:
+    price_limit = config.raw.get("risk_factor", {}).get("price_limit", {})
+    records = context.get("stk_limit_by_stock", {}).get(_tushare_plain_code(stock_code), {})
+    return build_price_limit_risk(
+        bars,
+        records,
+        near_limit_percent=Decimal(str(price_limit.get("near_limit_percent", "0.01"))),
+        consecutive_window=int(price_limit.get("consecutive_window", 5)),
+        tick_size=Decimal(str(price_limit.get("tick_size", "0.01"))),
+    )
 
 
 def _get_stock_list(provider, trade_date: str | None, max_lookback_days: int) -> list[MarketStockInfo]:
@@ -659,12 +784,22 @@ def _merge_factor_coverage_from_batch(coverage: dict[str, bool], context: dict[s
 
 
 LIMIT_STATUS_CODES = {
-    "UNKNOWN": Decimal("0"),
-    "NORMAL": Decimal("1"),
-    "NEAR_LIMIT_UP": Decimal("2"),
-    "LIMIT_UP_CLOSE": Decimal("3"),
-    "NEAR_LIMIT_DOWN": Decimal("4"),
-    "LIMIT_DOWN_CLOSE": Decimal("5"),
+    name: Decimal(index)
+    for index, name in enumerate(
+        (
+            "LIMIT_DATA_MISSING",
+            "NORMAL",
+            "NEAR_LIMIT_UP",
+            "AT_LIMIT_UP",
+            "OPENED_LIMIT_UP",
+            "CONSECUTIVE_LIMIT_UP",
+            "NEAR_LIMIT_DOWN",
+            "AT_LIMIT_DOWN",
+            "OPENED_LIMIT_DOWN",
+            "CONSECUTIVE_LIMIT_DOWN",
+            "NOT_APPLICABLE",
+        )
+    )
 }
 LIMIT_STATUS_BY_CODE = {int(value): key for key, value in LIMIT_STATUS_CODES.items()}
 
@@ -674,6 +809,10 @@ def _append_tushare_explanation_details(
     context: dict[str, Any],
     stock_code: str,
     bars: list[CanonicalKLineBar],
+    *,
+    adjustment: AdjustedPriceSeries | None = None,
+    limit_summary: dict[str, Any] | None = None,
+    price_limit_enabled: bool = False,
 ) -> None:
     if not context.get("enabled"):
         return
@@ -696,7 +835,7 @@ def _append_tushare_explanation_details(
         )
     )
 
-    summary = _limit_summary(context, code, bars)
+    summary = limit_summary or _limit_summary(context, code, bars)
     result.factor_details.extend(
         [
             _explanation_detail(code, "risk", "limit_up_price", summary["limit_up_price"], "Tushare upper limit price."),
@@ -735,8 +874,53 @@ def _append_tushare_explanation_details(
                 weight=None,
                 explain_text=str(summary["limit_risk_note"]),
             ),
+            _explanation_detail(code, "risk", "distance_to_limit_up", summary.get("distance_to_limit_up"), "Percent distance from close to upper limit."),
+            _explanation_detail(code, "risk", "distance_to_limit_down", summary.get("distance_to_limit_down"), "Signed percent distance from close to lower limit."),
+            _explanation_detail(code, "risk", "touched_limit_up", int(bool(summary.get("touched_limit_up"))), "Intraday high touched the upper limit."),
+            _explanation_detail(code, "risk", "touched_limit_down", int(bool(summary.get("touched_limit_down"))), "Intraday low touched the lower limit."),
+            _explanation_detail(code, "risk", "close_at_limit_up", int(bool(summary.get("close_at_limit_up"))), "Close equals upper limit within configured tick tolerance."),
+            _explanation_detail(code, "risk", "close_at_limit_down", int(bool(summary.get("close_at_limit_down"))), "Close equals lower limit within configured tick tolerance."),
         ]
     )
+    if not any(detail.factor_name == "price_limit_risk_score" for detail in result.factor_details):
+        result.factor_details.append(
+            _explanation_detail(
+                code,
+                "risk",
+                "price_limit_risk_score",
+                summary.get("price_limit_risk_score", 50),
+                f"Price-limit score is diagnostic only; risk integration enabled={price_limit_enabled}.",
+            )
+        )
+    if adjustment is not None:
+        _append_adjustment_details(result, code, adjustment)
+
+
+def _append_adjustment_details(result, code: str, adjustment: AdjustedPriceSeries) -> None:
+    latest = adjustment.bars[-1] if adjustment.bars else None
+    date_value = (
+        Decimal(adjustment.factor_as_of_trade_date.strftime("%Y%m%d"))
+        if adjustment.factor_as_of_trade_date
+        else None
+    )
+    anchor_value = (
+        Decimal(adjustment.adjustment_anchor_date.strftime("%Y%m%d"))
+        if adjustment.adjustment_anchor_date
+        else None
+    )
+    details = [
+        QuantFactorScore(stock_code=code, factor_group="technical", factor_name="technical_price_basis", raw_value=Decimal("1") if adjustment.active else Decimal("0"), normalized_value=Decimal("50"), score=Decimal("50"), weight=None, explain_text=adjustment.technical_price_basis),
+        QuantFactorScore(stock_code=code, factor_group="technical", factor_name="adjusted_series_version", raw_value=Decimal("1") if adjustment.active else Decimal("0"), normalized_value=Decimal("50"), score=Decimal("50"), weight=None, explain_text=adjustment.adjusted_series_version),
+        QuantFactorScore(stock_code=code, factor_group="technical", factor_name="factor_as_of_trade_date", raw_value=date_value, normalized_value=Decimal("50"), score=Decimal("50"), weight=None, explain_text=str(adjustment.factor_as_of_trade_date or "")),
+        QuantFactorScore(stock_code=code, factor_group="technical", factor_name="factor_available_at", raw_value=Decimal("1") if adjustment.factor_available_at else Decimal("0"), normalized_value=Decimal("50"), score=Decimal("50"), weight=None, explain_text=adjustment.factor_available_at.isoformat() if adjustment.factor_available_at else ""),
+        QuantFactorScore(stock_code=code, factor_group="technical", factor_name="adjustment_anchor_date", raw_value=anchor_value, normalized_value=Decimal("50"), score=Decimal("50"), weight=None, explain_text=str(adjustment.adjustment_anchor_date or "")),
+        QuantFactorScore(stock_code=code, factor_group="technical", factor_name="point_in_time_adjustment_status", raw_value=Decimal("1") if adjustment.point_in_time_status == "PASS" else Decimal("0"), normalized_value=Decimal("50"), score=Decimal("50"), weight=None, explain_text=adjustment.point_in_time_status),
+        QuantFactorScore(stock_code=code, factor_group="technical", factor_name="adjustment_warning", raw_value=Decimal("1") if adjustment.warning else Decimal("0"), normalized_value=Decimal("50"), score=Decimal("50"), weight=None, explain_text=adjustment.warning or ""),
+    ]
+    if latest is not None and adjustment.active:
+        for name in ("open", "high", "low", "close", "pre_close"):
+            details.append(_explanation_detail(code, "technical", f"adjusted_{name}", getattr(latest, name), f"Latest {name} on {adjustment.technical_price_basis} basis."))
+    result.factor_details.extend(details)
 
 
 def _explanation_detail(
@@ -767,35 +951,15 @@ def _adj_factor_available(context: dict[str, Any], stock_code: str, bars: list[C
 
 
 def _limit_summary(context: dict[str, Any], stock_code: str, bars: list[CanonicalKLineBar]) -> dict[str, Any]:
-    if not bars:
-        return _unknown_limit_summary()
-    latest_bar = bars[-1]
     limit_records = context.get("stk_limit_by_stock", {}).get(stock_code, {})
-    latest_record = limit_records.get(_compact_date(latest_bar.datetime))
-    if latest_record is None:
-        return _unknown_limit_summary()
-
-    up_limit = _tushare_float(_tushare_pick(latest_record, "up_limit", "limit_up_price", default=0))
-    down_limit = _tushare_float(_tushare_pick(latest_record, "down_limit", "limit_down_price", default=0))
-    status = _detect_limit_status(latest_bar.close, up_limit, down_limit)
-    consecutive_up = _consecutive_limit_count(bars, limit_records, direction="up")
-    consecutive_down = _consecutive_limit_count(bars, limit_records, direction="down")
-    note = _limit_risk_note(status, consecutive_up, consecutive_down)
-    return {
-        "limit_up_price": up_limit or None,
-        "limit_down_price": down_limit or None,
-        "limit_status": status,
-        "consecutive_limit_up_count": consecutive_up,
-        "consecutive_limit_down_count": consecutive_down,
-        "limit_risk_note": note,
-    }
+    return build_price_limit_risk([_to_legacy_bar(bar) for bar in bars], limit_records)
 
 
 def _unknown_limit_summary() -> dict[str, Any]:
     return {
         "limit_up_price": None,
         "limit_down_price": None,
-        "limit_status": "UNKNOWN",
+        "limit_status": "LIMIT_DATA_MISSING",
         "consecutive_limit_up_count": 0,
         "consecutive_limit_down_count": 0,
         "limit_risk_note": "stk_limit unavailable",
@@ -1213,13 +1377,52 @@ def _score_to_report(item) -> dict[str, Any]:
         "momentum_score": float(item.momentum_score),
         "risk_score": float(item.risk_score),
         "adj_factor_available": _detail_bool(detail_map.get("adj_factor_available")),
+        "technical_price_basis": _detail_text(detail_map.get("technical_price_basis")) or RAW,
+        "raw_technical_score": _detail_float(detail_map.get("raw_technical_score")),
+        "adjusted_technical_score": _detail_float(detail_map.get("adjusted_technical_score")),
+        "active_technical_score": _detail_float(detail_map.get("active_technical_score")),
+        "technical_score_delta": _detail_float(detail_map.get("technical_score_delta")),
+        "adjustment_warning": _detail_text(detail_map.get("adjustment_warning")),
         "limit_status": limit_status,
         "limit_up_price": _detail_float(detail_map.get("limit_up_price")),
         "limit_down_price": _detail_float(detail_map.get("limit_down_price")),
+        "consecutive_limit_up_count": int(_detail_float(detail_map.get("consecutive_limit_up_count")) or 0),
+        "consecutive_limit_down_count": int(_detail_float(detail_map.get("consecutive_limit_down_count")) or 0),
+        "price_limit_risk_score": _detail_float(detail_map.get("price_limit_risk_score")),
+        "price_limit_internal_weight": _detail_float(detail_map.get("price_limit_internal_weight")),
         "limit_risk_note": _detail_text(detail_map.get("limit_risk_note")),
         "factor_detail": [_factor_detail_to_report(detail) for detail in getattr(item, "factor_details", [])],
     }
     return report
+
+
+def _score_to_quant_universe_report(item) -> dict[str, Any]:
+    detail_map = {detail.factor_name: detail for detail in getattr(item, "factor_details", [])}
+    code = str(item.stock_code)
+    exchange = "BJ" if code.startswith(("4", "8", "920")) else ("SH" if code.startswith("6") else "SZ")
+    coverage = "COMPLETE" if all(
+        getattr(item, name, None) is not None
+        for name in ("technical_score", "capital_score", "emotion_score", "momentum_score", "risk_score")
+    ) else "PARTIAL"
+    return {
+        "rank": item.rank,
+        "stock_code": code,
+        "stock_name": item.stock_name,
+        "exchange": exchange,
+        "level_one_sector": item.industry or "UNKNOWN",
+        "classification_standard": "TUSHARE_STOCK_BASIC_INDUSTRY",
+        "total_score": float(item.total_score),
+        "technical_score": float(item.technical_score),
+        "capital_score": float(item.capital_score),
+        "emotion_score": float(item.emotion_score),
+        "momentum_score": float(item.momentum_score),
+        "risk_score": float(item.risk_score),
+        "technical_price_basis": _detail_text(detail_map.get("technical_price_basis")) or RAW,
+        "technical_score_delta": _detail_float(detail_map.get("technical_score_delta")),
+        "limit_status": _limit_status_from_detail(detail_map.get("limit_status")),
+        "price_limit_risk_score": _detail_float(detail_map.get("price_limit_risk_score")),
+        "data_coverage_status": coverage,
+    }
 
 
 def _factor_detail_to_report(detail: QuantFactorScore) -> dict[str, Any]:
@@ -1266,6 +1469,7 @@ def _build_report(
     top_n: int,
     sample_limit: int,
     selected: list,
+    scored_results: list,
     skipped_count: int,
     failed_count: int,
     filters_applied: list[str],
@@ -1337,6 +1541,9 @@ def _build_report(
         "performance": performance or {},
         "no_llm_call_verified": True,
         "top_stocks": [_score_to_report(item) for item in selected],
+        # Compact all-scored rows are persisted with the formal Quant Run.  Factor
+        # detail remains limited to Top Q to keep the report and DB practical.
+        "all_scored_stocks": [_score_to_quant_universe_report(item) for item in scored_results],
         "warnings": warnings,
         "errors_sample": errors_sample[:50],
         "report_path": str(output_path),

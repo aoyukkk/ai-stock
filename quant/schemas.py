@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,6 +28,9 @@ class QuantFactorInput(QuantModel):
     finance_snapshot: FinanceSnapshot | None = None
     capital_flow: CapitalFlowSnapshot | None = None
     market_emotion: MarketEmotionSnapshot | None = None
+    raw_kline_bars: list[KlineBar] | None = None
+    price_adjustment: dict[str, Any] = Field(default_factory=dict)
+    price_limit_risk: dict[str, Any] = Field(default_factory=dict)
 
 
 class QuantFactorScore(QuantModel):

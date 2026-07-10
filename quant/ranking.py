@@ -19,7 +19,9 @@ from quant.schemas import QuantFactorInput, QuantRankingResult, QuantScoreResult
 class QuantRankingEngine:
     def __init__(self, config: QuantConfig | None = None) -> None:
         self.config = config or load_quant_config()
-        self.technical_calculator = TechnicalFactorCalculator()
+        self.technical_calculator = TechnicalFactorCalculator(
+            self.config.raw.get("technical_factor", {})
+        )
         self.capital_calculator = CapitalFactorCalculator()
         self.emotion_calculator = EmotionFactorCalculator()
         momentum_config = self.config.raw.get("momentum_factor", {})
@@ -27,7 +29,9 @@ class QuantRankingEngine:
             r5_weight=Decimal(str(momentum_config.get("r5_weight", "0.60"))),
             r20_weight=Decimal(str(momentum_config.get("r20_weight", "0.40"))),
         )
-        self.risk_calculator = RiskFactorCalculator()
+        self.risk_calculator = RiskFactorCalculator(
+            self.config.raw.get("risk_factor", {})
+        )
 
     def validate_weights(self) -> None:
         weights = self.config.weights

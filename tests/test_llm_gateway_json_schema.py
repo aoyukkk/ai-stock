@@ -1,6 +1,9 @@
 import json
 
+import pytest
+
 from llm_gateway.base import BaseLLMProvider
+from llm_gateway.exceptions import LLMSchemaValidationError
 from llm_gateway.json_output import parse_json_object, validate_json_schema
 from llm_gateway.registry import LLMProviderRegistry
 from llm_gateway.router import LLMRouter, LLMRouterConfig, build_request_hash
@@ -114,3 +117,18 @@ def test_request_hash_excludes_sensitive_metadata_values() -> None:
     secret_a = _request(metadata={"stock_code": "000001", "api_key": "secret-a"})
     secret_b = _request(metadata={"stock_code": "000001", "api_key": "secret-b"})
     assert build_request_hash(secret_a) == build_request_hash(secret_b)
+
+
+def test_pydantic_nested_refs_nullable_and_arrays_are_enforced() -> None:
+    schema = {
+        "$defs": {"Nested": {"type": "object", "additionalProperties": False, "required": ["items"], "properties": {
+            "name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "items": {"type": "array", "items": {"type": "string"}},
+        }}},
+        "type": "object", "required": ["nested"], "properties": {"nested": {"$ref": "#/$defs/Nested"}},
+    }
+    validate_json_schema({"nested": {"name": None, "items": []}}, schema)
+    with pytest.raises(LLMSchemaValidationError, match=r"\$\.nested\.items must be an array"):
+        validate_json_schema({"nested": {"name": None, "items": None}}, schema)
+    with pytest.raises(LLMSchemaValidationError, match="unexpected fields"):
+        validate_json_schema({"nested": {"name": None, "items": [], "extra": 1}}, schema)

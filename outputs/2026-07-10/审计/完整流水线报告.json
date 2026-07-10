@@ -1,0 +1,215 @@
+{
+  "phase": "Flash V4 Meaningful Scoring + Fundamental Enrichment + Order Risk-Reward Correction",
+  "status": "PARTIAL_SUCCESS",
+  "completed": true,
+  "baseline": {
+    "quant_run_id": "quant-840384b9e637e1143f243083",
+    "quant_scored": 5308,
+    "quant_rerun": false
+  },
+  "concept_mapping_audit": {
+    "evaluated_count": 105,
+    "mixed_verified_and_inferred_count": 14,
+    "llm_unverified_only_count": 89,
+    "unknown_count": 2,
+    "candidate_mixed_verified_and_inferred_count": 5,
+    "candidate_llm_unverified_only_count": 21,
+    "candidate_unknown_count": 1
+  },
+  "fundamental_v4": {
+    "resolved_retry_codes": [
+      "000518.SZ",
+      "300821.SZ",
+      "600879.SH",
+      "603268.SH",
+      "688111.SH"
+    ],
+    "current_failure_count": 2
+  },
+  "flash_v4_run_id": "trader-demo-ca9eee27004b4fcda754",
+  "flash_score_distribution": {
+    "min": 32.0,
+    "p25": 50.0,
+    "median": 50.0,
+    "p75": 50.0,
+    "max": 78.5,
+    "unique_score_count": 19
+  },
+  "flash_decision_distribution": {
+    "ADVANCE": 2,
+    "HOLD": 10,
+    "WATCH_ONLY": 92,
+    "REJECT": 0,
+    "BLOCK": 1
+  },
+  "data_quality_scale": "0-100",
+  "new_top20": [
+    "000977.SZ",
+    "001314.SZ",
+    "002236.SZ",
+    "002274.SZ",
+    "002457.SZ",
+    "002558.SZ",
+    "002605.SZ",
+    "002965.SZ",
+    "300287.SZ",
+    "300458.SZ",
+    "300474.SZ",
+    "300604.SZ",
+    "300654.SZ",
+    "301345.SZ",
+    "301379.SZ",
+    "603893.SH",
+    "688019.SH",
+    "688135.SH",
+    "688343.SH",
+    "688981.SH"
+  ],
+  "top20_hash": "a88ae0647fce6f4d3373a7d5e62bb7cc1067199827c6129737702e34fa3ce509",
+  "candidate_count": 27,
+  "candidate_set_hash": "7f99fc962f27fac8670a1b729df7b540436ca80d5ed64e5dc410556e22071422",
+  "pro_v3": {
+    "run_id": "pro-resume-69a2fa9da496486d88f3",
+    "count": 27,
+    "ranking_version": "pro_local_ranking_v3",
+    "portfolio": {
+      "stock_code": "portfolio",
+      "actual_model": "deepseek-v4-pro",
+      "resolved_thinking_mode": "disabled",
+      "schema_status": "PASS",
+      "repair_attempted": true,
+      "input_tokens": 3877,
+      "output_tokens": 1503,
+      "latency_ms": 18637,
+      "cost_usd": 0.00299411,
+      "finish_reason": "stop",
+      "diagnostics": {
+        "provider_status": "ok",
+        "http_status": 200,
+        "finish_reason": "stop",
+        "content_empty": false,
+        "content_length": 2549,
+        "first_non_whitespace_character": "{",
+        "last_non_whitespace_character": "}",
+        "markdown_fence": false,
+        "brace_balance": 0,
+        "json_parse_status": "PASS",
+        "schema_status": "PASS",
+        "schema_error_paths": [],
+        "error_count": 0,
+        "error_category": "",
+        "resolved_thinking_mode": "disabled"
+      },
+      "usage_persisted": true
+    },
+    "usage_before": {
+      "calls": 0,
+      "tokens": 0,
+      "cost_usd": 0
+    }
+  },
+  "order_risk_reward_correction": {
+    "active_target_mode": "TAKE_PROFIT_2",
+    "minimum": 1.5,
+    "count": 27
+  },
+  "stop_loss_rounding_correction": {
+    "tolerance_ticks": 1
+  },
+  "position_sizing": {
+    "candidate_count": 27,
+    "non_zero_quantity_count": 14,
+    "zero_due_risk_reward": 0,
+    "zero_due_stop_conflict": 0,
+    "zero_due_hard_risk": 1,
+    "zero_due_liquidity_or_concentration": 12
+  },
+  "fundamental_semantic_completeness": {
+    "industry_chain_known_count": 26,
+    "core_products_known_count": 27,
+    "concept_tags_known_count": 26,
+    "competitive_advantage_known_count": 27,
+    "investment_logic_known_count": 27
+  },
+  "excel_state_cleanup": {
+    "current_errors": 2,
+    "current_warnings": 1,
+    "resolved_historical_errors": 5
+  },
+  "checkpoint_update": "COMPLETED",
+  "workbook_row_counts": {
+    "quant": 5308,
+    "flash": 105,
+    "top20": 20,
+    "manual": 7,
+    "candidate": 27,
+    "order": 27,
+    "position": 27,
+    "fundamental": 27
+  },
+  "usage_and_cost": {
+    "flash_v4": {
+      "actual_tokens": 1019367,
+      "repair_tokens": 14491,
+      "cost_usd": 0.14398257,
+      "unavailable_call_count": 10
+    },
+    "pro_v3": {
+      "calls": 29,
+      "tokens": 29912,
+      "cost_usd": 0.0135
+    },
+    "pipeline_total_known_tokens": 1983865,
+    "remaining_known_budget": 3016135
+  },
+  "runtime_switch_restoration": {
+    "LLM_REAL_CALLS_ENABLED": "false",
+    "RUN_REAL_FUNDAMENTAL_RESEARCH": "false",
+    "LLM_GATEWAY_MOCK_ONLY": "true"
+  },
+  "excel_output": "D:\\ai stock agent\\outputs\\daily_full_test\\ai_trader_flash_v4_20260710_state_clean.xlsx",
+  "audit_output": "D:\\ai stock agent\\outputs\\daily_full_test\\ai_trader_flash_v4_20260710_state_clean_audit.json",
+  "workbook_sha256": "5a6967947e552c27b95a5f83741942b2d589036791e3dab815439887184aef85",
+  "excel_validation": {
+    "status": "PASS",
+    "sheet_count": 5,
+    "zip_integrity": "PASS",
+    "secret_scan": "PASS",
+    "quant_scored_count": 5308,
+    "quant_sheet_rows": 5308,
+    "llm_evaluation_count": 105,
+    "llm_sheet_rows": 105,
+    "llm_selected_count": 20,
+    "manual_selected_count": 7,
+    "trading_candidate_count": 27,
+    "order_sheet_rows": 27,
+    "fundamental_sheet_rows": 27,
+    "llm_advance_count": 2,
+    "llm_success_count": 103,
+    "llm_failure_count": 2
+  },
+  "pro_canary_count": 3,
+  "pro_review_report_count": 27,
+  "problems": [
+    "603726.SH and 688222.SH Fundamental V4 outputs remain failed after one targeted retry",
+    "Initial five-stock canary persistence failed before audit commit; ten calls have unavailable usage"
+  ],
+  "security_validation": {
+    "security_config": "PASS",
+    "enable_real_trading": false,
+    "llm_real_calls_enabled": false,
+    "llm_gateway_mock_only": true
+  },
+  "quant_no_llm_regression": {
+    "quant_run_id": "quant-840384b9e637e1143f243083",
+    "no_llm_call_verified": true,
+    "llm_usage_rows_bound_to_quant_run": 0,
+    "quant_rerun": false
+  },
+  "tests": {
+    "pytest": "500 passed, 1 known StarletteDeprecationWarning",
+    "security": "PASS",
+    "compileall": "PASS",
+    "excel_formula_error_matches": 0
+  }
+}

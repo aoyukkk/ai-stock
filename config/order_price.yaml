@@ -6,7 +6,15 @@ order_price:
   min_risk_reward: 1.5
   ideal_risk_reward: 2.0
   max_stop_loss_percent: 0.08
+  stop_validation_tolerance_ticks: 1
   default_position_percent: 0.10
+
+  risk_reward_target:
+    mode: TAKE_PROFIT_2
+    allowed:
+      - TAKE_PROFIT_1
+      - TAKE_PROFIT_2
+      - EXPECTED_PROFIT_PRICE
 
   llm_can_generate_price: false
   requires_market_data: true

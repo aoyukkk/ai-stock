@@ -58,6 +58,7 @@ class SizingCandidate(BaseModel):
     risk_gate_factor: Decimal = Field(default=Decimal("1"), ge=0, le=1)
     entry_price: Decimal | None = Field(default=None, gt=0)
     stop_price: Decimal | None = Field(default=None, ge=0)
+    unrounded_stop_price: Decimal | None = Field(default=None, ge=0)
     max_acceptable_price: Decimal | None = Field(default=None, gt=0)
     risk_reward: Decimal | None = Field(default=None, ge=0)
     atr: Decimal | None = Field(default=None, ge=0)
@@ -69,6 +70,8 @@ class SizingCandidate(BaseModel):
     blocked: bool = False
     data_conflict: bool = False
     unverified_fundamental_research: bool = False
+    tick_size: Decimal = Field(default=Decimal("0.01"), gt=0)
+    stop_validation_tolerance_ticks: int = Field(default=1, ge=0)
 
 
 class PositionSuggestion(BaseModel):

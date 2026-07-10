@@ -5,6 +5,35 @@ llm_gateway:
   json_schema_required: true
   parse_failure_fallback_action: WATCH_ONLY
 
+structured_validation:
+  fundamental_max_tokens: 3200
+  screening_max_tokens: 1400
+
+flash_v4:
+  scoring_version: flash-score-v4
+  weights:
+    quant_consistency: 0.30
+    fundamental_quality: 0.25
+    financial_quality: 0.20
+    risk_fit: 0.15
+    data_quality: 0.10
+  thresholds:
+    advance: 70
+    hold: 55
+    watch_only: 40
+
+pro_resume_v3:
+  candidate_mode: single-stock
+  candidate_thinking: disabled
+  candidate_max_tokens: 1800
+  candidate_length_retry_max_tokens: 2400
+  portfolio_thinking: disabled
+  portfolio_max_tokens: 3200
+  portfolio_length_retry_max_tokens: 4800
+  concurrency: 3
+  max_list_items: 3
+  max_item_characters: 160
+
 llm:
   mock_only: true
   real_calls_enabled: false
@@ -207,7 +236,7 @@ llm:
     ttl_minutes: 30
 
   budget:
-    daily_token_budget: 1800000
+    daily_token_budget: 5000000
     warning_percent: 80
     limit_percent: 100
     daily_cost_budget_usd: 8

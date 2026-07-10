@@ -140,7 +140,8 @@ class GuardedValidationService:
                 key: audit.get(key) for key in (
                     "stock_code", "task", "knowledge_mode", "model_alias", "actual_model", "prompt_version",
                     "status", "schema_status", "request_hash", "input_tokens", "output_tokens", "cost_usd",
-                    "latency_ms", "cache_status",
+                    "latency_ms", "cache_status", "error_category", "error_field", "error_message",
+                    "diagnostics",
                 )
             }))
         for plan in plans:
@@ -209,7 +210,7 @@ class GuardedValidationService:
             .join(ModelValidationRun, ModelValidationRun.run_id == ModelValidationSample.validation_run_id)
             .where(
                 ModelValidationRun.real_llm.is_(True),
-                ModelValidationRun.status == "COMPLETED",
+                ModelValidationRun.status.in_(["COMPLETED", "SUCCESS", "PARTIAL_SUCCESS"]),
                 ModelValidationSample.quant_run_id == run.run_id,
                 ModelValidationSample.run_data_manifest_id == manifest.manifest_id,
                 ModelValidationSample.stock_code == rank_row.stock_code,
@@ -267,6 +268,8 @@ class GuardedValidationService:
             "company_profile": profile.company_profile, "main_business": profile.main_business,
             "main_business_breakdown": profile.main_business_breakdown,
             "level_one_sector": profile.level_one_sector, "concept_tags": profile.normalized_concept_tags or profile.source_concept_tags,
+            "concept_source_status": profile.concept_source_status,
+            "concept_mapping_audit": profile.concept_mapping_audit,
             "financial_summary": profile.financial_summary, "financial_status": profile.financial_status,
             "missing_fields": profile.missing_fields,
             "quant": {"rank": rank_row.rank, **_quant_scores(rank_row)},
@@ -313,7 +316,13 @@ class GuardedValidationService:
             "stop_loss_price": draft.stop_loss_price, "take_profit_1_price": draft.take_profit_1_price,
             "take_profit_2_price": draft.take_profit_2_price,
             "fill_probability": getattr(recommended, "fill_probability", None),
-            "risk_reward": getattr(recommended, "risk_reward", None), "order_price_score": getattr(recommended, "score", None),
+            "risk_reward": draft.active_risk_reward,
+            "risk_reward_to_tp1": draft.risk_reward_to_tp1,
+            "risk_reward_to_tp2": draft.risk_reward_to_tp2,
+            "active_risk_reward": draft.active_risk_reward,
+            "active_target_mode": draft.active_target_mode,
+            "unrounded_stop_loss_price": draft.unrounded_stop_loss_price,
+            "order_price_score": getattr(recommended, "score", None),
             "support": _decimal_or_none(valid.get("support")), "resistance": _decimal_or_none(valid.get("resistance")),
             "atr": _decimal_or_none(valid.get("atr")), "vwap": _decimal_or_none(valid.get("vwap")),
             "previous_close": previous_close, "limit_up_estimated": up, "limit_down_estimated": down,
@@ -332,12 +341,15 @@ class GuardedValidationService:
                 stock_code=rank_row.stock_code, final_score=Decimal(str(rank_row.total_score)),
                 controller_confidence=Decimal(str(item["screening"]["confidence"])), data_quality_factor=Decimal("0.8"),
                 entry_price=plan["recommended_price"], stop_price=plan["stop_loss_price"],
+                unrounded_stop_price=plan.get("unrounded_stop_loss_price"),
                 max_acceptable_price=plan["max_acceptable_price"], risk_reward=plan["risk_reward"], atr=plan["atr"],
                 average_daily_amount=sum((bar.amount for bar in self._load_bars(rank_row.stock_code, plan["base_market_trade_date"])), Decimal("0")) / Decimal("20"),
                 industry=profile.level_one_sector or "UNKNOWN", industry_chain=str(item["fundamental"].get("industry_chain", {}).get("chain_name") or "UNKNOWN"),
                 risk_level="HIGH" if plan["status"] in {"BLOCKED", "NEEDS_REVIEW"} else "NORMAL",
                 blocked=plan["status"] == "BLOCKED", data_conflict=bool(item["screening"].get("data_conflict")),
                 unverified_fundamental_research=True,
+                tick_size=load_order_price_config().tick_size,
+                stop_validation_tolerance_ticks=load_order_price_config().stop_validation_tolerance_ticks,
             ))
         result = PositionSizingEngine().evaluate(AccountState(equity=account_equity, available_cash=available_cash), candidates)
         return [{
@@ -383,13 +395,22 @@ class GuardedValidationService:
 
 def _normalize_fundamental(payload: dict[str, Any], profile) -> dict[str, Any]:
     result = dict(payload)
+    if not result.get("core_products"):
+        result["core_products"] = ["信息不足*"]
+    if not result.get("invalidation_conditions"):
+        result["invalidation_conditions"] = ["信息不足，需人工复核*"]
     main = dict(result.get("main_business_summary") or {})
-    main.update({"source_status": "VERIFIED_STRUCTURED", "derivation_status": "LLM_SUMMARY", "display_marker": ""})
+    main["derivation_status"] = "LLM_SUMMARY"
+    if result.get("wire_schema_version") != "fundamental_enrichment_wire_v4":
+        main.update({"source_status": "VERIFIED_STRUCTURED", "display_marker": ""})
     result["main_business_summary"] = main
     for key in ("industry_chain", "level_one_sector_explanation", "industry_position", "competitive_advantage", "industry_trend", "investment_logic", "domestic_substitution", "observation_rating"):
         value = result.get(key)
         if isinstance(value, dict): value.setdefault("display_marker", "*")
-    result["structural_theme_fit"] = {"value": "UNKNOWN" if not profile.main_business else "STRUCTURAL_FIT_REQUIRES_MANUAL_REVIEW", "source_status": "LLM_UNVERIFIED", "display_marker": "*"}
+    result.setdefault("structural_theme_fit", {
+        "value": "UNKNOWN" if not profile.main_business else "STRUCTURAL_FIT_REQUIRES_MANUAL_REVIEW",
+        "source_status": "LLM_UNVERIFIED", "display_marker": "*",
+    })
     return result
 
 

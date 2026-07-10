@@ -97,8 +97,16 @@ EDITABLE_CONFIG_SPECS: tuple[ConfigSpec, ...] = (
     _spec("llm.default_model", "models", ("llm", "default_model"), "mock-chat", "string", "llm", "Default LLM model", {"allowed_values": ["mock-chat"]}),
     _spec("llm.enable_cache", "models", ("llm", "enable_cache"), True, "boolean", "llm", "LLM response cache", {}),
     _spec("llm.cache_ttl_minutes", "models", ("llm", "cache_ttl_minutes"), 30, "integer", "llm", "LLM cache TTL", {"min": 1, "max": 1440}),
-    _spec("llm.budgets.daily_token_budget", "models", ("llm", "budget", "daily_token_budget"), 1800000, "integer", "llm", "Daily token budget", {"min": 0, "max": 10000000}),
+    _spec("llm.budgets.daily_token_budget", "models", ("llm", "budget", "daily_token_budget"), 5000000, "integer", "llm", "Daily token budget", {"min": 0, "max": 10000000}),
     _spec("llm.budgets.daily_cost_budget_usd", "models", ("llm", "budget", "daily_cost_budget_usd"), 8, "number", "llm", "Daily cost budget", {"min": 0, "max": 1000}),
+    _spec("flash_v4.weights.quant_consistency", "models", ("flash_v4", "weights", "quant_consistency"), 0.30, "number", "flash_v4", "Flash quant consistency weight", {"min": 0, "max": 1}),
+    _spec("flash_v4.weights.fundamental_quality", "models", ("flash_v4", "weights", "fundamental_quality"), 0.25, "number", "flash_v4", "Flash fundamental quality weight", {"min": 0, "max": 1}),
+    _spec("flash_v4.weights.financial_quality", "models", ("flash_v4", "weights", "financial_quality"), 0.20, "number", "flash_v4", "Flash financial quality weight", {"min": 0, "max": 1}),
+    _spec("flash_v4.weights.risk_fit", "models", ("flash_v4", "weights", "risk_fit"), 0.15, "number", "flash_v4", "Flash risk fit weight", {"min": 0, "max": 1}),
+    _spec("flash_v4.weights.data_quality", "models", ("flash_v4", "weights", "data_quality"), 0.10, "number", "flash_v4", "Flash data quality weight", {"min": 0, "max": 1}),
+    _spec("flash_v4.thresholds.advance", "models", ("flash_v4", "thresholds", "advance"), 70, "number", "flash_v4", "Flash advance threshold", {"min": 0, "max": 100}),
+    _spec("flash_v4.thresholds.hold", "models", ("flash_v4", "thresholds", "hold"), 55, "number", "flash_v4", "Flash hold threshold", {"min": 0, "max": 100}),
+    _spec("flash_v4.thresholds.watch_only", "models", ("flash_v4", "thresholds", "watch_only"), 40, "number", "flash_v4", "Flash watch threshold", {"min": 0, "max": 100}),
     _spec("quant_factor.weights.technical", "quant_factor", ("quant_factor", "weights", "technical"), 0.25, "number", "quant_weights", "Technical factor weight", {"min": 0, "max": 1}),
     _spec("quant_factor.weights.capital", "quant_factor", ("quant_factor", "weights", "capital"), 0.25, "number", "quant_weights", "Capital factor weight", {"min": 0, "max": 1}),
     _spec("quant_factor.weights.emotion", "quant_factor", ("quant_factor", "weights", "emotion"), 0.20, "number", "quant_weights", "Emotion factor weight", {"min": 0, "max": 1}),
@@ -110,6 +118,8 @@ EDITABLE_CONFIG_SPECS: tuple[ConfigSpec, ...] = (
     _spec("order_price.min_risk_reward", "order_price", ("order_price", "min_risk_reward"), 1.5, "number", "order_price", "Minimum risk-reward", {"min": 0, "max": 20}),
     _spec("order_price.ideal_risk_reward", "order_price", ("order_price", "ideal_risk_reward"), 2.0, "number", "order_price", "Ideal risk-reward", {"min": 0, "max": 20}),
     _spec("order_price.max_stop_loss_percent", "order_price", ("order_price", "max_stop_loss_percent"), 0.08, "number", "order_price", "Max stop-loss percent", {"min": 0, "max": 1}),
+    _spec("order_price.stop_validation_tolerance_ticks", "order_price", ("order_price", "stop_validation_tolerance_ticks"), 1, "integer", "order_price", "Stop validation tick tolerance", {"min": 0, "max": 10}),
+    _spec("order_price.risk_reward_target_mode", "order_price", ("order_price", "risk_reward_target", "mode"), "TAKE_PROFIT_2", "string", "order_price", "Active risk-reward target", {"allowed_values": ["TAKE_PROFIT_1", "TAKE_PROFIT_2", "EXPECTED_PROFIT_PRICE"]}),
     _spec("order_price.default_position_percent", "order_price", ("order_price", "default_position_percent"), 0.10, "number", "order_price", "Default position percent", {"min": 0, "max": 1}),
     _spec("event_trigger.price.rapid_rise_percent", "risk_rules", ("event_trigger", "price", "rapid_rise_percent"), 8, "number", "risk_alert", "Rapid rise alert threshold", {"min": 0, "max": 20}),
     _spec("event_trigger.price.rapid_drop_percent", "risk_rules", ("event_trigger", "price", "rapid_drop_percent"), -5, "number", "risk_alert", "Rapid drop alert threshold", {"min": -20, "max": 0}),
@@ -693,6 +703,28 @@ class ConfigManager:
                 code="CONFIG_VALUE_INVALID",
                 message="Position sizing deployable capital and cash reserve must sum to 1",
                 data={"capital_partition_sum": deployable + reserve},
+            )
+
+        flash_weight_keys = (
+            "flash_v4.weights.quant_consistency", "flash_v4.weights.fundamental_quality",
+            "flash_v4.weights.financial_quality", "flash_v4.weights.risk_fit",
+            "flash_v4.weights.data_quality",
+        )
+        flash_total = sum(float(proposed_values[key]) for key in flash_weight_keys)
+        if abs(flash_total - 1.0) > 0.0001:
+            raise ConfigManagerError(
+                code="CONFIG_VALUE_INVALID",
+                message="Flash V4 scoring weights must sum to 1",
+                data={"flash_weight_sum": flash_total},
+            )
+        if not (
+            float(proposed_values["flash_v4.thresholds.advance"])
+            > float(proposed_values["flash_v4.thresholds.hold"])
+            > float(proposed_values["flash_v4.thresholds.watch_only"])
+        ):
+            raise ConfigManagerError(
+                code="CONFIG_VALUE_INVALID",
+                message="Flash V4 thresholds must be strictly descending",
             )
 
     def _yaml_or_default(self, spec: ConfigSpec) -> Any:

@@ -1,0 +1,21 @@
+{
+  "stage": "COMPLETED",
+  "final_status": "PARTIAL_SUCCESS",
+  "quant_run_id": "quant-840384b9e637e1143f243083",
+  "manifest_id": "manifest-7788c77a840e4a2589b6348d1564d1bd",
+  "flash_v4_run_id": "trader-demo-ca9eee27004b4fcda754",
+  "top20_v4_hash": "a88ae0647fce6f4d3373a7d5e62bb7cc1067199827c6129737702e34fa3ce509",
+  "candidate_set_hash": "7f99fc962f27fac8670a1b729df7b540436ca80d5ed64e5dc410556e22071422",
+  "pro_resume_run_id": "pro-resume-69a2fa9da496486d88f3",
+  "order_run_id": "trader-demo-ca9eee27004b4fcda754:order",
+  "allocation_run_id": "trader-demo-allocation-fb4965fc8b594847",
+  "excel_path": "D:\\ai stock agent\\outputs\\2026-07-10\\智能交易助手_2026-07-10_人工阅读版.xlsx",
+  "workbook_sha256": "b1038d0402cfa849038b2528a238d59ade81e7e22ceda12de657b816be50bd0e",
+  "completed_at": "2026-07-10T13:53:37.559517+00:00",
+  "legacy_checkpoint": {
+    "source": "daily_full_pipeline_checkpoint.json",
+    "status": "ARCHIVED_REFERENCE"
+  },
+  "machine_excel_path": "D:\\ai stock agent\\outputs\\2026-07-10\\历史版本\\完整流水线\\ai_trader_flash_v4_20260710_state_clean.xlsx",
+  "output_layout": "outputs/YYYY-MM-DD"
+}

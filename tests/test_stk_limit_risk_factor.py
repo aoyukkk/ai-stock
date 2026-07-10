@@ -24,11 +24,16 @@ def test_stk_limit_enters_top_stock_fields_and_factor_detail(monkeypatch, tmp_pa
     top = report["top_stocks"][0]
     assert top["limit_status"] in {
         "NORMAL",
-        "LIMIT_UP_CLOSE",
-        "LIMIT_DOWN_CLOSE",
         "NEAR_LIMIT_UP",
+        "AT_LIMIT_UP",
+        "OPENED_LIMIT_UP",
+        "CONSECUTIVE_LIMIT_UP",
         "NEAR_LIMIT_DOWN",
-        "UNKNOWN",
+        "AT_LIMIT_DOWN",
+        "OPENED_LIMIT_DOWN",
+        "CONSECUTIVE_LIMIT_DOWN",
+        "LIMIT_DATA_MISSING",
+        "NOT_APPLICABLE",
     }
     assert "limit_up_price" in top
     assert "limit_down_price" in top
@@ -65,4 +70,4 @@ def test_stk_limit_missing_falls_back_without_stopping(monkeypatch, tmp_path) ->
     )
 
     assert report["scored_count"] == 5
-    assert report["top_stocks"][0]["limit_status"] == "UNKNOWN"
+    assert report["top_stocks"][0]["limit_status"] == "LIMIT_DATA_MISSING"

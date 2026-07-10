@@ -16,7 +16,12 @@ DEFAULT_ORDER_PRICE_CONFIG = {
     "min_risk_reward": 1.5,
     "ideal_risk_reward": 2.0,
     "max_stop_loss_percent": 0.08,
+    "stop_validation_tolerance_ticks": 1,
     "default_position_percent": 0.10,
+    "risk_reward_target": {
+        "mode": "TAKE_PROFIT_2",
+        "allowed": ["TAKE_PROFIT_1", "TAKE_PROFIT_2", "EXPECTED_PROFIT_PRICE"],
+    },
     "price_levels": {
         "conservative": True,
         "balanced": True,
@@ -106,6 +111,18 @@ class OrderPriceConfig:
         return Decimal(str(self.raw.get("default_position_percent", "0.10")))
 
     @property
+    def stop_validation_tolerance_ticks(self) -> int:
+        return int(self.raw.get("stop_validation_tolerance_ticks", 1))
+
+    @property
+    def risk_reward_target_mode(self) -> str:
+        return str((self.raw.get("risk_reward_target") or {}).get("mode") or "TAKE_PROFIT_2")
+
+    @property
+    def risk_reward_target_allowed(self) -> list[str]:
+        return list((self.raw.get("risk_reward_target") or {}).get("allowed") or [])
+
+    @property
     def price_levels(self) -> dict[str, bool]:
         raw = self.raw.get("price_levels", {})
         defaults = DEFAULT_ORDER_PRICE_CONFIG["price_levels"]
@@ -156,6 +173,10 @@ class OrderPriceConfig:
             raise OrderPriceConfigError("max_chase_percent must be between 0 and 1.")
         if self.min_risk_reward <= 0:
             raise OrderPriceConfigError("min_risk_reward must be greater than 0.")
+        if self.stop_validation_tolerance_ticks < 0:
+            raise OrderPriceConfigError("stop_validation_tolerance_ticks must be non-negative.")
+        if self.risk_reward_target_mode not in self.risk_reward_target_allowed:
+            raise OrderPriceConfigError("risk_reward_target.mode must be in risk_reward_target.allowed.")
         total = sum(self.order_score_weights.values(), Decimal("0"))
         if abs(total - Decimal("1")) > Decimal("0.0001"):
             raise OrderPriceConfigError(f"order_score_weights must sum to 1.0, got {total}.")
@@ -170,6 +191,11 @@ class OrderPriceConfig:
             "ideal_risk_reward": float(self.ideal_risk_reward),
             "max_stop_loss_percent": float(self.max_stop_loss_percent),
             "default_position_percent": float(self.default_position_percent),
+            "stop_validation_tolerance_ticks": self.stop_validation_tolerance_ticks,
+            "risk_reward_target": {
+                "mode": self.risk_reward_target_mode,
+                "allowed": self.risk_reward_target_allowed,
+            },
             "price_levels": self.price_levels,
             "order_score_weights": {key: float(value) for key, value in self.order_score_weights.items()},
             "cancel_conditions": self.cancel_conditions,
@@ -180,9 +206,26 @@ class OrderPriceConfig:
         }
 
 
-def load_order_price_config() -> OrderPriceConfig:
+def load_order_price_config(manager=None) -> OrderPriceConfig:
     raw = get_app_config().config_files.get("order_price", {}).get("order_price", {})
     merged = _deep_merge(DEFAULT_ORDER_PRICE_CONFIG, raw)
+    from backend.core.config_manager import ConfigManager
+
+    values = (manager or ConfigManager()).get_effective_config()["values"]
+    merged.update({
+        "atr_window": values["order_price.atr_window"],
+        "tick_size": values["order_price.tick_size"],
+        "max_chase_percent": values["order_price.max_chase_percent"],
+        "min_risk_reward": values["order_price.min_risk_reward"],
+        "ideal_risk_reward": values["order_price.ideal_risk_reward"],
+        "max_stop_loss_percent": values["order_price.max_stop_loss_percent"],
+        "stop_validation_tolerance_ticks": values["order_price.stop_validation_tolerance_ticks"],
+        "default_position_percent": values["order_price.default_position_percent"],
+    })
+    merged["risk_reward_target"] = {
+        **dict(merged.get("risk_reward_target") or {}),
+        "mode": values["order_price.risk_reward_target_mode"],
+    }
     return OrderPriceConfig(raw=merged)
 
 

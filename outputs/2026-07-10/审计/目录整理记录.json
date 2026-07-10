@@ -1,0 +1,22 @@
+{
+  "状态": "完成",
+  "输出根目录": "D:\\ai stock agent\\outputs",
+  "当前日期目录": "D:\\ai stock agent\\outputs\\2026-07-10",
+  "移动项目数": 0,
+  "复制审计文件数": 2,
+  "当前检查点": "D:\\ai stock agent\\outputs\\2026-07-10\\审计\\flash_v4_checkpoint.json",
+  "移动记录": [],
+  "复制记录": [
+    {
+      "源": "D:\\ai stock agent\\data\\reports\\flash_v4_final_pipeline_20260710_report.json",
+      "目标": "D:\\ai stock agent\\outputs\\2026-07-10\\审计\\完整流水线报告.json"
+    },
+    {
+      "源": "D:\\ai stock agent\\data\\reports\\flash_v4_final_pytest_20260710.txt",
+      "目标": "D:\\ai stock agent\\outputs\\2026-07-10\\审计\\测试结果.txt"
+    }
+  ],
+  "累计移动项目数": 27,
+  "首次整理移动项目数": 27,
+  "最近检查移动项目数": 0
+}

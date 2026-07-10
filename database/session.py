@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from database.base import Base
 
 
-DEFAULT_SQLITE_URL = "sqlite:///./data/ai_trader_dev.db"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_SQLITE_PATH = (ROOT_DIR / "data" / "ai_trader_dev.db").resolve()
+DEFAULT_SQLITE_URL = f"sqlite:///{DEFAULT_SQLITE_PATH.as_posix()}"
 
 SessionLocal = sessionmaker(
     autocommit=False,

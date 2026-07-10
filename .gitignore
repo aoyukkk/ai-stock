@@ -29,6 +29,14 @@ data/reports/*_debug_raw.json
 *.db
 *.sqlite
 
+# Generated workbooks: keep only the daily human-readable deliverable and compact audits.
+outputs/**
+!outputs/*/
+!outputs/*/*.xlsx
+!outputs/*/审计/
+!outputs/*/审计/*.json
+!outputs/*/审计/*.txt
+
 # Frontend
 node_modules/
 dist/

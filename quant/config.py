@@ -38,6 +38,13 @@ DEFAULT_QUANT_CONFIG = {
         "rsi": {"enabled": True, "window": 14},
         "atr": {"enabled": True, "window": 14},
         "vwap": {"enabled": True},
+        "price_adjustment": {
+            "enabled": False,
+            "mode": "RAW",
+            "point_in_time_required": True,
+            "fallback_to_raw": True,
+            "debug_ab": True,
+        },
     },
     "capital_factor": {
         "main_money_flow": {"enabled": True},
@@ -49,7 +56,23 @@ DEFAULT_QUANT_CONFIG = {
         "limit_down_count": {"enabled": True},
     },
     "momentum_factor": {"r5_weight": 0.60, "r20_weight": 0.40},
-    "risk_factor": {"volatility_window": 20, "drawdown_window": 20},
+    "risk_factor": {
+        "volatility_window": 20,
+        "drawdown_window": 20,
+        "price_limit": {
+            "enabled": False,
+            "near_limit_percent": 0.01,
+            "consecutive_window": 5,
+            "tick_size": 0.01,
+        },
+        "internal_weights": {
+            "volatility": 0.30,
+            "drawdown": 0.25,
+            "liquidity": 0.15,
+            "financial": 0.15,
+            "price_limit": 0.15,
+        },
+    },
 }
 
 

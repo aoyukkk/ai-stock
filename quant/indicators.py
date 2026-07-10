@@ -15,6 +15,25 @@ def moving_average(values, window: int) -> Decimal | None:
     return Decimal(str(mean(clean[-window:]))).quantize(Decimal("0.0001"))
 
 
+def exponential_moving_average(values, window: int) -> Decimal | None:
+    clean = _to_decimal_list(values)
+    if window <= 0 or len(clean) < window:
+        return None
+    multiplier = Decimal("2") / Decimal(window + 1)
+    result = Decimal(str(mean(clean[:window])))
+    for value in clean[window:]:
+        result = (value - result) * multiplier + result
+    return result.quantize(Decimal("0.0001"))
+
+
+def macd(values, fast: int = 12, slow: int = 26) -> tuple[Decimal | None, Decimal | None]:
+    fast_value = exponential_moving_average(values, fast)
+    slow_value = exponential_moving_average(values, slow)
+    if fast_value is None or slow_value is None:
+        return None, None
+    return fast_value, slow_value
+
+
 def percentage_return(current, previous) -> Decimal | None:
     if current is None or previous in (None, 0):
         return None

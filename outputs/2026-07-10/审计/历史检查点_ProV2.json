@@ -1,0 +1,144 @@
+{
+  "stage": "PRO_AGGREGATION",
+  "updated_at": "2026-07-10T12:49:59.207313+00:00",
+  "resume": {
+    "quant_run_id": "quant-840384b9e637e1143f243083",
+    "manifest_id": "manifest-7788c77a840e4a2589b6348d1564d1bd",
+    "flash_validation_run_id": "trader-demo-1ee21177ee9e48908cf4",
+    "top20_hash": "3d49d0907178c00668ec591701787abc97c9bc31d615d22d29728a0b2dfb442f",
+    "manual_hash": "1a7e251657cadec64c90b55bd4f7096fb11431f7413270b799b2882471daa8f3",
+    "candidate_set_hash": "6f577ccf591a59564a2377df03dbb01058fc3f42555cadd3ab0ae6d069429004",
+    "base_trade_date": "2026-07-10",
+    "target_trade_date": "2026-07-13",
+    "top20_count": 20,
+    "manual_count": 7,
+    "candidate_count": 26,
+    "top20_codes": [
+      "000034.SZ",
+      "000977.SZ",
+      "002274.SZ",
+      "002457.SZ",
+      "002558.SZ",
+      "002605.SZ",
+      "300043.SZ",
+      "300418.SZ",
+      "300458.SZ",
+      "300474.SZ",
+      "300533.SZ",
+      "300725.SZ",
+      "300759.SZ",
+      "301345.SZ",
+      "600129.SH",
+      "603019.SH",
+      "603118.SH",
+      "603893.SH",
+      "688135.SH",
+      "688222.SH"
+    ],
+    "manual_codes": [
+      "300145.SZ",
+      "300821.SZ",
+      "301151.SZ",
+      "301356.SZ",
+      "603726.SH",
+      "603019.SH",
+      "002409.SZ"
+    ],
+    "candidate_codes": [
+      "603019.SH",
+      "603893.SH",
+      "002457.SZ",
+      "300474.SZ",
+      "002558.SZ",
+      "300533.SZ",
+      "000977.SZ",
+      "688135.SH",
+      "002605.SZ",
+      "301345.SZ",
+      "600129.SH",
+      "300759.SZ",
+      "300043.SZ",
+      "300418.SZ",
+      "300458.SZ",
+      "002274.SZ",
+      "688222.SH",
+      "000034.SZ",
+      "300725.SZ",
+      "603118.SH",
+      "301151.SZ",
+      "300145.SZ",
+      "300821.SZ",
+      "002409.SZ",
+      "603726.SH",
+      "301356.SZ"
+    ],
+    "pro_contract_version": "pro_candidate_wire_v2",
+    "candidate_prompt_version": "pro_candidate_review_v2",
+    "portfolio_prompt_version": "pro_portfolio_summary_v2",
+    "chunk_size": 5,
+    "chunks": [
+      {
+        "chunk_id": "candidate-01",
+        "stock_codes": [
+          "603019.SH",
+          "603893.SH",
+          "002457.SZ",
+          "300474.SZ",
+          "002558.SZ"
+        ]
+      },
+      {
+        "chunk_id": "candidate-02",
+        "stock_codes": [
+          "300533.SZ",
+          "000977.SZ",
+          "688135.SH",
+          "002605.SZ",
+          "301345.SZ"
+        ]
+      },
+      {
+        "chunk_id": "candidate-03",
+        "stock_codes": [
+          "600129.SH",
+          "300759.SZ",
+          "300043.SZ",
+          "300418.SZ",
+          "300458.SZ"
+        ]
+      },
+      {
+        "chunk_id": "candidate-04",
+        "stock_codes": [
+          "002274.SZ",
+          "688222.SH",
+          "000034.SZ",
+          "300725.SZ",
+          "603118.SH"
+        ]
+      },
+      {
+        "chunk_id": "candidate-05",
+        "stock_codes": [
+          "301151.SZ",
+          "300145.SZ",
+          "300821.SZ",
+          "002409.SZ",
+          "603726.SH"
+        ]
+      },
+      {
+        "chunk_id": "candidate-06",
+        "stock_codes": [
+          "301356.SZ"
+        ]
+      }
+    ],
+    "quant_rerun": false,
+    "flash_rerun": false
+  },
+  "legacy_checkpoint": {
+    "stage": "PRO_AGGREGATION",
+    "updated_at": "2026-07-10T12:44:49.329850+00:00"
+  }
+}

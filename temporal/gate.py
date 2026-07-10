@@ -1,9 +1,26 @@
 from __future__ import annotations
 
+from datetime import date, datetime
+
 from temporal.schemas import RunDataManifest, RunMode, RunTemporalContext, TemporalStatus
 
 
 class TemporalConsistencyGate:
+    @staticmethod
+    def point_in_time_factor_legal(
+        *,
+        factor_trade_date: date,
+        factor_available_at: datetime,
+        base_market_trade_date: date,
+        decision_time: datetime,
+    ) -> bool:
+        if factor_available_at.tzinfo is None or decision_time.tzinfo is None:
+            return False
+        return (
+            factor_trade_date <= base_market_trade_date
+            and factor_available_at <= decision_time
+        )
+
     def evaluate(self, context: RunTemporalContext, manifest: RunDataManifest) -> RunDataManifest:
         reasons: list[str] = []
         warnings: list[str] = []

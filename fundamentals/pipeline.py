@@ -3,14 +3,17 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fundamentals.cache import ReportPeriodCache
+from fundamentals.concepts import TushareConceptIndex
 from fundamentals.profile import TushareFundamentalProfile, TushareFundamentalProfileBuilder
 from fundamentals.revision import select_latest_revisions
 from fundamentals.period_planner import FinancialPeriodPlanner
+from stock_codes import normalize_ts_code
 
 
 class CachedTushareProfileService:
     def __init__(self, cache: ReportPeriodCache | None = None) -> None:
         self.cache = cache or ReportPeriodCache()
+        self.concepts = TushareConceptIndex(self.cache.root.parent)
 
     def latest_cached_period(self) -> str | None:
         periods = set()
@@ -21,7 +24,7 @@ class CachedTushareProfileService:
         return max(periods) if periods else None
 
     def build(self, stock_code: str, period: str | None = None, decision_time: datetime | None = None) -> TushareFundamentalProfile:
-        lookup_code = _canonical_ts_code(stock_code)
+        lookup_code = normalize_ts_code(stock_code)
         decision_time = decision_time or datetime.now(timezone.utc)
         periods = [period] if period else self._cached_periods()
         if not periods:
@@ -57,6 +60,7 @@ class CachedTushareProfileService:
             key=lambda item: item.get("latest_financial_period", ""),
             default={},
         )
+        concept = self.concepts.lookup(lookup_code)
         return TushareFundamentalProfileBuilder().build(
             stock_code,
             stock_basic=stock_basic,
@@ -66,6 +70,13 @@ class CachedTushareProfileService:
             cashflow=rows["cashflow"],
             indicator=rows["fina_indicator"],
             main_business=business,
+            concept_tags=concept.normalized_tags,
+            concept_mapping_audit={
+                "raw_source_concept_tag_count": concept.raw_source_count,
+                "normalized_concept_tag_count": concept.normalized_source_count,
+                "inferred_concept_tag_count": concept.inferred_count,
+                "concept_source_status": concept.source_status,
+            },
             as_of_time=decision_time,
             financial_selection=selection,
         )
@@ -82,13 +93,3 @@ class CachedTushareProfileService:
         root = self.cache.root / "stock_basic"
         periods = [path.name for path in root.iterdir() if path.is_dir() and path.name.isdigit()] if root.exists() else []
         return max(periods) if periods else None
-
-
-def _canonical_ts_code(value: str) -> str:
-    text = str(value).upper()
-    if "." in text:
-        return text
-    code = text.zfill(6)
-    if code.startswith(("4", "8", "920")): return f"{code}.BJ"
-    if code.startswith("6"): return f"{code}.SH"
-    return f"{code}.SZ"

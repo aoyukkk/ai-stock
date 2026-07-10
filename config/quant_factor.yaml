@@ -41,6 +41,12 @@ technical_factor:
     window: 14
   vwap:
     enabled: true
+  price_adjustment:
+    enabled: false
+    mode: RAW
+    point_in_time_required: true
+    fallback_to_raw: true
+    debug_ab: true
 
 capital_factor:
   main_money_flow:
@@ -64,3 +70,14 @@ momentum_factor:
 risk_factor:
   volatility_window: 20
   drawdown_window: 20
+  price_limit:
+    enabled: false
+    near_limit_percent: 0.01
+    consecutive_window: 5
+    tick_size: 0.01
+  internal_weights:
+    volatility: 0.30
+    drawdown: 0.25
+    liquidity: 0.15
+    financial: 0.15
+    price_limit: 0.15

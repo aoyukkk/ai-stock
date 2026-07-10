@@ -26,3 +26,21 @@ python scripts/migrate_llm_audit_v04.py
 Adds isolated, non-actionable MODEL_VALIDATION run, sample, LLM audit, read-only order plan,
 validation account snapshot, and allocation tables. It does not alter formal order, broker,
 paper-trading, or execution tables.
+
+### 20260710_add_trader_demo_audit_fields_v08.sql
+
+Adds compact error category, schema field, and sanitized message columns to model validation
+LLM audit rows so per-stock failures remain diagnosable without storing model responses.
+
+### 20260710_add_llm_failure_diagnostics_v09.sql
+
+Adds sanitized response-boundary diagnostics and an append-only failure ledger. No raw model
+response, prompt, API key, or chain-of-thought is stored.
+
+### 20260710_add_pro_single_review_v11.sql
+
+Adds single-stock Pro V3 resume and deterministic ranking fields.
+
+### 20260710_add_flash_v4_order_semantics_v12.sql
+
+Adds TP1/TP2 risk-reward, active target, and unrounded stop fields for advisory model validation.

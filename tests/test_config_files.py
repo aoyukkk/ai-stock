@@ -114,7 +114,7 @@ def test_key_v03_config_skeletons_exist() -> None:
     assert ai_score["ai_score"]["risk_gate"]["enabled"] is True
     assert llm["llm_gateway"]["required"] is True
     assert llm["llm"]["mock_only"] is True
-    assert token_cost["token"]["daily_budget"]["default"] == 1800000
+    assert token_cost["token"]["daily_budget"]["default"] == 5000000
     assert paper_trading["paper_trading"]["rules"]["t_plus_one"] is True
     assert risk["risk"]["position_limit_mode"] == "advisory_only"
     assert ui["ui"]["config_change"]["write_history"] is True

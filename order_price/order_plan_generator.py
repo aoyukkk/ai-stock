@@ -14,6 +14,7 @@ from order_price.price_level_calculator import (
     calculate_max_buy_price,
     calculate_risk_reward,
     calculate_stop_loss,
+    calculate_stop_loss_unrounded,
     calculate_take_profit_prices,
     calculate_vwap,
 )
@@ -78,6 +79,11 @@ def generate_order_plan(context: OrderPriceInput, config: OrderPriceConfig, plan
         stop_loss_price=stop_loss_price,
         take_profit_1_price=take_profit_1,
         take_profit_2_price=take_profit_2,
+        unrounded_stop_loss_price=recommended.unrounded_stop_loss_price if recommended else None,
+        risk_reward_to_tp1=recommended.risk_reward_to_tp1 if recommended else None,
+        risk_reward_to_tp2=recommended.risk_reward_to_tp2 if recommended else None,
+        active_risk_reward=recommended.active_risk_reward if recommended else None,
+        active_target_mode=config.risk_reward_target_mode,
         suggested_position_percent=config.default_position_percent,
         confidence=context.confidence,
         reason=_plan_reason(context, recommended, atr, support, resistance, vwap),
@@ -107,9 +113,17 @@ def _build_candidate(
     atr: Decimal,
     max_acceptable_price: Decimal,
 ) -> PriceLevelCandidate:
+    unrounded_stop_loss_price = calculate_stop_loss_unrounded(price, atr, config)
     stop_loss_price = calculate_stop_loss(price, atr, config)
-    take_profit_1, _ = calculate_take_profit_prices(price, atr, config)
-    risk_reward = calculate_risk_reward(price, stop_loss_price, take_profit_1)
+    take_profit_1, take_profit_2 = calculate_take_profit_prices(price, atr, config)
+    risk_reward_to_tp1 = calculate_risk_reward(price, stop_loss_price, take_profit_1)
+    risk_reward_to_tp2 = calculate_risk_reward(price, stop_loss_price, take_profit_2)
+    active_targets = {
+        "TAKE_PROFIT_1": risk_reward_to_tp1,
+        "TAKE_PROFIT_2": risk_reward_to_tp2,
+        "EXPECTED_PROFIT_PRICE": risk_reward_to_tp1,
+    }
+    risk_reward = active_targets[config.risk_reward_target_mode]
     expected_return = ((take_profit_1 - price) / price * Decimal("100")).quantize(Decimal("0.0001")) if price > 0 else Decimal("0")
     fill_probability = estimate_fill_probability(
         candidate_price=price,
@@ -129,6 +143,13 @@ def _build_candidate(
         risk_reward=risk_reward,
         expected_profit_price=take_profit_1,
         stop_loss_price=stop_loss_price,
+        unrounded_stop_loss_price=unrounded_stop_loss_price,
+        take_profit_1_price=take_profit_1,
+        take_profit_2_price=take_profit_2,
+        risk_reward_to_tp1=risk_reward_to_tp1,
+        risk_reward_to_tp2=risk_reward_to_tp2,
+        active_risk_reward=risk_reward,
+        active_target_mode=config.risk_reward_target_mode,
         reason=reason,
     )
     score = calculate_order_score(candidate, context, config, max_acceptable_price)
