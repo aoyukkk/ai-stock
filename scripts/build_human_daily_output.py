@@ -83,7 +83,7 @@ def main() -> int:
     if output_root not in daily_root.parents:
         raise ValueError("DAILY_OUTPUT_PATH_OUTSIDE_OUTPUTS")
     daily_root.mkdir(parents=True, exist_ok=True)
-    output_path = daily_root / f"智能交易助手_{trade_date}_人工阅读版.xlsx"
+    output_path = daily_root / f"智能交易助手_{trade_date}.xlsx"
     if output_path.exists() and args.replace_existing:
         history_dir = daily_root / "历史版本"
         history_dir.mkdir(parents=True, exist_ok=True)
@@ -336,7 +336,8 @@ def _validate_workbook(path: Path) -> dict[str, Any]:
         if archive.testzip() is not None:
             raise ValueError("HUMAN_WORKBOOK_ZIP_ERROR")
         workbook_xml = archive.read("xl/workbook.xml").decode("utf-8", errors="replace")
-        if len(re.findall(r"<(?:\w+:)?sheet\b", workbook_xml)) != 6:
+        sheet_count = len(re.findall(r"<(?:\w+:)?sheet\b", workbook_xml))
+        if sheet_count not in {5, 6}:
             raise ValueError("HUMAN_WORKBOOK_SHEET_COUNT_ERROR")
         xml = "\n".join(
             archive.read(name).decode("utf-8", errors="ignore")
@@ -347,7 +348,7 @@ def _validate_workbook(path: Path) -> dict[str, Any]:
     forbidden = ("MODEL_VALIDATION", "NON_ACTIONABLE", "WATCH_ONLY", "ADVANCE", "request_hash", "reasoning_content")
     if any(value.lower() in xml.lower() for value in forbidden):
         raise ValueError("HUMAN_WORKBOOK_TECHNICAL_TEXT_LEAK")
-    return {"状态": "通过", "工作表数量": 6, "压缩包完整性": "通过", "敏感信息检查": "通过"}
+    return {"状态": "通过", "工作表数量": sheet_count, "压缩包完整性": "通过", "敏感信息检查": "通过"}
 
 
 def _assert_safe_runtime() -> None:

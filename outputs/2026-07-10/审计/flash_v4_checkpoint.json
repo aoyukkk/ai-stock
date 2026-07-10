@@ -9,8 +9,8 @@
   "pro_resume_run_id": "pro-resume-69a2fa9da496486d88f3",
   "order_run_id": "trader-demo-ca9eee27004b4fcda754:order",
   "allocation_run_id": "trader-demo-allocation-fb4965fc8b594847",
-  "excel_path": "D:\\ai stock agent\\outputs\\2026-07-10\\智能交易助手_2026-07-10_人工阅读版.xlsx",
-  "workbook_sha256": "b1038d0402cfa849038b2528a238d59ade81e7e22ceda12de657b816be50bd0e",
+  "excel_path": "D:\\ai stock agent\\outputs\\2026-07-10\\智能交易助手_2026-07-10.xlsx",
+  "workbook_sha256": "49c401fa86397f1e9629877a01cdbd271067ddc88286cede6f9a8d8ab09254aa",
   "completed_at": "2026-07-10T13:53:37.559517+00:00",
   "legacy_checkpoint": {
     "source": "daily_full_pipeline_checkpoint.json",

@@ -5,7 +5,7 @@
 ```text
 outputs/
   YYYY-MM-DD/
-    智能交易助手_YYYY-MM-DD_人工阅读版.xlsx
+    智能交易助手_YYYY-MM-DD.xlsx
     审计/
     历史版本/
     预览/

@@ -112,7 +112,7 @@ def _copy_current_reports(current_date: str) -> list[dict[str, str]]:
 def _update_current_checkpoint(current_date: str) -> Path:
     daily_root = (OUTPUTS / current_date).resolve()
     checkpoint_path = daily_root / "审计" / "flash_v4_checkpoint.json"
-    workbook = daily_root / f"智能交易助手_{current_date}_人工阅读版.xlsx"
+    workbook = daily_root / f"智能交易助手_{current_date}.xlsx"
     if not checkpoint_path.exists() or not workbook.exists():
         raise FileNotFoundError("CURRENT_CHECKPOINT_OR_HUMAN_WORKBOOK_MISSING")
     checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
