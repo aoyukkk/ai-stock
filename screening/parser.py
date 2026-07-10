@@ -43,6 +43,7 @@ def _parse_item(item: dict[str, Any]) -> LightScreeningLLMOutput:
         "reason",
         "risk_note",
         "should_keep",
+        "data_conflict",
     }
     missing = required - set(item)
     if missing:
@@ -65,6 +66,7 @@ def _parse_item(item: dict[str, Any]) -> LightScreeningLLMOutput:
         reason=str(item["reason"]),
         risk_note=str(item["risk_note"]),
         should_keep=bool(item["should_keep"]),
+        data_conflict=bool(item["data_conflict"]),
     )
 
 

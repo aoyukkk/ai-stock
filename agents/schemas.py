@@ -44,6 +44,7 @@ class AgentAnalysisOutput(AgentModel):
     reason: str
     risk_note: str
     action: AgentAction
+    data_conflict: bool = False
     raw_output: dict | None = None
     prompt_version: str | None = None
     model_version: str | None = None

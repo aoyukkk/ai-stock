@@ -9,6 +9,7 @@ from llm_gateway.service import LLMGatewayService, get_llm_gateway_service
 from quant.service import QuantService
 from screening.config import LightScreeningConfig, load_light_screening_config
 from screening.parser import parse_light_screening_output
+from screening.exceptions import LightScreeningParseError
 from screening.persistence import persist_light_screening_results
 from screening.prompt_builder import SYSTEM_PROMPT, build_light_screening_prompt
 from screening.schemas import (
@@ -17,6 +18,41 @@ from screening.schemas import (
     LightScreeningResult,
 )
 from screening.scoring import calculate_final_light_score, calculate_llm_score
+
+
+LIGHT_SCREENING_RESPONSE_SCHEMA = {
+    "type": "object",
+    "required": ["items"],
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "stock_code", "opportunity_score", "event_catalyst_score",
+                    "sector_strength_score", "order_friendliness_score", "liquidity_score",
+                    "risk_penalty_score", "confidence", "direction", "reason", "risk_note", "should_keep",
+                    "data_conflict",
+                ],
+                "properties": {
+                    "stock_code": {"type": "string"},
+                    "opportunity_score": {"type": "number"},
+                    "event_catalyst_score": {"type": "number"},
+                    "sector_strength_score": {"type": "number"},
+                    "order_friendliness_score": {"type": "number"},
+                    "liquidity_score": {"type": "number"},
+                    "risk_penalty_score": {"type": "number"},
+                    "confidence": {"type": "number"},
+                    "direction": {"type": "string", "enum": ["BUY", "WATCH", "NEUTRAL", "AVOID"]},
+                    "reason": {"type": "string"},
+                    "risk_note": {"type": "string"},
+                    "should_keep": {"type": "boolean"},
+                    "data_conflict": {"type": "boolean"},
+                },
+            },
+        }
+    },
+}
 
 
 class LightScreeningService:
@@ -108,8 +144,7 @@ class LightScreeningService:
                         LLMMessage(role="system", content=SYSTEM_PROMPT),
                         LLMMessage(role="user", content=prompt),
                     ],
-                    provider=self.config.provider,
-                    model=self.config.model,
+                    model_alias=self.config.model_alias,
                     prompt_version="v0.3-phase6",
                     metadata={
                         "structured": True,
@@ -118,12 +153,17 @@ class LightScreeningService:
                             for item in batch
                         ],
                     },
+                    response_schema=LIGHT_SCREENING_RESPONSE_SCHEMA,
+                    json_mode=True,
                 )
             )
-            outputs = {
-                item.stock_code: item
-                for item in parse_light_screening_output(response.content)
-            }
+            try:
+                if response.status != "ok":
+                    raise LightScreeningParseError(f"Gateway returned {response.status}.")
+                parsed_outputs = parse_light_screening_output(response.content)
+            except LightScreeningParseError:
+                parsed_outputs = [self._safe_watch_only_output(item) for item in batch]
+            outputs = {item.stock_code: item for item in parsed_outputs}
             for item in batch:
                 output = outputs[item.stock_code]
                 llm_score = calculate_llm_score(output)
@@ -145,6 +185,7 @@ class LightScreeningService:
                         direction=output.direction,
                         confidence=output.confidence,
                         should_keep=should_keep,
+                        data_conflict=output.data_conflict,
                         reason=output.reason,
                         risk_note=output.risk_note,
                         prompt_version=response.prompt_version,
@@ -153,3 +194,23 @@ class LightScreeningService:
                     )
                 )
         return results
+
+    def _safe_watch_only_output(self, item: LightScreeningInput):
+        from screening.schemas import LightScreeningLLMOutput
+
+        neutral = Decimal("50")
+        return LightScreeningLLMOutput(
+            stock_code=item.stock_code,
+            opportunity_score=item.quant_total_score,
+            event_catalyst_score=neutral,
+            sector_strength_score=item.emotion_score,
+            order_friendliness_score=neutral,
+            liquidity_score=item.capital_score,
+            risk_penalty_score=Decimal("100"),
+            confidence=self.config.min_confidence,
+            direction="NEUTRAL",
+            reason="LLM output unavailable; safe rule-based WATCH_ONLY degradation applied.",
+            risk_note="Structured LLM validation failed; manual review is required.",
+            should_keep=True,
+            data_conflict=True,
+        )

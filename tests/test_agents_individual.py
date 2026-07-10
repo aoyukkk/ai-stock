@@ -57,7 +57,7 @@ def test_individual_agents_return_structured_outputs_through_gateway() -> None:
         assert 0 <= output.confidence <= 1
         assert output.direction in {"BUY", "WATCH", "NEUTRAL", "AVOID"}
         assert output.action in {"ALLOW", "WATCH_ONLY", "BLOCK", "NEED_RECHECK"}
-        assert output.model_version == "mock-chat"
+        assert output.model_version in {"mock-chat", "mock-fast", "mock-reasoning"}
         assert output.request_hash
 
 

@@ -27,6 +27,9 @@ REQUIRED_CONFIG_FILES = [
     "ui.yaml",
     "data_sources.yaml",
     "frontend.yaml",
+    "fundamental_research.yaml",
+    "position_sizing.yaml",
+    "temporal.yaml",
 ]
 
 
@@ -137,3 +140,16 @@ def test_real_trading_defaults_disabled() -> None:
     assert paper_trading["paper_trading"]["real_trading_enabled"] is False
     assert "ENABLE_REAL_TRADING=false" in env_example
     assert "AI_AUTO_REAL_ORDER_ENABLED=false" in env_example
+    assert "RUN_REAL_FUNDAMENTAL_RESEARCH=false" in env_example
+    assert "DEEPSEEK_WEB_SEARCH_ENABLED=false" in env_example
+
+
+def test_research_and_position_sizing_defaults_are_fail_closed() -> None:
+    research = load_yaml(CONFIG_DIR / "fundamental_research.yaml")["fundamental_research"]
+    sizing = load_yaml(CONFIG_DIR / "position_sizing.yaml")["position_sizing"]
+    assert research["enabled"] is False
+    assert research["max_stocks"] == 5
+    assert research["max_queries_per_stock"] == 4
+    assert research["max_sources_per_stock"] == 12
+    assert sizing["advisory_only"] is True
+    assert sizing["deployable_capital_percent"] + sizing["cash_reserve_percent"] == 1

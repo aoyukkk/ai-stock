@@ -29,6 +29,17 @@ def test_effective_config_reads_yaml_defaults(config_manager: ConfigManager) -> 
     assert effective["values"]["paper_trading.real_trading_enabled"] is False
 
 
+def test_llm_gateway_config_uses_config_manager_and_keeps_secrets_out(
+    config_manager: ConfigManager,
+) -> None:
+    models = config_manager.get_llm_gateway_config()
+
+    assert models["llm"]["mock_only"] is True
+    assert models["llm"]["providers"]["deepseek"]["enabled"] is True
+    assert models["llm"]["aliases"]["light-screening-default"]["provider"] == "deepseek"
+    assert "api_key" not in models["llm"]["providers"]["deepseek"]
+
+
 def test_database_override_has_priority_and_reset_restores_yaml(
     config_manager: ConfigManager,
 ) -> None:
@@ -99,7 +110,6 @@ def test_quant_weight_sum_is_validated(config_manager: ConfigManager) -> None:
 
 def test_phase14_mock_and_disabled_memory_constraints(config_manager: ConfigManager) -> None:
     invalid_items = [
-        ("llm.mock_only", False),
         ("llm.default_provider", "openai"),
         ("llm.default_model", "gpt-5.5"),
         ("memory.vector.enabled", True),
@@ -110,6 +120,11 @@ def test_phase14_mock_and_disabled_memory_constraints(config_manager: ConfigMana
         with pytest.raises(ConfigManagerError) as exc_info:
             config_manager.set_config_value(key, value, user="tester", reason="blocked")
         assert exc_info.value.code == "CONFIG_VALUE_INVALID"
+
+    result = config_manager.set_config_value(
+        "llm.mock_only", False, user="tester", reason="guarded real-call preparation"
+    )
+    assert result["effective_value"] is False
 
 
 def test_config_history_is_written(config_manager: ConfigManager) -> None:
@@ -127,3 +142,22 @@ def test_config_history_is_written(config_manager: ConfigManager) -> None:
     assert history[0]["old_value"] == 14
     assert history[0]["new_value"] == 20
     assert history[0]["user"] == "tester"
+
+
+def test_position_sizing_partition_and_history_rollback(config_manager: ConfigManager) -> None:
+    with pytest.raises(ConfigManagerError):
+        config_manager.set_config_value(
+            "position_sizing.deployable_capital_percent", 0.7, user="tester", reason="invalid"
+        )
+
+    config_manager.set_config_value(
+        "position_sizing.conviction_power",
+        3.0,
+        user="tester",
+        reason="curve test",
+    )
+    history = config_manager.list_config_history(
+        config_key="position_sizing.conviction_power"
+    )
+    rollback = config_manager.rollback_config_history(history[0]["id"], user="tester")
+    assert rollback["effective_value"] == 2.0

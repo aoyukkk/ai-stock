@@ -2,7 +2,7 @@ agents:
   light_screening_agent:
     enabled: true
     model_alias: mock-fast
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: light-screening-default
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
@@ -10,7 +10,7 @@ agents:
   technical_agent:
     enabled: true
     model_alias: mock-fast
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: technical-summary-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
@@ -18,7 +18,7 @@ agents:
   news_agent:
     enabled: true
     model_alias: mock-fast
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: news-classification-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2500
@@ -26,7 +26,7 @@ agents:
   capital_agent:
     enabled: true
     model_alias: mock-fast
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: capital-summary-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
@@ -34,7 +34,7 @@ agents:
   emotion_agent:
     enabled: true
     model_alias: mock-fast
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: emotion-summary-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
@@ -42,7 +42,7 @@ agents:
   overseas_agent:
     enabled: true
     model_alias: mock-fast
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: overseas-summary-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
@@ -50,7 +50,7 @@ agents:
   risk_agent:
     enabled: true
     model_alias: mock-reasoning
-    preferred_model_alias: gpt-5.5
+    preferred_model_alias: risk-high-capability
     phase0_model_alias: mock-reasoning
     temperature: 0.1
     max_tokens: 4000
@@ -58,7 +58,7 @@ agents:
   controller_agent:
     enabled: true
     model_alias: mock-reasoning
-    preferred_model_alias: gpt-5.5
+    preferred_model_alias: controller-high-capability
     phase0_model_alias: mock-reasoning
     temperature: 0.1
     max_tokens: 5000
@@ -66,7 +66,7 @@ agents:
   daily_review_agent:
     enabled: true
     model_alias: mock-reasoning
-    preferred_model_alias: gpt-5.5
+    preferred_model_alias: daily-review-final-high-capability
     phase0_model_alias: mock-reasoning
     temperature: 0.1
     max_tokens: 4000

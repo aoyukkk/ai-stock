@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -14,7 +15,7 @@ if str(ROOT_BOOTSTRAP) not in sys.path:
 
 from datasource.baostock_provider import BaoStockMarketDataProvider
 from datasource.models.market import KLineBar, MarketStockInfo
-from datasource.tushare_provider import TushareMarketDataProvider
+from datasource.tushare_provider import DEFAULT_TOKEN_ENV, TushareMarketDataProvider, _env_file_value
 
 
 REPORT_PATH = Path("data/reports/tushare_baostock_kline_compare_report.json")
@@ -29,6 +30,7 @@ def run_compare(
     output: str | Path = REPORT_PATH,
     progress: bool = True,
 ) -> dict[str, Any]:
+    _load_local_tushare_token()
     started_at = datetime.now(timezone.utc)
     started_perf = time.perf_counter()
     output_path = Path(output)
@@ -209,6 +211,14 @@ def _parse_date_value(value: str | date) -> date:
 def _append_error(errors: list[dict[str, Any]], stock_code: str, code: str, message: str) -> None:
     if len(errors) < 50:
         errors.append({"stock_code": stock_code, "code": code, "message": message})
+
+
+def _load_local_tushare_token() -> None:
+    if os.getenv(DEFAULT_TOKEN_ENV, "").strip():
+        return
+    token = _env_file_value(Path(".env"), DEFAULT_TOKEN_ENV)
+    if token:
+        os.environ[DEFAULT_TOKEN_ENV] = token
 
 
 if __name__ == "__main__":

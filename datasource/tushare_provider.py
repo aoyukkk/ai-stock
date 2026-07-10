@@ -36,6 +36,9 @@ PERMISSION_NEEDLES = (
     "permission",
     "no permission",
     "2002",
+    "没有访问该接口的权限",
+    "没有权限",
+    "积分不足",
     "没有权限",
     "权限",
     "积分",
@@ -48,6 +51,8 @@ NETWORK_NEEDLES = (
     "ssl",
     "远程",
 )
+RATE_LIMIT_NEEDLES = ("rate limit", "too many", "频率", "每分钟最多")
+INVALID_PARAMETER_NEEDLES = ("invalid parameter", "参数错误", "参数不正确", "必选参数")
 
 
 MOJIBAKE_MARKERS = (
@@ -121,7 +126,12 @@ class TushareMarketDataProvider(MarketDataProvider):
         self.cache_miss_count = 0
         self.cache_refresh_count = 0
         self.cache_insufficient_count = 0
+        self.trade_date_cache_hit_count = 0
+        self.trade_date_cache_miss_count = 0
+        self.trade_date_cache_refresh_count = 0
+        self.per_stock_api_call_count = 0
         self.api_status_counts: dict[str, int] = {}
+        self._trade_date_memory_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self._pro_client: Any | None = None
         self._fallback = MockMarketDataProvider()
 
@@ -151,6 +161,10 @@ class TushareMarketDataProvider(MarketDataProvider):
             "request_interval_seconds": self.request_interval_seconds,
             "timeout_seconds": self.timeout_seconds,
             "api_status_counts": dict(self.api_status_counts),
+            "trade_date_cache_hit_count": self.trade_date_cache_hit_count,
+            "trade_date_cache_miss_count": self.trade_date_cache_miss_count,
+            "trade_date_cache_refresh_count": self.trade_date_cache_refresh_count,
+            "per_stock_api_call_count": self.per_stock_api_call_count,
         }
 
     def token_configured(self) -> bool:
@@ -164,6 +178,7 @@ class TushareMarketDataProvider(MarketDataProvider):
         required_fields: set[str] | list[str] | None = None,
         limit: int | None = None,
         use_cache: bool = True,
+        write_cache: bool = True,
     ) -> TushareEndpointResult:
         params = _clean_params(params or {})
         fields_text = ",".join(fields) if isinstance(fields, list) else fields
@@ -197,6 +212,8 @@ class TushareMarketDataProvider(MarketDataProvider):
         last_exc: Exception | None = None
         for attempt in range(self.max_retry):
             try:
+                if _is_per_stock_api_call(api_name, params):
+                    self.per_stock_api_call_count += 1
                 frame = self._call_api(api_name, params, fields_text)
                 records = _records(frame)
                 if limit is not None:
@@ -205,7 +222,7 @@ class TushareMarketDataProvider(MarketDataProvider):
                 self._mark_success(result.status)
                 if self.cache_enabled:
                     self.cache_miss_count += 1
-                if self.cache_enabled and result.status in {"available", "empty"}:
+                if self.cache_enabled and write_cache and result.status in {"available", "empty"}:
                     self.cache_dir.mkdir(parents=True, exist_ok=True)
                     if cache_path.exists():
                         self.cache_refresh_count += 1
@@ -228,8 +245,126 @@ class TushareMarketDataProvider(MarketDataProvider):
             status=status,
             error_type=error_type,
             error_message=error_message,
+                source_status=status,
+            )
+
+    def trade_date_cache_path(self, api_name: str, trade_date: str | None) -> Path:
+        normalized_date = _ts_date(trade_date) or "latest"
+        if api_name in {"ths_index", "ths_member"}:
+            return self.cache_dir / "concept" / api_name / f"{normalized_date}.json"
+        return self.cache_dir / "trade_date" / api_name / f"{normalized_date}.json"
+
+    def query_trade_date_endpoint(
+        self,
+        api_name: str,
+        trade_date: str | None,
+        fields: str | list[str] | None = None,
+        required_fields: set[str] | list[str] | None = None,
+        use_cache: bool = True,
+        refresh_cache: bool = False,
+    ) -> TushareEndpointResult:
+        normalized_date = _ts_date(trade_date)
+        fields_text = ",".join(fields) if isinstance(fields, list) else fields
+        fields_text = fields_text or _trade_date_fields(api_name)
+        required = set(required_fields or _trade_date_required_fields(api_name))
+        cache_path = self.trade_date_cache_path(api_name, normalized_date)
+        memory_key = (api_name, normalized_date or "latest")
+
+        if use_cache and self.cache_enabled and not refresh_cache:
+            cached_records = self._read_trade_date_cache(cache_path, memory_key)
+            if cached_records is not None:
+                self._mark_success("trade_date_cache")
+                self.trade_date_cache_hit_count += 1
+                result = _endpoint_result(api_name, cached_records, required, source_status="trade_date_cache")
+                self._record_api_status(result.status)
+                return result
+
+        if not self._token():
+            self._mark_error("MissingToken", MISSING_TOKEN_MESSAGE)
+            self._record_api_status("not_configured")
+            return TushareEndpointResult(
+                api_name=api_name,
+                status="not_configured",
+                error_type="MissingToken",
+                error_message=MISSING_TOKEN_MESSAGE,
+                source_status="not_configured",
+            )
+
+        params = _trade_date_params(api_name, normalized_date)
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retry):
+            try:
+                frame = self._call_api(api_name, params, fields_text)
+                records = _records(frame)
+                result = _endpoint_result(api_name, records, required)
+                self._mark_success(result.status)
+                if self.cache_enabled:
+                    self.trade_date_cache_miss_count += 1
+                    if cache_path.exists():
+                        self.trade_date_cache_refresh_count += 1
+                    if result.status in {"available", "empty", "field_mismatch"}:
+                        cache_path.parent.mkdir(parents=True, exist_ok=True)
+                        cache_path.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+                        self._trade_date_memory_cache[memory_key] = records
+                self._record_api_status(result.status)
+                return result
+            except Exception as exc:
+                last_exc = exc
+                if attempt + 1 < self.max_retry:
+                    self._respect_request_interval()
+
+        assert last_exc is not None
+        status = _status_from_exception(last_exc)
+        error_type = _error_type(last_exc)
+        error_message = self._redact(str(last_exc))
+        self._mark_error(error_type, error_message)
+        self._record_api_status(status)
+        return TushareEndpointResult(
+            api_name=api_name,
+            status=status,
+            error_type=error_type,
+            error_message=error_message,
             source_status=status,
         )
+
+    def get_open_trade_dates(self, start_date: str | None, end_date: str | None) -> list[str]:
+        result = self.get_trade_calendar(start_date=start_date, end_date=end_date, is_open="1")
+        if result.status not in {"available", "empty"}:
+            raise DataSourceError(f"Tushare trade_cal request failed: {result.error_message or result.status}")
+        dates = [
+            str(_pick(row, "cal_date", default=""))
+            for row in result.records
+            if str(_pick(row, "is_open", default="1")) in {"1", "1.0", "True", "true"} and _pick(row, "cal_date")
+        ]
+        return sorted(set(dates))
+
+    def get_trade_date_records(
+        self,
+        api_name: str,
+        start_date: str | None,
+        end_date: str | None,
+        fields: str | list[str] | None = None,
+        required_fields: set[str] | list[str] | None = None,
+        use_cache: bool = True,
+        refresh_cache: bool = False,
+    ) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for trade_day in self.get_open_trade_dates(start_date, end_date):
+            result = self.query_trade_date_endpoint(
+                api_name,
+                trade_day,
+                fields=fields,
+                required_fields=required_fields,
+                use_cache=use_cache,
+                refresh_cache=refresh_cache,
+            )
+            if result.status == "available":
+                records.extend(result.records)
+            elif result.status == "field_mismatch":
+                self.cache_insufficient_count += 1
+            elif result.status not in {"empty", "permission_denied"}:
+                self.cache_insufficient_count += 1
+        return records
 
     def get_stock_list(self) -> list[MarketStockInfo]:
         result = self._records_or_raise(
@@ -325,6 +460,13 @@ class TushareMarketDataProvider(MarketDataProvider):
         self.last_fallback_used = False
         self.last_fallback_reason = None
         api_name = _frequency_api(frequency)
+        if api_name == "daily" and self.cache_enabled:
+            try:
+                cached_bars = self._get_kline_from_trade_date_cache(stock_code, start_date, end_date, frequency)
+                if cached_bars:
+                    return cached_bars
+            except Exception:
+                self.cache_insufficient_count += 1
         try:
             rows = self._records_or_raise(
                 api_name,
@@ -422,6 +564,50 @@ class TushareMarketDataProvider(MarketDataProvider):
 
     def get_income(self, stock_code: str) -> TushareEndpointResult:
         return self.query_endpoint("income", params={"ts_code": _ts_code(stock_code)}, limit=1)
+
+    def get_stock_company(self, exchange: str = "SSE", *, use_cache: bool = True) -> TushareEndpointResult:
+        return self.query_endpoint("stock_company", params={"exchange": exchange}, use_cache=use_cache)
+
+    def get_stock_basic_result(self, *, use_cache: bool = True) -> TushareEndpointResult:
+        return self.query_endpoint(
+            "stock_basic",
+            params={"exchange": "", "list_status": "L"},
+            required_fields={"ts_code", "name"},
+            use_cache=use_cache,
+        )
+
+    def get_fundamental_period_batch(
+        self,
+        interface: str,
+        period: str,
+        *,
+        mainbz_type: str | None = None,
+        use_cache: bool = False,
+    ) -> TushareEndpointResult:
+        allowed = {
+            "income": "income_vip",
+            "balancesheet": "balancesheet_vip",
+            "cashflow": "cashflow_vip",
+            "fina_indicator": "fina_indicator_vip",
+            "mainbz": "fina_mainbz_vip",
+            "forecast": "forecast",
+            "express": "express",
+            "fina_audit": "fina_audit",
+            "disclosure_date": "disclosure_date",
+            "dividend": "dividend",
+        }
+        try:
+            api_name = allowed[interface]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported fundamental interface: {interface}") from exc
+        params = {"period": _ts_date(period)}
+        if interface == "mainbz":
+            if mainbz_type not in {"P", "I", "D"}:
+                raise ValueError("mainbz_type must be P, I or D")
+            params["type"] = mainbz_type
+        elif interface in {"disclosure_date", "dividend"}:
+            params = {"end_date": _ts_date(period)}
+        return self.query_endpoint(api_name, params=params, use_cache=use_cache)
 
     def get_balancesheet(self, stock_code: str) -> TushareEndpointResult:
         return self.query_endpoint("balancesheet", params={"ts_code": _ts_code(stock_code)}, limit=1)
@@ -593,6 +779,45 @@ class TushareMarketDataProvider(MarketDataProvider):
         digest = hashlib.sha1(key.encode("utf-8")).hexdigest()
         return self.cache_dir / f"{api_name}_{digest}.json"
 
+    def _read_trade_date_cache(
+        self,
+        cache_path: Path,
+        memory_key: tuple[str, str],
+    ) -> list[dict[str, Any]] | None:
+        if memory_key in self._trade_date_memory_cache:
+            return self._trade_date_memory_cache[memory_key]
+        if not cache_path.exists():
+            return None
+        try:
+            records = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(records, list):
+            return None
+        self._trade_date_memory_cache[memory_key] = records
+        return records
+
+    def _get_kline_from_trade_date_cache(
+        self,
+        stock_code: str,
+        start_date: str | None,
+        end_date: str | None,
+        frequency: str,
+    ) -> list[KLineBar]:
+        rows = self.get_trade_date_records(
+            "daily",
+            start_date,
+            end_date,
+            fields=_trade_date_fields("daily"),
+            required_fields=_trade_date_required_fields("daily"),
+            use_cache=True,
+            refresh_cache=False,
+        )
+        plain_code = _plain_code(stock_code)
+        bars = [_kline_bar(row, frequency) for row in rows if _plain_code(_pick(row, "ts_code", default="")) == plain_code]
+        bars.sort(key=lambda item: item.datetime)
+        return bars
+
     def _mark_success(self, status: str) -> None:
         self.last_source_status = status
         self.last_error_type = None
@@ -618,6 +843,10 @@ class TushareMarketDataProvider(MarketDataProvider):
         self.cache_miss_count = 0
         self.cache_refresh_count = 0
         self.cache_insufficient_count = 0
+        self.trade_date_cache_hit_count = 0
+        self.trade_date_cache_miss_count = 0
+        self.trade_date_cache_refresh_count = 0
+        self.per_stock_api_call_count = 0
         self.api_status_counts = {}
 
     def _record_api_status(self, status: str) -> None:
@@ -710,6 +939,67 @@ def _mojibake_score(value: str) -> int:
 
 def _clean_params(params: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in params.items() if value not in (None, "")}
+
+
+def _env_file_value(path: Path, key: str) -> str:
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return ""
+    prefix = f"{key}="
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or not stripped.startswith(prefix):
+            continue
+        return stripped[len(prefix):].strip().strip('"').strip("'")
+    return ""
+
+
+def _trade_date_fields(api_name: str) -> str | None:
+    return {
+        "daily": "ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount",
+        "daily_basic": "ts_code,trade_date,close,turnover_rate,volume_ratio,pe,pb,total_mv,circ_mv,limit_status",
+        "adj_factor": "ts_code,trade_date,adj_factor",
+        "stk_limit": "trade_date,ts_code,pre_close,up_limit,down_limit",
+        "moneyflow": "ts_code,trade_date,buy_sm_amount,sell_sm_amount,buy_md_amount,sell_md_amount,buy_lg_amount,sell_lg_amount,buy_elg_amount,sell_elg_amount,net_mf_amount",
+        "top_list": None,
+        "margin": None,
+        "margin_detail": None,
+        "ths_index": None,
+        "ths_member": None,
+    }.get(api_name)
+
+
+def _trade_date_required_fields(api_name: str) -> set[str]:
+    return {
+        "daily": {"ts_code", "trade_date", "open", "high", "low", "close"},
+        "daily_basic": {"ts_code", "trade_date"},
+        "adj_factor": {"ts_code", "trade_date", "adj_factor"},
+        "stk_limit": {"ts_code", "trade_date"},
+        "moneyflow": {"ts_code", "trade_date"},
+        "top_list": {"ts_code", "trade_date"},
+        "margin": {"trade_date"},
+        "margin_detail": {"ts_code", "trade_date"},
+        "ths_index": {"ts_code", "name"},
+        "ths_member": {"ts_code", "con_code"},
+    }.get(api_name, set())
+
+
+def _trade_date_params(api_name: str, trade_date: str | None) -> dict[str, Any]:
+    if api_name == "ths_index":
+        return {"exchange": "A", "type": "N"}
+    if api_name == "ths_member":
+        return {}
+    return {"trade_date": trade_date}
+
+
+def _is_per_stock_api_call(api_name: str, params: dict[str, Any]) -> bool:
+    return api_name in {
+        "daily", "daily_basic", "adj_factor", "stk_limit", "moneyflow",
+        "income", "balancesheet", "cashflow", "fina_indicator",
+        "income_vip", "balancesheet_vip", "cashflow_vip", "fina_indicator_vip",
+        "fina_mainbz_vip", "forecast", "express", "fina_audit", "disclosure_date", "dividend",
+    } and bool(params.get("ts_code"))
 
 
 def _pick(row: dict[str, Any], *keys: str, default: Any = None) -> Any:
@@ -821,6 +1111,10 @@ def _status_from_exception(exc: Exception) -> str:
     text = f"{exc.__class__.__name__}: {exc}".lower()
     if any(needle in text for needle in PERMISSION_NEEDLES):
         return "permission_denied"
+    if any(needle in text for needle in RATE_LIMIT_NEEDLES):
+        return "rate_limited"
+    if any(needle in text for needle in INVALID_PARAMETER_NEEDLES):
+        return "invalid_parameter"
     if any(needle in text for needle in NETWORK_NEEDLES):
         return "error"
     return "error"
@@ -829,10 +1123,14 @@ def _status_from_exception(exc: Exception) -> str:
 def _error_type(exc: Exception) -> str:
     text = f"{exc.__class__.__name__}: {exc}".lower()
     if any(needle in text for needle in PERMISSION_NEEDLES):
-        return "PermissionDenied"
+        return "NOT_AUTHORIZED"
+    if any(needle in text for needle in RATE_LIMIT_NEEDLES):
+        return "RATE_LIMITED"
+    if any(needle in text for needle in INVALID_PARAMETER_NEEDLES):
+        return "INVALID_PARAMETER"
     if any(needle in text for needle in NETWORK_NEEDLES):
-        return "NetworkError"
-    return exc.__class__.__name__
+        return "TIMEOUT" if "timeout" in text else "PROVIDER_ERROR"
+    return "PROVIDER_ERROR"
 
 
 def _safe_cache_key(value: str) -> str:

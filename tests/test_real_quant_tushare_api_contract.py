@@ -19,6 +19,10 @@ def test_run_quant_real_api_supports_tushare_cache_contract(monkeypatch, tmp_pat
             "quant_mode": "tushare_primary",
             "fallback_used": True,
             "fallback_reason": "000001:tushare_error:RuntimeError",
+            "trade_date_cache_used": True,
+            "trade_date_cache_hit_count": 20,
+            "trade_date_cache_miss_count": 5,
+            "per_stock_api_call_count": 0,
             "baostock_backup_used_count": 1,
             "requested_trade_date": None,
             "actual_trade_date": None,
@@ -65,6 +69,10 @@ def test_run_quant_real_api_supports_tushare_cache_contract(monkeypatch, tmp_pat
     assert payload["data"]["provider"] == "tushare"
     assert payload["data"]["history_provider"] == "tushare"
     assert payload["data"]["backup_history_provider"] == "baostock"
+    assert payload["data"]["trade_date_cache_used"] is True
+    assert payload["data"]["trade_date_cache_hit_count"] == 20
+    assert payload["data"]["trade_date_cache_miss_count"] == 5
+    assert payload["data"]["per_stock_api_call_count"] == 0
     assert payload["data"]["baostock_backup_used_count"] == 1
     assert payload["data"]["tushare_api_success_count"] == 10
     assert payload["data"]["factor_data_coverage"]["daily"] is True

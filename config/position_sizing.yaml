@@ -1,0 +1,11 @@
+position_sizing:
+  advisory_only: true
+  conviction_power: 2.0
+  portfolio_open_risk_percent: 0.01
+  deployable_capital_percent: 0.80
+  cash_reserve_percent: 0.20
+  max_single_stock_percent: 0.15
+  max_industry_percent: 0.30
+  max_chain_percent: 0.35
+  max_liquidity_participation: 0.01
+  default_lot_size: 100

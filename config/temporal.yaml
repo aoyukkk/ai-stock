@@ -1,0 +1,33 @@
+dataset_update_policy:
+  timezone: Asia/Shanghai
+  source: https://tushare.pro/document/1?doc_id=108
+  verified_at: 2026-07-10
+  completeness_thresholds:
+    daily: 0.98
+    daily_basic: 0.95
+    moneyflow: 0.90
+    stk_limit: 0.98
+    adj_factor: 0.98
+  datasets:
+    daily: {date_semantics: trade_date, expected_update_window: ["15:00", "16:00"], update_status: VERIFIED_OFFICIAL}
+    daily_basic: {date_semantics: trade_date, expected_update_window: ["15:00", "17:00"], update_status: VERIFIED_OFFICIAL}
+    moneyflow: {date_semantics: trade_date, expected_update_after: "19:00", update_status: VERIFIED_OFFICIAL}
+    stk_limit: {date_semantics: target_trade_date, expected_update_after: "09:00", update_status: VERIFIED_OFFICIAL}
+    adj_factor: {date_semantics: factor_trade_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    top_list: {date_semantics: trade_date, expected_update_after: "20:00", update_status: VERIFIED_OFFICIAL}
+    top_inst: {date_semantics: trade_date, expected_update_after: "20:00", update_status: VERIFIED_OFFICIAL}
+    margin: {date_semantics: trade_date, expected_update_after: "09:00", update_status: VERIFIED_OFFICIAL}
+    margin_detail: {date_semantics: trade_date, expected_update_after: "09:00", update_status: VERIFIED_OFFICIAL}
+    pledge_stat: {date_semantics: disclosure_date, expected_update_after: "21:00", update_status: VERIFIED_OFFICIAL}
+    pledge_detail: {date_semantics: disclosure_date, expected_update_after: "21:00", update_status: VERIFIED_OFFICIAL}
+    stock_company: {date_semantics: current_snapshot, update_status: UPDATE_TIME_UNCONFIRMED}
+    income_vip: {date_semantics: f_ann_date_or_ann_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    balancesheet_vip: {date_semantics: f_ann_date_or_ann_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    cashflow_vip: {date_semantics: f_ann_date_or_ann_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    fina_indicator_vip: {date_semantics: ann_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    fina_mainbz_vip: {date_semantics: ann_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    forecast: {date_semantics: ann_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    express: {date_semantics: ann_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    fina_audit: {date_semantics: ann_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    disclosure_date: {date_semantics: planned_disclosure_date, update_status: UPDATE_TIME_UNCONFIRMED}
+    dividend: {date_semantics: ann_date, update_status: UPDATE_TIME_UNCONFIRMED}

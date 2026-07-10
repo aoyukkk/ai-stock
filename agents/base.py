@@ -14,6 +14,20 @@ from agents.schemas import AgentAnalysisOutput, CommitteeInput
 
 VALID_DIRECTIONS = {"BUY", "WATCH", "NEUTRAL", "AVOID"}
 VALID_ACTIONS = {"ALLOW", "WATCH_ONLY", "BLOCK", "NEED_RECHECK"}
+AGENT_RESPONSE_SCHEMA = {
+    "type": "object",
+    "required": ["stock_code", "score", "direction", "confidence", "reason", "risk_note", "action", "data_conflict"],
+    "properties": {
+        "stock_code": {"type": "string"},
+        "score": {"type": "number", "minimum": 0, "maximum": 100},
+        "direction": {"type": "string", "enum": ["BUY", "WATCH", "NEUTRAL", "AVOID"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "reason": {"type": "string"},
+        "risk_note": {"type": "string"},
+        "action": {"type": "string", "enum": ["ALLOW", "WATCH_ONLY", "BLOCK", "NEED_RECHECK"]},
+        "data_conflict": {"type": "boolean"},
+    },
+}
 
 
 class BaseAgent:
@@ -39,6 +53,7 @@ class BaseAgent:
             "reason": "string",
             "risk_note": "string",
             "action": "ALLOW|WATCH_ONLY|BLOCK|NEED_RECHECK",
+            "data_conflict": "boolean",
         }
         return (
             f"{self.role_description}\n"
@@ -64,15 +79,31 @@ class BaseAgent:
                     ),
                     LLMMessage(role="user", content=prompt),
                 ],
-                provider=self.config.provider if self.config else None,
-                model=self.config.model if self.config else None,
+                model_alias=self.config.model_alias if self.config else "mock-fast",
                 prompt_version="v0.3-phase7",
                 metadata={
                     "structured": True,
                     "committee_context": committee_input_to_prompt_context(context),
                 },
+                response_schema=AGENT_RESPONSE_SCHEMA,
+                json_mode=True,
             )
         )
+        if response.status != "ok":
+            return AgentAnalysisOutput(
+                agent_name=self.agent_name,
+                stock_code=context.stock_code,
+                score=Decimal("0"),
+                direction="NEUTRAL",
+                confidence=Decimal("0"),
+                reason="Model route unavailable; manual review is required.",
+                risk_note=f"Safe failure status: {response.status}",
+                action="NEED_RECHECK",
+                data_conflict=True,
+                prompt_version=response.prompt_version,
+                model_version=response.model,
+                request_hash=response.request_hash,
+            )
         output = self.parse_output(response.content)
         return output.model_copy(
             update={
@@ -113,6 +144,7 @@ class BaseAgent:
             reason=str(parsed["reason"]),
             risk_note=str(parsed["risk_note"]),
             action=action,  # type: ignore[arg-type]
+            data_conflict=bool(parsed.get("data_conflict", False)),
             raw_output=parsed,
         )
 

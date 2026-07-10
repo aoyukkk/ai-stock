@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.core.config import get_app_config
 from backend.core.responses import success_response
 from backend.core.security import sanitize_config
 from datasource.service import DataSourceService
+from fundamentals.tushare_service import TushareFundamentalBatchService
 
 
 router = APIRouter(prefix="/data-sources", tags=["data-sources"])
+
+
+class FundamentalPrewarmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    periods: list[str] = Field(min_length=1, max_length=20)
+    interfaces: list[str] = Field(default_factory=list, max_length=20)
+    mainbz_types: list[str] = Field(default_factory=lambda: ["P", "I", "D"])
+    force: bool = False
+    dry_run: bool = True
 
 
 def _service() -> DataSourceService:
@@ -56,5 +67,31 @@ def mock_quotes(
     ]
     return success_response(
         data={"quotes": quotes, "count": len(quotes)},
+        trace_id=request.state.trace_id,
+    )
+
+
+@router.post("/tushare/fundamental/prewarm")
+def prewarm_tushare_fundamental(body: FundamentalPrewarmRequest, request: Request) -> dict:
+    data = TushareFundamentalBatchService().prewarm(
+        body.periods,
+        body.interfaces or None,
+        mainbz_types=body.mainbz_types,
+        force=body.force,
+        dry_run=body.dry_run,
+    )
+    return success_response(data=sanitize_config(data), trace_id=request.state.trace_id)
+
+
+@router.get("/tushare/fundamental/status")
+def tushare_fundamental_status(request: Request) -> dict:
+    provider = TushareFundamentalBatchService().provider
+    return success_response(
+        data={
+            "configured": "CONFIGURED" if provider.token_configured() else "NOT_CONFIGURED",
+            "cache_enabled": provider.cache_enabled,
+            "batch_dimension": "report_period",
+            "per_stock_api_call_count": provider.per_stock_api_call_count,
+        },
         trace_id=request.state.trace_id,
     )

@@ -35,6 +35,9 @@ REQUIRED_CONFIG_FILES = (
     "quant_factor.yaml",
     "ui.yaml",
     "frontend.yaml",
+    "fundamental_research.yaml",
+    "position_sizing.yaml",
+    "temporal.yaml",
 )
 OPTIONAL_CONFIG_FILES = ("data_sources.yaml", "review.yaml")
 

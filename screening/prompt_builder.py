@@ -9,6 +9,7 @@ SYSTEM_PROMPT = (
     "You are a lightweight A-share screening assistant. "
     "This output is only for AI second-pass screening and is not a real trading instruction. "
     "Do not generate order prices, do not generate real-money trading commands, and do not invent data. "
+    "Analyze only the supplied input; never add facts, news, announcements, or market data that were not provided. "
     "Return strict JSON only."
 )
 
@@ -30,6 +31,10 @@ def build_light_screening_prompt(inputs: list[LightScreeningInput]) -> str:
             "latest_news_summary": item.latest_news_summary,
             "overseas_summary": item.overseas_summary,
             "liquidity_summary": item.liquidity_summary,
+            "fundamental_profile_verified": item.fundamental_profile_verified,
+            "fundamental_evidence_count": item.fundamental_evidence_count,
+            "fundamental_profile": item.fundamental_profile if item.fundamental_profile_verified else None,
+            "fundamental_missing_fields": item.fundamental_missing_fields,
         }
         for item in inputs
     ]
@@ -48,11 +53,14 @@ def build_light_screening_prompt(inputs: list[LightScreeningInput]) -> str:
                 "reason": "string",
                 "risk_note": "string",
                 "should_keep": True,
+                "data_conflict": False,
             }
         ]
     }
     return (
         f"{SYSTEM_PROMPT}\n\n"
+        "Fundamental data may support an explanation only when fundamental_profile_verified is true. "
+        "Unverified or missing fundamental data must never increase a score.\n"
         "Evaluate these compressed stock summaries:\n"
         f"{json.dumps({'stocks': compressed_items}, ensure_ascii=False)}\n\n"
         "Return strict JSON matching this schema:\n"

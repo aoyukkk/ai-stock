@@ -1,12 +1,13 @@
 llm_gateway:
   required: true
-  phase0_mode: mock_only
+  phase0_mode: guarded_real_ready
   request_hash_cache_enabled: true
   json_schema_required: true
   parse_failure_fallback_action: WATCH_ONLY
 
 llm:
   mock_only: true
+  real_calls_enabled: false
   default_provider: mock
   default_model: mock-chat
   enable_cache: true
@@ -14,8 +15,13 @@ llm:
 
   providers:
     deepseek:
-      enabled: false
+      enabled: true
       api_key_env: DEEPSEEK_API_KEY
+      base_url: https://api.deepseek.com
+      connect_timeout_seconds: 5
+      read_timeout_seconds: 60
+      max_attempts: 3
+      retry_backoff_seconds: 0.5
     openai:
       enabled: false
       api_key_env: OPENAI_API_KEY
@@ -29,12 +35,80 @@ llm:
       enabled: true
 
   aliases:
-    deepseek-v4-flash:
+    light-screening-default:
       provider: deepseek
       model: deepseek-v4-flash
-    gpt-5.5:
-      provider: openai
-      model: gpt-5.5
+      thinking: disabled
+    committee-fast-default:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    search-analysis-fast:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    news-classification-fast:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    entity-extraction-fast:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    technical-summary-fast:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    capital-summary-fast:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    emotion-summary-fast:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    overseas-summary-fast:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    memory-extraction-fast:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    normal-explanation-fast:
+      provider: deepseek
+      model: deepseek-v4-flash
+      thinking: disabled
+    risk-high-capability:
+      provider: deepseek
+      model: deepseek-v4-pro
+      thinking: enabled
+      reasoning_effort: high
+    controller-high-capability:
+      provider: deepseek
+      model: deepseek-v4-pro
+      thinking: enabled
+      reasoning_effort: max
+    black-swan-high-capability:
+      provider: deepseek
+      model: deepseek-v4-pro
+      thinking: enabled
+      reasoning_effort: max
+    data-conflict-high-capability:
+      provider: deepseek
+      model: deepseek-v4-pro
+      thinking: enabled
+      reasoning_effort: high
+    order-plan-review-high-capability:
+      provider: deepseek
+      model: deepseek-v4-pro
+      thinking: enabled
+      reasoning_effort: high
+    daily-review-final-high-capability:
+      provider: deepseek
+      model: deepseek-v4-pro
+      thinking: enabled
+      reasoning_effort: high
     mock-fast:
       provider: mock
       model: mock-fast
@@ -47,32 +121,84 @@ llm:
     secondary: mock
     final: mock
 
+  routing_policy:
+    task_types:
+      default: SIMPLE
+      connectivity_test: SIMPLE
+      light_screening: SIMPLE
+      real_light_screening_sample: SIMPLE
+      news_classification: SIMPLE
+      entity_extraction: SIMPLE
+      technical_summary: SIMPLE
+      capital_summary: SIMPLE
+      emotion_summary: SIMPLE
+      overseas_summary: SIMPLE
+      memory_extraction: SIMPLE
+      normal_explanation: SIMPLE
+      committee_technical: SIMPLE
+      committee_news: SIMPLE
+      committee_capital: SIMPLE
+      committee_emotion: SIMPLE
+      committee_overseas: SIMPLE
+      committee_risk: COMPLEX
+      risk_review: COMPLEX
+      data_conflict: COMPLEX
+      order_plan_review: COMPLEX
+      committee_controller: HIGH_IMPACT
+      black_swan: HIGH_IMPACT
+      daily_review_final: HIGH_IMPACT
+    tiers:
+      SIMPLE:
+        model_alias: light-screening-default
+        thinking: disabled
+        temperature: 0.1
+        max_tokens: 1200
+      COMPLEX:
+        model_alias: risk-high-capability
+        thinking: enabled
+        reasoning_effort: high
+        max_tokens: 2400
+      HIGH_IMPACT:
+        model_alias: controller-high-capability
+        thinking: enabled
+        reasoning_effort: max
+        max_tokens: 3200
+
   routing:
     default:
+      model_alias: mock-fast
       provider: mock
       model: mock-chat
     technical_agent:
+      model_alias: mock-fast
       provider: mock
       model: mock-chat
     news_agent:
+      model_alias: mock-fast
       provider: mock
       model: mock-chat
     capital_agent:
+      model_alias: mock-fast
       provider: mock
       model: mock-chat
     emotion_agent:
+      model_alias: mock-fast
       provider: mock
       model: mock-chat
     overseas_agent:
+      model_alias: mock-fast
       provider: mock
       model: mock-chat
     risk_agent:
+      model_alias: mock-reasoning
       provider: mock
       model: mock-chat
     controller_agent:
+      model_alias: mock-reasoning
       provider: mock
       model: mock-chat
     daily_review_agent:
+      model_alias: mock-reasoning
       provider: mock
       model: mock-chat
 
@@ -90,48 +216,49 @@ llm:
 
 agent_routes:
   light_screening_agent:
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: light-screening-default
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
   technical_agent:
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: technical-summary-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
   news_agent:
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: news-classification-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2500
   capital_agent:
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: capital-summary-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
   emotion_agent:
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: emotion-summary-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
   overseas_agent:
-    preferred_model_alias: deepseek-v4-flash
+    preferred_model_alias: overseas-summary-fast
     phase0_model_alias: mock-fast
     temperature: 0.2
     max_tokens: 2000
   risk_agent:
-    preferred_model_alias: gpt-5.5
+    preferred_model_alias: risk-high-capability
     phase0_model_alias: mock-reasoning
     temperature: 0.1
     max_tokens: 4000
   controller_agent:
-    preferred_model_alias: gpt-5.5
+    preferred_model_alias: controller-high-capability
     phase0_model_alias: mock-reasoning
     temperature: 0.1
     max_tokens: 5000
 
 llm_light_screening:
   enabled: true
+  model_alias: light-screening-default
   provider: mock
   model: mock-chat
   batch_size: 20
@@ -155,31 +282,37 @@ ai_committee:
   agents:
     technical_agent:
       enabled: true
+      model_alias: technical-summary-fast
       provider: mock
       model: mock-chat
       weight: 0.20
     news_agent:
       enabled: true
+      model_alias: news-classification-fast
       provider: mock
       model: mock-chat
       weight: 0.20
     capital_agent:
       enabled: true
+      model_alias: capital-summary-fast
       provider: mock
       model: mock-chat
       weight: 0.20
     emotion_agent:
       enabled: true
+      model_alias: emotion-summary-fast
       provider: mock
       model: mock-chat
       weight: 0.15
     overseas_agent:
       enabled: true
+      model_alias: overseas-summary-fast
       provider: mock
       model: mock-chat
       weight: 0.10
     risk_agent:
       enabled: true
+      model_alias: risk-high-capability
       provider: mock
       model: mock-chat
       weight: 0.15

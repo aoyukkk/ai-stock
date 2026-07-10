@@ -12,6 +12,7 @@ def test_agent_parser_parses_structured_json() -> None:
           "reason": "ok",
           "risk_note": "none",
           "action": "ALLOW"
+          ,"data_conflict": false
         }
         """
     )
@@ -33,6 +34,7 @@ def test_agent_parser_clamps_scores_and_normalizes_invalid_enums() -> None:
           "reason": "ok",
           "risk_note": "none",
           "action": "CANCEL_ORDER"
+          ,"data_conflict": true
         }
         """
     )

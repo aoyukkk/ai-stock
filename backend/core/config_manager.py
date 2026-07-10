@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
+import os
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -90,7 +92,7 @@ EDITABLE_CONFIG_SPECS: tuple[ConfigSpec, ...] = (
     _spec("market_data.holding_refresh.interval_minutes", "system", ("refresh_frequency", "holding_minutes"), 15, "integer", "refresh_frequency", "Holding refresh interval", {"min": 1, "max": 240}),
     _spec("market_data.pending_order_refresh.interval_minutes", "system", ("refresh_frequency", "pending_order_minutes"), 5, "integer", "refresh_frequency", "Pending order refresh interval", {"min": 1, "max": 240}),
     _spec("market_data.news_refresh.interval_minutes", "system", ("refresh_frequency", "news_minutes"), 15, "integer", "refresh_frequency", "News refresh interval", {"min": 1, "max": 240}),
-    _spec("llm.mock_only", "models", ("llm", "mock_only"), True, "boolean", "llm", "LLM mock-only mode", {"fixed": True}),
+    _spec("llm.mock_only", "models", ("llm", "mock_only"), True, "boolean", "llm", "LLM mock-only mode", {}),
     _spec("llm.default_provider", "models", ("llm", "default_provider"), "mock", "string", "llm", "Default LLM provider", {"allowed_values": ["mock"]}),
     _spec("llm.default_model", "models", ("llm", "default_model"), "mock-chat", "string", "llm", "Default LLM model", {"allowed_values": ["mock-chat"]}),
     _spec("llm.enable_cache", "models", ("llm", "enable_cache"), True, "boolean", "llm", "LLM response cache", {}),
@@ -129,6 +131,15 @@ EDITABLE_CONFIG_SPECS: tuple[ConfigSpec, ...] = (
     _spec("memory.mid_term.ttl_days", "memory", ("memory", "mid_term", "ttl_days"), 20, "integer", "memory", "Mid-term memory TTL days", {"min": 1, "max": 365}),
     _spec("memory.vector.enabled", "memory", ("memory", "vector", "enabled"), False, "boolean", "memory", "Vector memory storage", {"fixed": False}),
     _spec("memory.graph.enabled", "memory", ("memory", "graph", "enabled"), False, "boolean", "memory", "Graph memory storage", {"fixed": False}),
+    _spec("position_sizing.conviction_power", "position_sizing", ("position_sizing", "conviction_power"), 2.0, "number", "position_sizing", "Conviction curve power", {"min": 0.1, "max": 5}),
+    _spec("position_sizing.portfolio_open_risk_percent", "position_sizing", ("position_sizing", "portfolio_open_risk_percent"), 0.01, "number", "position_sizing", "Total open-risk budget", {"min": 0, "max": 0.1}),
+    _spec("position_sizing.deployable_capital_percent", "position_sizing", ("position_sizing", "deployable_capital_percent"), 0.8, "number", "position_sizing", "Deployable cash fraction", {"min": 0, "max": 1}),
+    _spec("position_sizing.cash_reserve_percent", "position_sizing", ("position_sizing", "cash_reserve_percent"), 0.2, "number", "position_sizing", "Cash reserve fraction", {"min": 0, "max": 1}),
+    _spec("position_sizing.max_single_stock_percent", "position_sizing", ("position_sizing", "max_single_stock_percent"), 0.15, "number", "position_sizing", "Single-stock exposure cap", {"min": 0, "max": 1}),
+    _spec("position_sizing.max_industry_percent", "position_sizing", ("position_sizing", "max_industry_percent"), 0.3, "number", "position_sizing", "Industry exposure cap", {"min": 0, "max": 1}),
+    _spec("position_sizing.max_chain_percent", "position_sizing", ("position_sizing", "max_chain_percent"), 0.35, "number", "position_sizing", "Industry-chain exposure cap", {"min": 0, "max": 1}),
+    _spec("position_sizing.max_liquidity_participation", "position_sizing", ("position_sizing", "max_liquidity_participation"), 0.01, "number", "position_sizing", "Daily liquidity participation cap", {"min": 0, "max": 1}),
+    _spec("position_sizing.default_lot_size", "position_sizing", ("position_sizing", "default_lot_size"), 100, "integer", "position_sizing", "Default trading lot", {"min": 1, "max": 10000}),
 )
 
 EDITABLE_CONFIG_BY_KEY = {spec.config_key: spec for spec in EDITABLE_CONFIG_SPECS}
@@ -164,6 +175,30 @@ class ConfigManager:
     def get_config_value(self, key: str) -> Any:
         self._require_editable_key(key)
         return self.get_effective_config()["values"][key]
+
+    def get_llm_gateway_config(self) -> dict[str, Any]:
+        """Return model/provider config with ConfigManager database priority applied."""
+        models = deepcopy(self.app_config.config_files.get("models", {}))
+        llm = models.setdefault("llm", {})
+        effective = self.get_effective_config()["values"]
+        key_map = {
+            "llm.mock_only": ("mock_only",),
+            "llm.default_provider": ("default_provider",),
+            "llm.default_model": ("default_model",),
+            "llm.enable_cache": ("enable_cache",),
+            "llm.cache_ttl_minutes": ("cache_ttl_minutes",),
+            "llm.budgets.daily_token_budget": ("budget", "daily_token_budget"),
+            "llm.budgets.daily_cost_budget_usd": ("budget", "daily_cost_budget_usd"),
+        }
+        for config_key, path in key_map.items():
+            current = llm
+            for part in path[:-1]:
+                current = current.setdefault(part, {})
+            current[path[-1]] = effective[config_key]
+        runtime_mock_only = os.getenv("LLM_GATEWAY_MOCK_ONLY")
+        if runtime_mock_only is not None and _env_flag("LLM_REAL_CALLS_ENABLED") and _env_flag("RUN_REAL_FUNDAMENTAL_RESEARCH"):
+            llm["mock_only"] = _parse_bool_env(runtime_mock_only, default=bool(llm.get("mock_only", True)))
+        return models
 
     def list_editable_config(self) -> list[dict[str, Any]]:
         effective = self.get_effective_config()
@@ -322,6 +357,32 @@ class ConfigManager:
                 message="Database is unavailable for config persistence",
                 status_code=503,
             ) from exc
+        finally:
+            if should_close:
+                session.close()
+
+    def rollback_config_history(
+        self,
+        history_id: int,
+        user: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        session, should_close = self._get_write_session()
+        try:
+            history = session.get(ConfigHistory, int(history_id))
+            if history is None or history.config_key not in EDITABLE_CONFIG_BY_KEY:
+                raise ConfigManagerError(
+                    code="CONFIG_HISTORY_NOT_FOUND",
+                    message="Config history entry was not found",
+                    status_code=404,
+                )
+            target = _unwrap_history_value(history.old_value)
+            return self.set_config_value(
+                key=history.config_key,
+                value=target,
+                user=user or LOCAL_ADMIN,
+                reason=reason or f"rollback history {history_id}",
+            )
         finally:
             if should_close:
                 session.close()
@@ -625,6 +686,15 @@ class ConfigManager:
                 data={"real_trading_enabled": False},
             )
 
+        deployable = float(proposed_values["position_sizing.deployable_capital_percent"])
+        reserve = float(proposed_values["position_sizing.cash_reserve_percent"])
+        if abs(deployable + reserve - 1.0) > 0.0001:
+            raise ConfigManagerError(
+                code="CONFIG_VALUE_INVALID",
+                message="Position sizing deployable capital and cash reserve must sum to 1",
+                data={"capital_partition_sum": deployable + reserve},
+            )
+
     def _yaml_or_default(self, spec: ConfigSpec) -> Any:
         value, found = self._yaml_value(spec)
         return value if found else spec.default
@@ -642,3 +712,16 @@ def _unwrap_history_value(value: Any) -> Any:
     if isinstance(value, dict) and set(value) == {"value"}:
         return value["value"]
     return value
+
+
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_bool_env(value: str, *, default: bool) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default

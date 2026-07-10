@@ -51,6 +51,7 @@ class MockLLMProvider(BaseLLMProvider):
             provider=self.name,
             model=model,
             content=content,
+            parsed_json=structured_output,
             structured_output=structured_output,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -67,6 +68,34 @@ class MockLLMProvider(BaseLLMProvider):
 
 def _structured_output_for_task(request: LLMRequest) -> dict | None:
     task = request.task.lower()
+    if task == "real_light_screening_sample":
+        item = request.metadata.get("real_screening_input", {})
+        quant_score = float(item.get("quant_score", 50)) if isinstance(item, dict) else 50.0
+        risk_score = float(item.get("risk_score", 50)) if isinstance(item, dict) else 50.0
+        missing = list(item.get("known_missing_fields", [])) if isinstance(item, dict) else []
+        decision = "ADVANCE" if quant_score >= 75 and risk_score >= 50 and not missing else "HOLD"
+        if missing:
+            decision = "WATCH_ONLY"
+        return {
+            "stock_code": str(item.get("stock_code", "mock")),
+            "quant_rank": int(item.get("quant_rank", 0)),
+            "screening_decision": decision,
+            "llm_score": max(0, min(100, quant_score)),
+            "short_term_opportunity": max(0, min(100, quant_score)),
+            "factor_consistency": 75,
+            "capital_confirmation": float(item.get("capital_score", 50)),
+            "emotion_confirmation": float(item.get("emotion_score", 50)),
+            "risk_score": max(0, min(100, risk_score)),
+            "data_quality_score": 60 if missing else 85,
+            "confidence": 0.55 if missing else 0.8,
+            "reason": "Mock structured screening based only on supplied quant fields.",
+            "risk_note": "Manual review required; this is not a trading recommendation.",
+            "data_conflict": False,
+            "missing_data": missing,
+            "evidence_fields": ["quant_score", "capital_score", "emotion_score", "risk_score", "known_missing_fields"],
+        }
+    if task == "connectivity_test":
+        return {"gateway_check": "OK", "schema_version": 1}
     if task in COMMITTEE_TASKS:
         return _committee_output(request, task)
     if task in {"light_screening", "llm_light_screening"}:
@@ -93,7 +122,7 @@ def _structured_output_for_task(request: LLMRequest) -> dict | None:
 def _content_for_task(request: LLMRequest, structured_output: dict | None) -> str:
     if request.task.lower() in COMMITTEE_TASKS and structured_output is not None:
         return json.dumps(structured_output, ensure_ascii=False)
-    if request.task.lower() in {"light_screening", "llm_light_screening"} and structured_output is not None:
+    if request.task.lower() in {"light_screening", "llm_light_screening", "real_light_screening_sample"} and structured_output is not None:
         return json.dumps(structured_output, ensure_ascii=False)
     if structured_output is not None:
         return (
@@ -150,6 +179,7 @@ def _light_screening_output(request: LLMRequest) -> dict:
                 "reason": f"Mock light screening based on compressed quant summary for {stock_code}.",
                 "risk_note": "Mock risk note; no real model or real market data was used.",
                 "should_keep": quant_score >= 50,
+                "data_conflict": False,
             }
         )
     return {"items": outputs}
@@ -184,6 +214,7 @@ def _committee_output(request: LLMRequest, task: str) -> dict:
             "reason": f"Mock controller summary for {stock_code}; final score is rule-based and auditable.",
             "risk_note": "Mock controller risk summary; no order prices or trading execution commands were generated.",
             "action": action,
+            "data_conflict": False,
         }
 
     score_adjustments = {
@@ -213,6 +244,7 @@ def _committee_output(request: LLMRequest, task: str) -> dict:
         "reason": f"Mock {task} analysis based on compressed committee context for {stock_code}.",
         "risk_note": "Mock committee risk note; no real model or real market data was used.",
         "action": action,
+        "data_conflict": False,
     }
 
 

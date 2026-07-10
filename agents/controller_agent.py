@@ -14,6 +14,7 @@ from agents.schemas import (
     Recommendation,
     RiskLevel,
 )
+from agents.base import AGENT_RESPONSE_SCHEMA
 
 
 class ControllerAgent:
@@ -56,8 +57,7 @@ class ControllerAgent:
                     ),
                     LLMMessage(role="user", content=self.build_prompt(context, agent_outputs, final_score, recommendation)),
                 ],
-                provider=self.config.provider if self.config else None,
-                model=self.config.model if self.config else None,
+                model_alias=self.config.model_alias if self.config else "mock-reasoning",
                 prompt_version="v0.3-phase7",
                 metadata={
                     "structured": True,
@@ -69,10 +69,20 @@ class ControllerAgent:
                         "risk_level": risk_level,
                     },
                 },
+                response_schema=AGENT_RESPONSE_SCHEMA,
+                json_mode=True,
             )
         )
-        explanation = _parse_controller_explanation(response.content)
-        risk_note = explanation.risk_note or (risk_output.risk_note if risk_output else "")
+        if response.status != "ok":
+            recommendation = "BLOCKED"
+            risk_level = "HIGH"
+            confidence = Decimal("0")
+            explanation_reason = "Controller model unavailable; manual review is required."
+            risk_note = f"Safe failure status: {response.status}"
+        else:
+            explanation = _parse_controller_explanation(response.content)
+            explanation_reason = explanation.reason
+            risk_note = explanation.risk_note or (risk_output.risk_note if risk_output else "")
 
         return CommitteeStockResult(
             stock_code=context.stock_code,
@@ -90,7 +100,7 @@ class ControllerAgent:
             recommendation=recommendation,  # type: ignore[arg-type]
             risk_level=risk_level,  # type: ignore[arg-type]
             confidence=confidence,
-            controller_reason=explanation.reason,
+            controller_reason=explanation_reason,
             risk_note=risk_note,
             agent_outputs=agent_outputs,
             prompt_version=response.prompt_version,

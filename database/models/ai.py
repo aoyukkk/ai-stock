@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
@@ -23,6 +23,11 @@ class AIAnalysisResult(IDMixin, TimestampMixin, ReprMixin, Base):
     stock_code: Mapped[str] = mapped_column(String(32), nullable=False)
     agent_name: Mapped[str] = mapped_column(String(128), nullable=False)
     model_name: Mapped[str | None] = mapped_column(String(128))
+    model_alias: Mapped[str | None] = mapped_column(String(128))
+    task_tier: Mapped[str | None] = mapped_column(String(32))
+    request_hash: Mapped[str | None] = mapped_column(String(128))
+    is_real: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    structured_result_json: Mapped[dict | None] = mapped_column(JSON)
     score: Mapped[Decimal | None] = mapped_column(SCORE)
     direction: Mapped[str | None] = mapped_column(String(32))
     confidence: Mapped[Decimal | None] = mapped_column(SCORE)

@@ -5,10 +5,14 @@ from backend.api.v1.database import router as database_router
 from backend.api.v1.committee import router as committee_router
 from backend.api.v1.config import router as config_router
 from backend.api.v1.data_sources import router as data_sources_router
+from backend.api.v1.data_readiness import router as data_readiness_router
 from backend.api.v1.health import router as health_router
 from backend.api.v1.llm import router as llm_router
+from backend.api.v1.fundamental_research import router as fundamental_research_router
 from backend.api.v1.memory import router as memory_router
+from backend.api.v1.models import router as models_router
 from backend.api.v1.order_price import router as order_price_router
+from backend.api.v1.position_sizing import router as position_sizing_router
 from backend.api.v1.quant import router as quant_router
 from backend.api.v1.recheck import router as recheck_router
 from backend.api.v1.review import router as review_router
@@ -27,11 +31,15 @@ def _include_business_routers(router: APIRouter) -> None:
     router.include_router(config_router)
     router.include_router(database_router)
     router.include_router(data_sources_router)
+    router.include_router(data_readiness_router)
     router.include_router(quant_router)
     router.include_router(llm_router)
+    router.include_router(fundamental_research_router)
+    router.include_router(models_router)
     router.include_router(screening_router)
     router.include_router(committee_router)
     router.include_router(order_price_router)
+    router.include_router(position_sizing_router)
     router.include_router(virtual_trading_router)
     router.include_router(recheck_router)
     router.include_router(alerts_router)

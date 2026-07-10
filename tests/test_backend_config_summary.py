@@ -33,7 +33,7 @@ def test_config_summary_returns_safe_summary() -> None:
     assert data["stock_scan"]["committee_analysis_top_n"] == 50
     assert data["stock_scan"]["final_recommend_top_n"] == 50
     assert data["llm"]["mock_enabled"] is True
-    assert data["llm"]["real_providers_enabled"] == []
+    assert data["llm"]["real_providers_enabled"] == ["deepseek"]
     assert data["data_sources"]["mock_enabled"] is True
     assert set(data["data_sources"]["manual_debug_sources"]) == {"tushare", "baostock"}
     assert set(data["data_sources"]["real_sources_enabled"]) == {"tushare", "baostock"}

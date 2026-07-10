@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -16,7 +17,15 @@ if str(ROOT_BOOTSTRAP) not in sys.path:
 from datasource.akshare_provider import AKShareMarketDataProvider
 from datasource.baostock_provider import BaoStockMarketDataProvider
 from datasource.mock.market_provider import MockMarketDataProvider
-from datasource.tushare_provider import TushareMarketDataProvider
+from datasource.tushare_provider import (
+    DEFAULT_TOKEN_ENV,
+    TushareMarketDataProvider,
+    _env_file_value as _tushare_env_file_value,
+    _float as _tushare_float,
+    _kline_bar as _tushare_kline_bar,
+    _pick as _tushare_pick,
+    _plain_code as _tushare_plain_code,
+)
 from datasource.models.market import (
     CapitalFlowData,
     FinanceData,
@@ -29,7 +38,7 @@ from database.session import get_session
 from quant.config import load_quant_config
 from quant.persistence import save_factor_scores
 from quant.ranking import QuantRankingEngine
-from quant.schemas import QuantFactorInput, QuantRankingResult
+from quant.schemas import QuantFactorInput, QuantFactorScore, QuantRankingResult
 from datasource.schemas import (
     CapitalFlowSnapshot,
     FinanceSnapshot,
@@ -62,6 +71,7 @@ def run_real_quant_top500(
     data_fetch_workers: int = 1,
     factor_workers: str | int = "1",
 ) -> dict[str, Any]:
+    _load_local_tushare_token()
     started_at = datetime.now(timezone.utc)
     run_started = time.perf_counter()
     output_path = Path(output)
@@ -78,6 +88,7 @@ def run_real_quant_top500(
     performance = _initial_performance(effective_data_fetch_workers, effective_factor_workers)
     kline_fetch_attempts = 0
     baostock_backup_used_count = 0
+    trade_date_batch_context: dict[str, Any] = {}
 
     if int(data_fetch_workers or 1) > effective_data_fetch_workers:
         warnings.append("data_fetch_workers reduced to 1 for BaoStock session safety.")
@@ -178,6 +189,7 @@ def run_real_quant_top500(
             factor_data_coverage=factor_data_coverage,
             tushare_api_counts=_tushare_api_counts(market_provider, history, backup_history),
             baostock_backup_used_count=baostock_backup_used_count,
+            trade_date_cache_stats=_trade_date_cache_stats(market_provider, history, backup_history),
         )
         _write_report(output_path, report, performance, run_started)
         return report
@@ -197,6 +209,16 @@ def run_real_quant_top500(
     end = _parse_date(end_date) if end_date else date.today()
     start = _parse_date(start_date) if start_date else end - timedelta(days=45)
     market_emotion = _to_legacy_emotion(_safe_market_emotion(market_provider), end)
+    trade_date_batch_context = _prepare_tushare_trade_date_batch_context(
+        market_provider=market_provider,
+        history=history,
+        start=start,
+        end=end,
+        use_cache=use_cache,
+        refresh_cache=refresh_cache,
+        warnings=warnings,
+        errors_sample=errors_sample,
+    )
     performance["filter_seconds"] = _round_seconds(time.perf_counter() - filter_started)
 
     results = []
@@ -211,14 +233,24 @@ def run_real_quant_top500(
             try:
                 kline_started = time.perf_counter()
                 try:
-                    bars, stock_fallback_used, stock_fallback_reason, kline_source = _get_kline_with_backup(
-                        history,
-                        backup_history,
-                        stock.code,
-                        start.isoformat(),
-                        end.isoformat(),
-                        frequency="daily",
-                    )
+                    bars = _batch_kline_for_stock(trade_date_batch_context, stock.code)
+                    if bars:
+                        stock_fallback_used = False
+                        stock_fallback_reason = None
+                        kline_source = "tushare_trade_date_cache"
+                    elif trade_date_batch_context.get("enabled"):
+                        stock_fallback_used = False
+                        stock_fallback_reason = "tushare_trade_date_cache_missing_stock"
+                        kline_source = "tushare_trade_date_cache"
+                    else:
+                        bars, stock_fallback_used, stock_fallback_reason, kline_source = _get_kline_with_backup(
+                            history,
+                            backup_history,
+                            stock.code,
+                            start.isoformat(),
+                            end.isoformat(),
+                            frequency="daily",
+                        )
                 finally:
                     performance["kline_fetch_seconds"] += time.perf_counter() - kline_started
                     kline_fetch_attempts += 1
@@ -227,17 +259,39 @@ def run_real_quant_top500(
                     if kline_source == "baostock":
                         baostock_backup_used_count += 1
                     fallback_reasons.append(f"{stock.code}:{stock_fallback_reason}")
-                if kline_source == "tushare" and bars:
+                if kline_source in {"tushare", "tushare_trade_date_cache"} and bars:
                     factor_data_coverage["daily"] = True
                 if len(bars) < MIN_KLINE_BARS:
-                    skipped_count += 1
-                    _append_error(errors_sample, stock.code, "INSUFFICIENT_KLINE", f"bars={len(bars)}")
-                    continue
+                    fallback_bars = []
+                    if backup_history is not None and kline_source == "tushare_trade_date_cache":
+                        try:
+                            fallback_bars = backup_history.get_kline(
+                                stock.code,
+                                start.isoformat(),
+                                end.isoformat(),
+                                frequency="daily",
+                            )
+                        except Exception:
+                            fallback_bars = []
+                    if len(fallback_bars) > len(bars):
+                        bars = fallback_bars
+                        stock_fallback_used = True
+                        fallback_used = True
+                        baostock_backup_used_count += 1
+                        fallback_reasons.append(f"{stock.code}:tushare_trade_date_cache_insufficient_bars")
+                    else:
+                        skipped_count += 1
+                        _append_error(errors_sample, stock.code, "INSUFFICIENT_KLINE", f"bars={len(bars)}")
+                        continue
                 factor_started = time.perf_counter()
                 quote = _safe_realtime(market_provider, stock, bars[-1])
-                finance = _safe_finance(market_provider, stock.code)
-                flow = _safe_capital_flow(market_provider, stock.code)
+                finance = _batch_finance_for_stock(trade_date_batch_context, stock.code)
+                flow = _batch_capital_flow_for_stock(trade_date_batch_context, stock.code)
+                if not trade_date_batch_context.get("enabled"):
+                    finance = finance or _safe_finance(market_provider, stock.code)
+                    flow = flow or _safe_capital_flow(market_provider, stock.code)
                 _merge_factor_coverage_from_data(factor_data_coverage, finance, flow)
+                _merge_factor_coverage_from_batch(factor_data_coverage, trade_date_batch_context)
                 factor_input = QuantFactorInput(
                     stock_code=stock.code,
                     stock_name=stock.name,
@@ -255,6 +309,7 @@ def run_real_quant_top500(
                     market_emotion=market_emotion,
                 )
                 results.append(engine.calculate_stock_score(factor_input))
+                _append_tushare_explanation_details(results[-1], trade_date_batch_context, stock.code, bars)
                 performance["factor_compute_seconds"] += time.perf_counter() - factor_started
             except Exception as exc:
                 failed_count += 1
@@ -327,6 +382,7 @@ def run_real_quant_top500(
         factor_data_coverage=factor_data_coverage,
         tushare_api_counts=_tushare_api_counts(market_provider, history, backup_history),
         baostock_backup_used_count=baostock_backup_used_count,
+        trade_date_cache_stats=_trade_date_cache_stats(market_provider, history, backup_history),
     )
     _write_report(output_path, report, performance, run_started)
     return report
@@ -381,6 +437,8 @@ def main() -> int:
         f"total_seconds={report['performance']['total_seconds']} "
         f"cache_hit_count={report['performance']['cache_hit_count']} "
         f"cache_miss_count={report['performance']['cache_miss_count']} "
+        f"trade_date_cache_used={report.get('trade_date_cache_used', False)} "
+        f"per_stock_api_call_count={report.get('per_stock_api_call_count', 0)} "
         f"report_path={report['report_path']}"
     )
     return 0
@@ -402,6 +460,14 @@ def _provider(
     if normalized == "tushare":
         return TushareMarketDataProvider(cache_enabled=use_cache)
     raise ValueError(f"Unsupported provider: {name}")
+
+
+def _load_local_tushare_token() -> None:
+    if os.getenv(DEFAULT_TOKEN_ENV, "").strip():
+        return
+    token = _tushare_env_file_value(Path(".env"), DEFAULT_TOKEN_ENV)
+    if token:
+        os.environ[DEFAULT_TOKEN_ENV] = token
 
 
 def _quant_mode(provider: str, history_provider: str) -> str:
@@ -449,6 +515,343 @@ def _get_kline_with_backup(
         raise
 
 
+def _prepare_tushare_trade_date_batch_context(
+    market_provider,
+    history,
+    start: date,
+    end: date,
+    use_cache: bool,
+    refresh_cache: bool,
+    warnings: list[str],
+    errors_sample: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not use_cache:
+        return {"enabled": False}
+    provider = history if isinstance(history, TushareMarketDataProvider) else market_provider
+    if not isinstance(provider, TushareMarketDataProvider):
+        return {"enabled": False}
+    context: dict[str, Any] = {
+        "enabled": True,
+        "provider": provider,
+        "daily_by_stock": {},
+        "daily_basic_by_stock": {},
+        "moneyflow_by_stock": {},
+        "adj_factor_by_stock": {},
+        "stk_limit_by_stock": {},
+        "loaded_interfaces": set(),
+    }
+    for api_name in ("daily", "daily_basic", "adj_factor", "moneyflow", "stk_limit"):
+        try:
+            records = provider.get_trade_date_records(
+                api_name,
+                start.isoformat(),
+                end.isoformat(),
+                use_cache=use_cache,
+                refresh_cache=refresh_cache,
+            )
+            context["loaded_interfaces"].add(api_name)
+            if api_name == "daily":
+                context["daily_by_stock"] = _group_kline_records_by_stock(records)
+            elif api_name == "adj_factor":
+                context["adj_factor_by_stock"] = _records_by_stock_and_date(records)
+            elif api_name == "stk_limit":
+                context["stk_limit_by_stock"] = _records_by_stock_and_date(records)
+            else:
+                context[f"{api_name}_by_stock"] = _latest_record_by_stock(records)
+        except Exception as exc:
+            warnings.append(f"tushare_trade_date_cache_{api_name}_unavailable:{exc.__class__.__name__}")
+            _append_error(errors_sample, api_name, exc.__class__.__name__, str(exc))
+    return context
+
+
+def _group_kline_records_by_stock(records: list[dict[str, Any]]) -> dict[str, list[CanonicalKLineBar]]:
+    grouped: dict[str, list[CanonicalKLineBar]] = {}
+    for row in records:
+        code = _tushare_plain_code(_tushare_pick(row, "ts_code", default=""))
+        if not code:
+            continue
+        grouped.setdefault(code, []).append(_tushare_kline_bar(row, "daily"))
+    for bars in grouped.values():
+        bars.sort(key=lambda item: item.datetime)
+    return grouped
+
+
+def _latest_record_by_stock(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in records:
+        code = _tushare_plain_code(_tushare_pick(row, "ts_code", default=""))
+        if not code:
+            continue
+        current = grouped.get(code)
+        if current is None or str(_tushare_pick(row, "trade_date", default="")) >= str(
+            _tushare_pick(current, "trade_date", default="")
+        ):
+            grouped[code] = row
+    return grouped
+
+
+def _records_by_stock_and_date(records: list[dict[str, Any]]) -> dict[str, dict[str, dict[str, Any]]]:
+    grouped: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in records:
+        code = _tushare_plain_code(_tushare_pick(row, "ts_code", default=""))
+        trade_day = str(_tushare_pick(row, "trade_date", default=""))
+        if not code or not trade_day:
+            continue
+        grouped.setdefault(code, {})[trade_day] = row
+    return grouped
+
+
+def _batch_kline_for_stock(context: dict[str, Any], stock_code: str) -> list[CanonicalKLineBar]:
+    if not context.get("enabled"):
+        return []
+    return list(context.get("daily_by_stock", {}).get(_tushare_plain_code(stock_code), []))
+
+
+def _batch_finance_for_stock(context: dict[str, Any], stock_code: str) -> FinanceData | None:
+    if not context.get("enabled"):
+        return None
+    code = _tushare_plain_code(stock_code)
+    basic_row = context.get("daily_basic_by_stock", {}).get(code)
+    if not basic_row:
+        return None
+    return FinanceData(
+        stock_code=code,
+        revenue=0.0,
+        profit=0.0,
+        pe=_tushare_float(_tushare_pick(basic_row, "pe", default=0)),
+        pb=_tushare_float(_tushare_pick(basic_row, "pb", default=0)),
+        roe=0.0,
+        debt_ratio=0.0,
+        source="tushare",
+        raw_data={"daily_basic": basic_row, "source": "trade_date_cache"},
+    )
+
+
+def _batch_capital_flow_for_stock(context: dict[str, Any], stock_code: str) -> CapitalFlowData | None:
+    if not context.get("enabled"):
+        return None
+    code = _tushare_plain_code(stock_code)
+    flow_row = context.get("moneyflow_by_stock", {}).get(code)
+    basic_row = context.get("daily_basic_by_stock", {}).get(code, {})
+    if not flow_row:
+        return None
+    return CapitalFlowData(
+        stock_code=code,
+        main_net_inflow=_tushare_float(_tushare_pick(flow_row, "net_mf_amount", default=0)) * 10000,
+        large_order_net_inflow=(
+            _tushare_float(_tushare_pick(flow_row, "buy_lg_amount", default=0))
+            + _tushare_float(_tushare_pick(flow_row, "buy_elg_amount", default=0))
+            - _tushare_float(_tushare_pick(flow_row, "sell_lg_amount", default=0))
+            - _tushare_float(_tushare_pick(flow_row, "sell_elg_amount", default=0))
+        )
+        * 10000,
+        amount=_tushare_float(_tushare_pick(basic_row, "amount", default=0)),
+        turnover_rate=_tushare_float(_tushare_pick(basic_row, "turnover_rate", default=0)),
+        source="tushare",
+        raw_data={"moneyflow": flow_row, "daily_basic": basic_row, "source": "trade_date_cache"},
+    )
+
+
+def _merge_factor_coverage_from_batch(coverage: dict[str, bool], context: dict[str, Any]) -> None:
+    for api_name in context.get("loaded_interfaces", set()):
+        if api_name in coverage:
+            coverage[api_name] = True
+
+
+LIMIT_STATUS_CODES = {
+    "UNKNOWN": Decimal("0"),
+    "NORMAL": Decimal("1"),
+    "NEAR_LIMIT_UP": Decimal("2"),
+    "LIMIT_UP_CLOSE": Decimal("3"),
+    "NEAR_LIMIT_DOWN": Decimal("4"),
+    "LIMIT_DOWN_CLOSE": Decimal("5"),
+}
+LIMIT_STATUS_BY_CODE = {int(value): key for key, value in LIMIT_STATUS_CODES.items()}
+
+
+def _append_tushare_explanation_details(
+    result,
+    context: dict[str, Any],
+    stock_code: str,
+    bars: list[CanonicalKLineBar],
+) -> None:
+    if not context.get("enabled"):
+        return
+    code = _tushare_plain_code(stock_code)
+    adj_available = _adj_factor_available(context, code, bars)
+    result.factor_details.append(
+        QuantFactorScore(
+            stock_code=code,
+            factor_group="data_quality",
+            factor_name="adj_factor_available",
+            raw_value=Decimal("1") if adj_available else Decimal("0"),
+            normalized_value=Decimal("50"),
+            score=Decimal("50"),
+            weight=None,
+            explain_text=(
+                "Tushare adj_factor available for this stock/date range"
+                if adj_available
+                else "Tushare adj_factor missing for this stock/date range"
+            ),
+        )
+    )
+
+    summary = _limit_summary(context, code, bars)
+    result.factor_details.extend(
+        [
+            _explanation_detail(code, "risk", "limit_up_price", summary["limit_up_price"], "Tushare upper limit price."),
+            _explanation_detail(code, "risk", "limit_down_price", summary["limit_down_price"], "Tushare lower limit price."),
+            QuantFactorScore(
+                stock_code=code,
+                factor_group="risk",
+                factor_name="limit_status",
+                raw_value=LIMIT_STATUS_CODES.get(summary["limit_status"], Decimal("0")),
+                normalized_value=Decimal("50"),
+                score=Decimal("50"),
+                weight=None,
+                explain_text=str(summary["limit_status"]),
+            ),
+            _explanation_detail(
+                code,
+                "risk",
+                "consecutive_limit_up_count",
+                summary["consecutive_limit_up_count"],
+                "Consecutive limit-up closes derived from daily close and stk_limit.",
+            ),
+            _explanation_detail(
+                code,
+                "risk",
+                "consecutive_limit_down_count",
+                summary["consecutive_limit_down_count"],
+                "Consecutive limit-down closes derived from daily close and stk_limit.",
+            ),
+            QuantFactorScore(
+                stock_code=code,
+                factor_group="risk",
+                factor_name="limit_risk_note",
+                raw_value=LIMIT_STATUS_CODES.get(summary["limit_status"], Decimal("0")),
+                normalized_value=Decimal("50"),
+                score=Decimal("50"),
+                weight=None,
+                explain_text=str(summary["limit_risk_note"]),
+            ),
+        ]
+    )
+
+
+def _explanation_detail(
+    stock_code: str,
+    group: str,
+    name: str,
+    raw_value: Any,
+    explain_text: str,
+) -> QuantFactorScore:
+    return QuantFactorScore(
+        stock_code=stock_code,
+        factor_group=group,
+        factor_name=name,
+        raw_value=_decimal(raw_value) if raw_value not in (None, "") else None,
+        normalized_value=Decimal("50"),
+        score=Decimal("50"),
+        weight=None,
+        explain_text=explain_text,
+    )
+
+
+def _adj_factor_available(context: dict[str, Any], stock_code: str, bars: list[CanonicalKLineBar]) -> bool:
+    by_date = context.get("adj_factor_by_stock", {}).get(stock_code, {})
+    if not by_date:
+        return False
+    bar_dates = {_compact_date(bar.datetime) for bar in bars}
+    return any(trade_day in by_date for trade_day in bar_dates)
+
+
+def _limit_summary(context: dict[str, Any], stock_code: str, bars: list[CanonicalKLineBar]) -> dict[str, Any]:
+    if not bars:
+        return _unknown_limit_summary()
+    latest_bar = bars[-1]
+    limit_records = context.get("stk_limit_by_stock", {}).get(stock_code, {})
+    latest_record = limit_records.get(_compact_date(latest_bar.datetime))
+    if latest_record is None:
+        return _unknown_limit_summary()
+
+    up_limit = _tushare_float(_tushare_pick(latest_record, "up_limit", "limit_up_price", default=0))
+    down_limit = _tushare_float(_tushare_pick(latest_record, "down_limit", "limit_down_price", default=0))
+    status = _detect_limit_status(latest_bar.close, up_limit, down_limit)
+    consecutive_up = _consecutive_limit_count(bars, limit_records, direction="up")
+    consecutive_down = _consecutive_limit_count(bars, limit_records, direction="down")
+    note = _limit_risk_note(status, consecutive_up, consecutive_down)
+    return {
+        "limit_up_price": up_limit or None,
+        "limit_down_price": down_limit or None,
+        "limit_status": status,
+        "consecutive_limit_up_count": consecutive_up,
+        "consecutive_limit_down_count": consecutive_down,
+        "limit_risk_note": note,
+    }
+
+
+def _unknown_limit_summary() -> dict[str, Any]:
+    return {
+        "limit_up_price": None,
+        "limit_down_price": None,
+        "limit_status": "UNKNOWN",
+        "consecutive_limit_up_count": 0,
+        "consecutive_limit_down_count": 0,
+        "limit_risk_note": "stk_limit unavailable",
+    }
+
+
+def _detect_limit_status(close: Any, up_limit: float, down_limit: float) -> str:
+    close_value = float(close or 0)
+    if up_limit > 0 and close_value >= up_limit * 0.999:
+        return "LIMIT_UP_CLOSE"
+    if down_limit > 0 and close_value <= down_limit * 1.001:
+        return "LIMIT_DOWN_CLOSE"
+    if up_limit > 0 and close_value >= up_limit * 0.98:
+        return "NEAR_LIMIT_UP"
+    if down_limit > 0 and close_value <= down_limit * 1.02:
+        return "NEAR_LIMIT_DOWN"
+    return "NORMAL"
+
+
+def _consecutive_limit_count(
+    bars: list[CanonicalKLineBar],
+    limit_records: dict[str, dict[str, Any]],
+    direction: str,
+) -> int:
+    count = 0
+    for bar in reversed(bars):
+        record = limit_records.get(_compact_date(bar.datetime))
+        if not record:
+            break
+        up_limit = _tushare_float(_tushare_pick(record, "up_limit", default=0))
+        down_limit = _tushare_float(_tushare_pick(record, "down_limit", default=0))
+        status = _detect_limit_status(bar.close, up_limit, down_limit)
+        if direction == "up" and status == "LIMIT_UP_CLOSE":
+            count += 1
+            continue
+        if direction == "down" and status == "LIMIT_DOWN_CLOSE":
+            count += 1
+            continue
+        break
+    return count
+
+
+def _limit_risk_note(status: str, consecutive_up: int, consecutive_down: int) -> str:
+    if consecutive_up >= 2:
+        return "consecutive_limit_risk"
+    if consecutive_down >= 1 or status in {"LIMIT_DOWN_CLOSE", "NEAR_LIMIT_DOWN"}:
+        return "limit_down_liquidity_risk"
+    if status in {"LIMIT_UP_CLOSE", "NEAR_LIMIT_UP"}:
+        return "limit_up_chase_risk"
+    return "normal"
+
+
+def _compact_date(value: str) -> str:
+    return str(value or "").split("T", 1)[0].replace("-", "")
+
+
 def _start_provider_session(provider) -> None:
     start_session = getattr(provider, "start_session", None)
     if callable(start_session):
@@ -478,6 +881,10 @@ def _initial_performance(data_fetch_workers: int, factor_compute_workers: int) -
         "cache_miss_count": 0,
         "cache_insufficient_count": 0,
         "cache_refresh_count": 0,
+        "trade_date_cache_hit_count": 0,
+        "trade_date_cache_miss_count": 0,
+        "trade_date_cache_refresh_count": 0,
+        "per_stock_api_call_count": 0,
     }
 
 
@@ -536,6 +943,25 @@ def _merge_cache_stats(performance: dict[str, Any], *providers) -> None:
         int(getattr(provider, "cache_insufficient_count", 0)) for provider in providers
     )
     performance["cache_refresh_count"] = sum(int(getattr(provider, "cache_refresh_count", 0)) for provider in providers)
+    trade_date_stats = _trade_date_cache_stats(*providers)
+    performance["trade_date_cache_hit_count"] = trade_date_stats["hit_count"]
+    performance["trade_date_cache_miss_count"] = trade_date_stats["miss_count"]
+    performance["trade_date_cache_refresh_count"] = trade_date_stats["refresh_count"]
+    performance["per_stock_api_call_count"] = trade_date_stats["per_stock_api_call_count"]
+
+
+def _trade_date_cache_stats(*providers) -> dict[str, int | bool]:
+    hit_count = sum(int(getattr(provider, "trade_date_cache_hit_count", 0)) for provider in providers)
+    miss_count = sum(int(getattr(provider, "trade_date_cache_miss_count", 0)) for provider in providers)
+    refresh_count = sum(int(getattr(provider, "trade_date_cache_refresh_count", 0)) for provider in providers)
+    per_stock_api_call_count = sum(int(getattr(provider, "per_stock_api_call_count", 0)) for provider in providers)
+    return {
+        "used": bool(hit_count or miss_count),
+        "hit_count": hit_count,
+        "miss_count": miss_count,
+        "refresh_count": refresh_count,
+        "per_stock_api_call_count": per_stock_api_call_count,
+    }
 
 
 def _tushare_api_counts(*providers) -> dict[str, int]:
@@ -774,7 +1200,9 @@ def _to_legacy_emotion(emotion: MarketEmotionData | None, trade_date: date) -> M
 
 
 def _score_to_report(item) -> dict[str, Any]:
-    return {
+    detail_map = {detail.factor_name: detail for detail in getattr(item, "factor_details", [])}
+    limit_status = _limit_status_from_detail(detail_map.get("limit_status"))
+    report = {
         "rank": item.rank,
         "stock_code": item.stock_code,
         "stock_name": item.stock_name,
@@ -784,7 +1212,48 @@ def _score_to_report(item) -> dict[str, Any]:
         "emotion_score": float(item.emotion_score),
         "momentum_score": float(item.momentum_score),
         "risk_score": float(item.risk_score),
+        "adj_factor_available": _detail_bool(detail_map.get("adj_factor_available")),
+        "limit_status": limit_status,
+        "limit_up_price": _detail_float(detail_map.get("limit_up_price")),
+        "limit_down_price": _detail_float(detail_map.get("limit_down_price")),
+        "limit_risk_note": _detail_text(detail_map.get("limit_risk_note")),
+        "factor_detail": [_factor_detail_to_report(detail) for detail in getattr(item, "factor_details", [])],
     }
+    return report
+
+
+def _factor_detail_to_report(detail: QuantFactorScore) -> dict[str, Any]:
+    return {
+        "factor_group": detail.factor_group,
+        "factor_name": detail.factor_name,
+        "raw_value": _json_default(detail.raw_value) if detail.raw_value is not None else None,
+        "normalized_value": _json_default(detail.normalized_value) if detail.normalized_value is not None else None,
+        "score": _json_default(detail.score),
+        "weight": _json_default(detail.weight) if detail.weight is not None else None,
+        "explain_text": detail.explain_text,
+    }
+
+
+def _detail_bool(detail: QuantFactorScore | None) -> bool:
+    if detail is None or detail.raw_value is None:
+        return False
+    return detail.raw_value > 0
+
+
+def _detail_float(detail: QuantFactorScore | None) -> float | None:
+    if detail is None or detail.raw_value is None:
+        return None
+    return float(detail.raw_value)
+
+
+def _detail_text(detail: QuantFactorScore | None) -> str:
+    return detail.explain_text if detail is not None else ""
+
+
+def _limit_status_from_detail(detail: QuantFactorScore | None) -> str:
+    if detail is None or detail.raw_value is None:
+        return "UNKNOWN"
+    return LIMIT_STATUS_BY_CODE.get(int(detail.raw_value), "UNKNOWN")
 
 
 def _build_report(
@@ -819,8 +1288,16 @@ def _build_report(
     factor_data_coverage: dict[str, bool] | None = None,
     tushare_api_counts: dict[str, int] | None = None,
     baostock_backup_used_count: int = 0,
+    trade_date_cache_stats: dict[str, int | bool] | None = None,
 ) -> dict[str, Any]:
     api_counts = tushare_api_counts or {"success": 0, "empty": 0, "error": 0}
+    trade_date_stats = trade_date_cache_stats or {
+        "used": False,
+        "hit_count": 0,
+        "miss_count": 0,
+        "refresh_count": 0,
+        "per_stock_api_call_count": 0,
+    }
     return {
         "provider": provider,
         "history_provider": history_provider,
@@ -833,6 +1310,11 @@ def _build_report(
         "akshare_proxy_env_detected": akshare_proxy_env_detected,
         "fallback_used": fallback_used,
         "fallback_reason": fallback_reason or "",
+        "trade_date_cache_used": bool(trade_date_stats.get("used", False)),
+        "trade_date_cache_hit_count": int(trade_date_stats.get("hit_count", 0)),
+        "trade_date_cache_miss_count": int(trade_date_stats.get("miss_count", 0)),
+        "trade_date_cache_refresh_count": int(trade_date_stats.get("refresh_count", 0)),
+        "per_stock_api_call_count": int(trade_date_stats.get("per_stock_api_call_count", 0)),
         "baostock_backup_used_count": baostock_backup_used_count,
         "tushare_permission_summary": tushare_permission_summary or {},
         "tushare_api_success_count": api_counts.get("success", 0),

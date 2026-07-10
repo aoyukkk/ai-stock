@@ -4,6 +4,7 @@ from database.models.ai import (
     PredictionRecord,
     StockAIScore,
 )
+from database.models.allocation import AllocationRun, PositionSuggestionRecord
 from database.models.factor import StockFactorDetail, StockFactorScore
 from database.models.finance import StockFinance
 from database.models.market import PreMarketAuction, StockMarketData
@@ -21,6 +22,13 @@ from database.models.order_plan import (
     OrderReassessmentLog,
 )
 from database.models.review import DailyReview, PredictionEvaluation
+from database.models.quant_run import QuantRankResult, QuantRun
+from database.models.research import (
+    FundamentalResearchRun,
+    PendingVerificationTask,
+    ResearchEvidenceRecord,
+    StockFundamentalProfile,
+)
 from database.models.stock import StockMaster
 from database.models.system import (
     AgentExecutionLog,
@@ -32,18 +40,35 @@ from database.models.system import (
     SystemConfig,
 )
 from database.models.trading import Position, TradeOrder, TradeRecord, TradingAccount
+from database.models.temporal import RunDataManifestRecord
+from database.models.validation import (
+    ModelValidationAllocation,
+    ModelValidationLLMAudit,
+    ModelValidationOrderPlan,
+    ModelValidationRun,
+    ModelValidationSample,
+    ValidationAccountSnapshot,
+)
 
 __all__ = [
     "AIAnalysisResult",
+    "AllocationRun",
     "AgentExecutionLog",
     "AgentMemoryNote",
     "ConfigHistory",
     "DailyReview",
     "DecisionSnapshot",
     "ExperimentRun",
+    "FundamentalResearchRun",
+    "PendingVerificationTask",
     "LLMUsage",
     "MemoryLink",
     "MemoryRetrievalLog",
+    "ModelValidationAllocation",
+    "ModelValidationLLMAudit",
+    "ModelValidationOrderPlan",
+    "ModelValidationRun",
+    "ModelValidationSample",
     "ModelVersion",
     "News",
     "NewsStockRelation",
@@ -52,14 +77,20 @@ __all__ = [
     "OrderPriceCandidate",
     "OrderReassessmentLog",
     "Position",
+    "PositionSuggestionRecord",
     "PredictionEvaluation",
     "PredictionRecord",
     "PreMarketAuction",
     "PromptVersion",
+    "QuantRankResult",
+    "QuantRun",
+    "ResearchEvidenceRecord",
+    "RunDataManifestRecord",
     "StockAIScore",
     "StockFactorDetail",
     "StockFactorScore",
     "StockFinance",
+    "StockFundamentalProfile",
     "StockMarketData",
     "StockMaster",
     "StrategyPlaybook",
@@ -67,4 +98,5 @@ __all__ = [
     "TradeOrder",
     "TradeRecord",
     "TradingAccount",
+    "ValidationAccountSnapshot",
 ]

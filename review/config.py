@@ -100,16 +100,8 @@ class ReviewConfig:
         if bool(models.get("mock_only", True)) is not True:
             raise ReviewConfigError("Phase 11 requires LLM mock_only mode.")
 
-        providers = models.get("providers", {})
-        real_enabled = [
-            provider_name
-            for provider_name, provider_config in providers.items()
-            if provider_name != "mock"
-            and isinstance(provider_config, dict)
-            and bool(provider_config.get("enabled", False))
-        ]
-        if real_enabled:
-            raise ReviewConfigError(f"Real LLM providers must remain disabled: {real_enabled}")
+        # A real provider may be registered for explicit gateway connectivity tests.
+        # Review summaries remain isolated because this module requires mock_only above.
 
     def summary(self) -> dict[str, Any]:
         return {

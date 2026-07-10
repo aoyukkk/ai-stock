@@ -8,8 +8,17 @@ from database.models.ai import (
     PredictionRecord,
     StockAIScore,
 )
+from database.models.system import PromptVersion
+from llm_gateway.prompt_manager import content_hash
+from llm_gateway.schemas import LLMResponse
 from screening.exceptions import LightScreeningPersistenceError
-from screening.schemas import LightScreeningRanking, LightScreeningResult
+from screening.real_prompt import PROMPT_VERSION, SYSTEM_PROMPT
+from screening.schemas import (
+    LightScreeningRanking,
+    LightScreeningResult,
+    RealLightScreeningInput,
+    RealLightScreeningOutput,
+)
 
 
 def persist_light_screening_results(session, ranking: LightScreeningRanking) -> None:
@@ -31,6 +40,7 @@ def persist_light_screening_results(session, ranking: LightScreeningRanking) -> 
                     "direction": result.direction,
                     "confidence": str(result.confidence),
                     "should_keep": result.should_keep,
+                    "data_conflict": result.data_conflict,
                     "request_hash": result.request_hash,
                 },
                 memory_json={},
@@ -89,6 +99,122 @@ def persist_light_screening_results(session, ranking: LightScreeningRanking) -> 
     except Exception as exc:
         session.rollback()
         raise LightScreeningPersistenceError("Failed to persist light screening results.") from exc
+
+
+def persist_real_screening_sample(
+    session,
+    item: RealLightScreeningInput,
+    output: RealLightScreeningOutput,
+    response: LLMResponse,
+    *,
+    run_id: str,
+    is_real: bool,
+) -> None:
+    try:
+        _ensure_prompt_version(session)
+        snapshot = DecisionSnapshot(
+            stock_code=item.stock_code,
+            snapshot_time=_parse_snapshot_time(item.snapshot_time),
+            market_data_json={
+                "trade_date": item.trade_date,
+                "limit_status": item.limit_status,
+                "near_limit_up": item.near_limit_up,
+                "near_limit_down": item.near_limit_down,
+            },
+            factor_json={
+                "quant_run_id": item.quant_run_id,
+                "quant_rank": item.quant_rank,
+                "quant_score": str(item.quant_score),
+                "scores": {
+                    "technical": str(item.technical_score),
+                    "capital": str(item.capital_score),
+                    "emotion": str(item.emotion_score),
+                    "momentum": str(item.momentum_score),
+                    "risk": str(item.risk_score),
+                },
+                "factor_detail_summary": item.factor_detail_summary,
+                "data_coverage": item.data_coverage,
+                "known_missing_fields": item.known_missing_fields,
+                "adjusted_technical_factor_applied": item.adjusted_technical_factor_applied,
+                "limit_risk_weight_applied": item.limit_risk_weight_applied,
+            },
+            news_json={"available": item.news_available},
+            agent_result_json={
+                "run_id": run_id,
+                "task_type": response.task_type,
+                "task_tier": response.task_tier,
+                "model_alias": response.model_alias,
+                "provider": response.provider,
+                "is_real": is_real,
+                "cached": response.cached,
+                "request_hash": response.request_hash,
+                "prompt_version": PROMPT_VERSION,
+                "structured_result": output.model_dump(mode="json"),
+            },
+            memory_json={},
+            order_price_json={},
+            final_score=output.llm_score,
+            risk_level="HIGH" if output.screening_decision in {"REJECT", "WATCH_ONLY"} else "MEDIUM",
+            recommendation="NEUTRAL",
+        )
+        session.add(snapshot)
+        session.flush()
+        session.add(
+            AIAnalysisResult(
+                stock_code=item.stock_code,
+                agent_name="light_screening_agent",
+                model_name=response.model,
+                model_alias=response.model_alias,
+                task_tier=response.task_tier,
+                request_hash=response.request_hash,
+                is_real=is_real,
+                structured_result_json=output.model_dump(mode="json"),
+                score=output.llm_score,
+                direction="NEUTRAL",
+                confidence=output.confidence,
+                reason=output.reason,
+                risk_note=output.risk_note,
+                analysis_time=_parse_snapshot_time(item.snapshot_time),
+                prompt_version=PROMPT_VERSION,
+                model_version=response.model,
+                llm_usage_id=response.usage_id,
+            )
+        )
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        raise LightScreeningPersistenceError("Failed to persist real screening sample.") from exc
+
+
+def _ensure_prompt_version(session) -> None:
+    from sqlalchemy import select
+
+    existing = session.scalar(
+        select(PromptVersion).where(
+            PromptVersion.agent_name == "light_screening_agent",
+            PromptVersion.version == PROMPT_VERSION,
+        )
+    )
+    if existing is None:
+        session.add(
+            PromptVersion(
+                agent_name="light_screening_agent",
+                version=PROMPT_VERSION,
+                content_hash=content_hash(SYSTEM_PROMPT),
+                description="Guarded V0.4 real small-sample light-screening prompt.",
+                is_active=True,
+            )
+        )
+
+
+def _parse_snapshot_time(value: str):
+    from datetime import datetime, timezone
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.now(timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _recommendation(result: LightScreeningResult) -> str:

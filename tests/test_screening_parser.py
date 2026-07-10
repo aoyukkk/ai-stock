@@ -21,6 +21,7 @@ def valid_payload(**overrides):
         "reason": "ok",
         "risk_note": "none",
         "should_keep": True,
+        "data_conflict": False,
     }
     item.update(overrides)
     return json.dumps({"items": [item]})

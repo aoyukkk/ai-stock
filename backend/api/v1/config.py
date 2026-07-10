@@ -35,6 +35,12 @@ class ConfigResetBody(BaseModel):
     reason: str = "frontend reset"
 
 
+class ConfigRollbackBody(BaseModel):
+    history_id: int = Field(gt=0)
+    user: str = "local_admin"
+    reason: str = "frontend rollback"
+
+
 @router.get("/effective")
 def get_effective_config(request: Request) -> dict:
     manager = ConfigManager()
@@ -113,6 +119,19 @@ def get_config_history(
     except ConfigManagerError as exc:
         raise _to_app_exception(exc) from exc
     return success_response(data={"items": rows}, trace_id=request.state.trace_id)
+
+
+@router.post("/history/rollback")
+def rollback_config_history(body: ConfigRollbackBody, request: Request) -> dict:
+    try:
+        data = ConfigManager().rollback_config_history(
+            history_id=body.history_id,
+            user=body.user,
+            reason=body.reason,
+        )
+    except ConfigManagerError as exc:
+        raise _to_app_exception(exc) from exc
+    return success_response(data=data, trace_id=request.state.trace_id)
 
 
 def _to_app_exception(exc: ConfigManagerError) -> AppException:

@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from backend.core.config import get_app_config
+from backend.core.config_manager import ConfigManager
 from screening.exceptions import LightScreeningConfigError
 
 
@@ -12,6 +13,7 @@ DEFAULT_LIGHT_SCREENING_CONFIG = {
     "enabled": True,
     "provider": "mock",
     "model": "mock-chat",
+    "model_alias": "mock-fast",
     "batch_size": 20,
     "output_top_n": 50,
     "min_confidence": 0.50,
@@ -42,6 +44,10 @@ class LightScreeningConfig:
     @property
     def model(self) -> str:
         return str(self.raw.get("model", "mock-chat"))
+
+    @property
+    def model_alias(self) -> str:
+        return str(self.raw.get("model_alias") or "mock-fast")
 
     @property
     def batch_size(self) -> int:
@@ -87,6 +93,7 @@ class LightScreeningConfig:
             "enabled": self.enabled,
             "provider": self.provider,
             "model": self.model,
+            "model_alias": self.model_alias,
             "batch_size": self.batch_size,
             "output_top_n": self.output_top_n,
             "min_confidence": float(self.min_confidence),
@@ -96,6 +103,6 @@ class LightScreeningConfig:
 
 
 def load_light_screening_config() -> LightScreeningConfig:
-    models = get_app_config().config_files.get("models", {})
+    models = ConfigManager().get_llm_gateway_config()
     raw = DEFAULT_LIGHT_SCREENING_CONFIG | models.get("llm_light_screening", {})
     return LightScreeningConfig(raw=raw)

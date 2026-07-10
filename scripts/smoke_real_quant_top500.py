@@ -61,6 +61,8 @@ def main() -> int:
         f"total_seconds={performance.get('total_seconds', 0.0)} "
         f"cache_hit_count={performance.get('cache_hit_count', 0)} "
         f"cache_miss_count={performance.get('cache_miss_count', 0)} "
+        f"trade_date_cache_used={report.get('trade_date_cache_used', False)} "
+        f"per_stock_api_call_count={report.get('per_stock_api_call_count', 0)} "
         f"report_path={report['report_path']}"
     )
     return 0

@@ -15,10 +15,15 @@ def test_default_registry_registers_mock_provider() -> None:
     assert provider.is_mock is True
 
 
-def test_placeholder_providers_are_disabled_and_not_implemented() -> None:
+def test_real_deepseek_and_other_placeholder_providers_are_registered() -> None:
     registry = create_default_registry()
 
-    for provider_name in ["deepseek", "openai", "claude", "qwen"]:
+    deepseek = registry.get_provider("deepseek")
+    assert deepseek.enabled is True
+    assert deepseek.is_mock is False
+    assert deepseek.health_check().status in {"configured", "not_configured"}
+
+    for provider_name in ["openai", "claude", "qwen"]:
         provider = registry.get_provider(provider_name)
         assert provider.enabled is False
         assert provider.health_check().status == "not_implemented"

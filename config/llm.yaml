@@ -1,19 +1,25 @@
 llm_gateway:
   required: true
-  phase0_mode: mock_only
+  phase0_mode: guarded_real_ready
   request_hash_cache_enabled: true
   json_schema_required: true
   parse_failure_fallback_action: WATCH_ONLY
 
 llm:
   mock_only: true
+  real_calls_enabled: false
   default_provider: mock
   default_model: mock-chat
 
   providers:
     deepseek:
-      enabled: false
+      enabled: true
       api_key_env: DEEPSEEK_API_KEY
+      base_url: https://api.deepseek.com
+      connect_timeout_seconds: 5
+      read_timeout_seconds: 60
+      max_attempts: 3
+      retry_backoff_seconds: 0.5
     openai:
       enabled: false
       api_key_env: OPENAI_API_KEY

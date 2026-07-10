@@ -15,6 +15,10 @@ class BaseLLMProvider(ABC):
     def list_models(self) -> list[str]:
         raise NotImplementedError
 
+    def fetch_available_models(self) -> list[str]:
+        """Return provider models; real providers may override with a remote check."""
+        return self.list_models()
+
     @abstractmethod
     def health_check(self) -> LLMProviderInfo:
         raise NotImplementedError

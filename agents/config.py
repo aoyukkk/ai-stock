@@ -4,17 +4,17 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from backend.core.config import get_app_config
+from backend.core.config_manager import ConfigManager
 from agents.exceptions import AgentConfigError
 
 
 DEFAULT_AGENT_CONFIGS = {
-    "technical_agent": {"enabled": True, "provider": "mock", "model": "mock-chat", "weight": 0.20},
-    "news_agent": {"enabled": True, "provider": "mock", "model": "mock-chat", "weight": 0.20},
-    "capital_agent": {"enabled": True, "provider": "mock", "model": "mock-chat", "weight": 0.20},
-    "emotion_agent": {"enabled": True, "provider": "mock", "model": "mock-chat", "weight": 0.15},
-    "overseas_agent": {"enabled": True, "provider": "mock", "model": "mock-chat", "weight": 0.10},
-    "risk_agent": {"enabled": True, "provider": "mock", "model": "mock-chat", "weight": 0.15},
+    "technical_agent": {"enabled": True, "model_alias": "mock-fast", "weight": 0.20},
+    "news_agent": {"enabled": True, "model_alias": "mock-fast", "weight": 0.20},
+    "capital_agent": {"enabled": True, "model_alias": "mock-fast", "weight": 0.20},
+    "emotion_agent": {"enabled": True, "model_alias": "mock-fast", "weight": 0.15},
+    "overseas_agent": {"enabled": True, "model_alias": "mock-fast", "weight": 0.10},
+    "risk_agent": {"enabled": True, "model_alias": "mock-fast", "weight": 0.15},
 }
 
 DEFAULT_AI_COMMITTEE_CONFIG = {
@@ -47,6 +47,12 @@ class CommitteeAgentConfig:
         if self.mock_only:
             return "mock"
         return str(self.raw.get("provider", "mock"))
+
+    @property
+    def model_alias(self) -> str:
+        if self.mock_only:
+            return str(self.raw.get("phase0_model_alias") or "mock-fast")
+        return str(self.raw.get("model_alias") or self.raw.get("preferred_model_alias") or "mock-fast")
 
     @property
     def model(self) -> str:
@@ -141,6 +147,7 @@ class AICommitteeConfig:
                     "enabled": config.enabled,
                     "provider": config.provider,
                     "model": config.model,
+                    "model_alias": config.model_alias,
                     "weight": float(config.weight),
                 }
                 for name, config in self.agents.items()
@@ -149,7 +156,7 @@ class AICommitteeConfig:
 
 
 def load_ai_committee_config() -> AICommitteeConfig:
-    models = get_app_config().config_files.get("models", {})
+    models = ConfigManager().get_llm_gateway_config()
     llm_config = models.get("llm", {})
     raw = DEFAULT_AI_COMMITTEE_CONFIG | models.get("ai_committee", {})
     if "agents" in models.get("ai_committee", {}):

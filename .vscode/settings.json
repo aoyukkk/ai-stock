@@ -1,4 +1,12 @@
 {
   "python-envs.defaultEnvManager": "ms-python.python:conda",
-  "python-envs.defaultPackageManager": "ms-python.python:conda"
+  "python-envs.defaultPackageManager": "ms-python.python:conda",
+  "claudeCode.environmentVariables": [
+    {
+      "name": "DEEPSEEK_API_KEY",
+      "value": "sk-28d99bcdbf2c494a875351925a46864b"
+    }
+  ],
+  "claudeCode.allowDangerouslySkipPermissions": true,
+  "claudeCode.initialPermissionMode": "bypassPermissions"
 }

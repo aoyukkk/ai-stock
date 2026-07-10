@@ -24,7 +24,13 @@ from scripts._common import (
 
 SENSITIVE_ENV_PARTS = ("API_KEY", "PASSWORD", "SECRET", "TOKEN", "PASSPHRASE")
 SAFE_PLACEHOLDERS = {"", "mock", "disabled", "changeme", "placeholder", "example"}
-ALLOWED_LOCAL_SECRET_KEYS = {"TUSHARE_TOKEN"}
+ALLOWED_LOCAL_SECRET_KEYS = {
+    "TUSHARE_TOKEN",
+    "DEEPSEEK_API_KEY",
+    "OKX_API_KEY",
+    "OKX_SECRET_KEY",
+    "OKX_PASSPHRASE",
+}
 
 
 def run_checks(root: Path = ROOT_DIR) -> CheckReport:
@@ -111,6 +117,16 @@ def _check_config_files(root: Path, report: CheckReport) -> None:
             report.add_info("data sources are mock-only")
     else:
         report.add_error(f"non-manual real data sources enabled: {unsafe_real_sources}")
+
+    okx_entries = [
+        enabled
+        for provider, enabled, _manual_only in provider_configs
+        if provider == "okx"
+    ]
+    if okx_entries and any(okx_entries):
+        report.add_error("OKX provider must remain disabled in this phase")
+    else:
+        report.add_info("OKX provider disabled; local credentials are isolated")
 
 
 def _iter_provider_configs(value, inherited_manual_only: bool = False):

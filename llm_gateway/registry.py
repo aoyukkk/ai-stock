@@ -3,8 +3,9 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from backend.core.config import get_app_config
+from backend.core.config_manager import ConfigManager
 from llm_gateway.base import BaseLLMProvider
+from llm_gateway.deepseek_provider import DeepSeekLLMProvider
 from llm_gateway.exceptions import LLMProviderNotFoundError
 from llm_gateway.mock_provider import MockLLMProvider
 from llm_gateway.placeholder_provider import PlaceholderLLMProvider
@@ -40,8 +41,24 @@ def create_default_registry() -> LLMProviderRegistry:
     registry.register_provider(
         MockLLMProvider(enabled=bool(providers_config.get("mock", {}).get("enabled", True)))
     )
+    aliases = models_config.get("llm", {}).get("aliases", {})
+    deepseek_models = sorted({
+        str(value.get("model"))
+        for value in aliases.values()
+        if isinstance(value, dict) and value.get("provider") == "deepseek" and value.get("model")
+    })
+    deepseek_config = providers_config.get("deepseek", {})
     registry.register_provider(
-        PlaceholderLLMProvider("deepseek", ["deepseek-v4-flash"])
+        DeepSeekLLMProvider(
+            enabled=bool(deepseek_config.get("enabled", False)),
+            api_key_env=str(deepseek_config.get("api_key_env") or "DEEPSEEK_API_KEY"),
+            models=deepseek_models,
+            base_url=str(deepseek_config.get("base_url") or "https://api.deepseek.com"),
+            connect_timeout_seconds=float(deepseek_config.get("connect_timeout_seconds", 5)),
+            read_timeout_seconds=float(deepseek_config.get("read_timeout_seconds", 60)),
+            max_attempts=int(deepseek_config.get("max_attempts", 3)),
+            retry_backoff_seconds=float(deepseek_config.get("retry_backoff_seconds", 0.5)),
+        )
     )
     registry.register_provider(
         PlaceholderLLMProvider("openai", ["gpt-5.5"])
@@ -61,4 +78,4 @@ def get_llm_provider_registry() -> LLMProviderRegistry:
 
 
 def _models_config() -> dict[str, Any]:
-    return get_app_config().config_files.get("models", {})
+    return ConfigManager().get_llm_gateway_config()

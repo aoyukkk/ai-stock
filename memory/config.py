@@ -133,16 +133,8 @@ class MemoryConfig:
         models = get_app_config().config_files.get("models", {}).get("llm", {})
         if self.use_mock_llm_for_reflection and not bool(models.get("mock_only", True)):
             raise MemoryConfigError("Reflection memory requires LLM mock_only mode.")
-        providers = models.get("providers", {})
-        real_llm_enabled = [
-            name
-            for name, provider_config in providers.items()
-            if name != "mock"
-            and isinstance(provider_config, dict)
-            and bool(provider_config.get("enabled", False))
-        ]
-        if real_llm_enabled:
-            raise MemoryConfigError(f"Real LLM providers must remain disabled: {real_llm_enabled}")
+        # A real provider may be registered for explicit gateway connectivity tests.
+        # Reflection remains isolated because this module requires mock_only above.
 
     def summary(self) -> dict[str, Any]:
         return {

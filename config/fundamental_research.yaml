@@ -1,0 +1,36 @@
+fundamental_research:
+  enabled: false
+  mode: deepseek_unverified
+  provider: search_provider_chain
+  model_alias: search-analysis-fast
+  manual_only: true
+  execution_mode: manual
+  max_stocks: 5
+  default_stocks: 3
+  max_queries_per_stock: 4
+  max_sources_per_stock: 12
+  source_policy:
+    require_http_url: true
+    allowed_tiers: [tier_1, tier_2, tier_3, tier_4]
+    official_sources_preferred: true
+    tiers:
+      tier_1: {types: [regulator, exchange, company_filing], credibility: 1.0}
+      tier_2: {types: [government, official_industry_body, mainstream_financial_media], credibility: 0.8}
+      tier_3: {types: [established_research, specialist_media], credibility: 0.6}
+      tier_4: {types: [other_web], credibility: 0.4, standalone_conclusion_allowed: false}
+  cache_policy:
+    enabled: true
+    ttl_hours: 24
+    retain_content_hash: true
+  provider_chain:
+    - {provider: cache, enabled: true}
+    - {provider: tavily, enabled_env: ENABLE_TAVILY_SEARCH, key_env: TAVILY_API_KEY}
+    - {provider: brave, enabled_env: ENABLE_BRAVE_SEARCH, key_env: BRAVE_SEARCH_API_KEY}
+    - {provider: searxng, enabled_env: ENABLE_SEARXNG_SEARCH, base_url_env: SEARXNG_BASE_URL}
+    - {provider: deepseek_unverified, enabled_env: ENABLE_LLM_UNVERIFIED_RESEARCH_FALLBACK}
+  unverified_policy:
+    source_status: LLM_UNVERIFIED
+    display_marker: "*"
+    requires_manual_review: true
+    can_increase_quant_score: false
+    can_increase_position: false
