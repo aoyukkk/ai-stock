@@ -64,3 +64,28 @@ a {
 .mono {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
+
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.el-table .cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.el-table .el-checkbox {
+  display: flex;
+  justify-content: center;
+}
+
+.return-up { color: #c0392b; }
+.return-down { color: #17834b; }

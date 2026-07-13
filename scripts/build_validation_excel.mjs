@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { SpreadsheetFile, Workbook } from "@oai/artifact-tool";
+import { applyCenteredAlignment } from "./excel_alignment.mjs";
 
 const [inputPath, outputPath, previewDir] = process.argv.slice(2);
 if (!inputPath || !outputPath) throw new Error("usage: node build_validation_excel.mjs INPUT_JSON OUTPUT_XLSX [PREVIEW_DIR]");
@@ -37,9 +38,10 @@ const writeSheet = (sheet, title, subtitle, headers, rows, tableName) => {
   const body = rows.length ? rows.map(row => row.map(safe)) : [headers.map(() => "")];
   const endRow = 4 + body.length;
   sheet.getRange(`A5:${endCol}${endRow}`).values = body;
-  sheet.getRange(`A5:${endCol}${endRow}`).format = {font: {color: "#000000"}, wrapText: true, verticalAlignment: "top", borders: {insideHorizontal: {style: "thin", color: "#E1E5EA"}}};
+  sheet.getRange(`A5:${endCol}${endRow}`).format = {font: {color: "#000000"}, wrapText: true, horizontalAlignment: "center", verticalAlignment: "center", borders: {insideHorizontal: {style: "thin", color: "#E1E5EA"}}};
   sheet.freezePanes.freezeRows(4);
   sheet.tables.add(`A4:${endCol}${endRow}`, true, tableName).style = "TableStyleMedium2";
+  applyCenteredAlignment(sheet, `A4:${endCol}${endRow}`);
   sheet.getRange(`A4:${endCol}${endRow}`).format.autofitColumns();
   for (let c=0; c<headers.length; c++) {
     const width = /说明|摘要|value|note|reason|warning|限制|证据|条件|message/i.test(headers[c]) ? 26 : 15;

@@ -21,3 +21,17 @@ thresholds:
   good_review_score: 80
   neutral_review_score: 60
   max_acceptable_drawdown_percent: 8
+
+selection_performance:
+  enabled: true
+  default_lookback_value: 5
+  default_lookback_unit: TRADING_DAYS
+  max_lookback_value: 120
+  default_return_basis: NEXT_OPEN
+  default_selection_scope: FINAL_CANDIDATES
+  default_weighting_mode: EQUAL_WEIGHT
+  auto_refresh_after_data_ready: true
+  min_coverage_ratio: 0.95
+  include_zero_position_stocks: true
+  include_risk_blocked_stocks: true
+  auto_export_excel: false

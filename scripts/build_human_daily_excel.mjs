@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { SpreadsheetFile, Workbook } from "@oai/artifact-tool";
+import { applyCenteredAlignment } from "./excel_alignment.mjs";
 
 const [inputPath, outputPath, previewDir] = process.argv.slice(2);
 if (!inputPath || !outputPath) throw new Error("缺少输入或输出路径");
@@ -38,12 +39,13 @@ const tableBlock = (sheet, startRow, headers, rows, tableName) => {
   };
   sheet.getRange(`A${startRow + 1}:${endCol}${endRow}`).values = body;
   sheet.getRange(`A${startRow + 1}:${endCol}${endRow}`).format = {
-    font: {color: C.ink, size: 9}, verticalAlignment: "top",
+    font: {color: C.ink, size: 9}, horizontalAlignment: "center", verticalAlignment: "center", wrapText: true,
     borders: {insideHorizontal: {style: "thin", color: C.border}},
   };
   const table = sheet.tables.add(`A${startRow}:${endCol}${endRow}`, true, tableName);
   table.style = "TableStyleMedium2";
   table.showFilterButton = true;
+  applyCenteredAlignment(sheet, `A${startRow}:${endCol}${endRow}`);
   return {endRow, endCol};
 };
 const titleBand = (sheet, endCol, title, subtitle = "") => {

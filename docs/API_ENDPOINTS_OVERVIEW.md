@@ -18,6 +18,10 @@ alias reuses the same handler and returns the same core `data`.
 
 No endpoint below performs real trading. No endpoint requires or returns a real API key.
 
+Historical Workbench endpoints include `GET /api/workbench/available-dates`, `GET /api/workbench/runs`, `POST /api/workbench/runs/reconcile`, `POST /api/workbench/runs/load-existing`, and the run-bound result endpoints under `/api/workbench`. Reconciliation writes relationship metadata only and never executes a pipeline stage.
+
+Server-paginated Workbench responses use `items`, `page`, `page_size`, `total`, and `total_pages`. Page numbering starts at 1; filtering and stable sorting happen before slicing the requested page.
+
 | Module | Method | Path | Purpose | Mock-only status | Writes database | Real trading involved |
 | --- | --- | --- | --- | --- | --- | --- |
 | Health | GET | `/health` | Backend health and safety state | Mock-only | No | No |
@@ -71,3 +75,6 @@ No endpoint below performs real trading. No endpoint requires or returns a real 
 | Config | POST | `/api/v1/config/bulk` | Persist whitelisted config values | Safe whitelist only | Yes | No |
 | Config | POST | `/api/v1/config/values/{config_key}/reset` | Reset config override | Safe whitelist only | Yes | No |
 | Config | GET | `/api/v1/config/history` | Config change history | Safe whitelist only | No | No |
+# Selection Performance Analytics V1
+
+`/api/workbench/performance/*` 提供不可变选股 Cohort、个股/组合收益、缓存状态、增量刷新、失效、设置和四表 Excel 导出。正式查询只读取数据库；本阶段不调用 LLM、外部行情 API 或交易模块。完整契约见 `docs/SELECTION_PERFORMANCE_ANALYTICS_V1.md`。

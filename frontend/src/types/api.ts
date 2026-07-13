@@ -1,9 +1,10 @@
 export interface ApiEnvelope<T = unknown> {
   success: boolean;
-  code: string;
-  message: string;
+  code?: string;
+  message?: string;
   data: T;
   trace_id?: string;
+  error?: { code: string; message: string; details?: Record<string, unknown> } | null;
 }
 
 export interface FrontendApiError {

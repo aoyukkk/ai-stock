@@ -306,6 +306,7 @@ def _build_workbook(payload: dict[str, Any], output_path: Path, preview_dir: Pat
     try:
         builder = build_dir / "build_human_daily_excel.mjs"
         shutil.copy2(ROOT / "scripts" / "build_human_daily_excel.mjs", builder)
+        shutil.copy2(ROOT / "scripts" / "excel_alignment.mjs", build_dir / "excel_alignment.mjs")
         payload_path = build_dir / "payload.json"
         payload_path.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
         dependency_root = Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules"

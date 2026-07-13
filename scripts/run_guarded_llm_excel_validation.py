@@ -235,6 +235,7 @@ def _build_excel(payload: dict[str, Any], temp_path: Path, output_dir: Path) -> 
         source = ROOT_DIR / "scripts" / "build_validation_excel.mjs"
         builder = build_dir / "build_validation_excel.mjs"
         shutil.copy2(source, builder)
+        shutil.copy2(ROOT_DIR / "scripts" / "excel_alignment.mjs", build_dir / "excel_alignment.mjs")
         payload_path = build_dir / "payload.json"
         payload_path.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
         dependency_root = Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules"

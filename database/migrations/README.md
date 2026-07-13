@@ -1,5 +1,7 @@
 # Database Migrations
 
+`20260713_add_workbench_run_registry.sql` adds only relationship metadata used to reconcile completed historical pipeline runs. It does not copy or modify Quant, Flash, Pro, order, position, fundamental, or LLM usage records.
+
 Phase 2 provides the migration placeholder and table initialization script.
 
 Current command:
@@ -44,3 +46,6 @@ Adds single-stock Pro V3 resume and deterministic ranking fields.
 ### 20260710_add_flash_v4_order_semantics_v12.sql
 
 Adds TP1/TP2 risk-reward, active target, and unrounded stop fields for advisory model validation.
+# Selection Performance V1
+
+Run `python scripts/migrate_selection_performance_v1.py` after upgrading an existing development database. The migration is additive and idempotent.

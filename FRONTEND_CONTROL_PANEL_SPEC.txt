@@ -1,3 +1,5 @@
+DEPRECATED — Replaced by Trader Daily Screening Workbench V1
+
 AI Trader Assistant 前端控制台规格
 Version: V0.3
 ============================================================

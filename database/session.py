@@ -47,6 +47,35 @@ def get_database_type(database_url: str | None = None) -> str:
     return drivername.split("+", maxsplit=1)[0] or "unknown"
 
 
+def get_database_identity(database_url: str | None = None) -> dict[str, str | None]:
+    """Return a secret-free identity suitable for startup consistency checks."""
+    url = make_url(database_url or get_database_url())
+    database = url.database
+    absolute_path = None
+    filename = database
+    if url.drivername.startswith("sqlite") and database and database != ":memory:":
+        path = Path(database).expanduser().resolve()
+        absolute_path = str(path)
+        filename = path.name
+    return {
+        "dialect": url.get_backend_name(),
+        "database_filename": filename,
+        "absolute_path": absolute_path,
+        "schema": url.query.get("schema"),
+        "environment": os.getenv("APP_ENV", "development"),
+    }
+
+
+def assert_database_path_consistency(*database_urls: str) -> dict[str, str | None]:
+    identities = [get_database_identity(value) for value in database_urls if value]
+    if not identities:
+        identities = [get_database_identity()]
+    keys = {(item["dialect"], item["absolute_path"] or item["database_filename"], item["schema"]) for item in identities}
+    if len(keys) != 1:
+        raise DatabaseError("DATABASE_PATH_MISMATCH")
+    return identities[0]
+
+
 def create_engine_from_url(database_url: str) -> Engine:
     kwargs: dict = {
         "future": True,

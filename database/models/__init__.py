@@ -8,6 +8,13 @@ from database.models.allocation import AllocationRun, PositionSuggestionRecord
 from database.models.factor import StockFactorDetail, StockFactorScore
 from database.models.finance import StockFinance
 from database.models.market import PreMarketAuction, StockMarketData
+from database.models.performance import (
+    SelectionCohort,
+    SelectionCohortMember,
+    SelectionPerformanceDaily,
+    SelectionPerformanceRun,
+    SelectionPortfolioDaily,
+)
 from database.models.memory import (
     AgentMemoryNote,
     MemoryLink,
@@ -52,6 +59,7 @@ from database.models.validation import (
     ProResumeRun,
     ValidationAccountSnapshot,
 )
+from database.models.workbench import ManualSelectionRecord, PipelineJob, WorkbenchRunRegistry
 
 __all__ = [
     "AIAnalysisResult",
@@ -98,6 +106,11 @@ __all__ = [
     "StockFinance",
     "StockFundamentalProfile",
     "StockMarketData",
+    "SelectionCohort",
+    "SelectionCohortMember",
+    "SelectionPerformanceDaily",
+    "SelectionPerformanceRun",
+    "SelectionPortfolioDaily",
     "StockMaster",
     "StrategyPlaybook",
     "SystemConfig",
@@ -105,4 +118,7 @@ __all__ = [
     "TradeRecord",
     "TradingAccount",
     "ValidationAccountSnapshot",
+    "ManualSelectionRecord",
+    "PipelineJob",
+    "WorkbenchRunRegistry",
 ]

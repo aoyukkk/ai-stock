@@ -43,10 +43,18 @@ export async function apiPut<T = unknown>(
   return request<T>({ ...config, method: "PUT", url, data });
 }
 
+export async function apiDelete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<ApiEnvelope<T>> {
+  return request<T>({ ...config, method: "DELETE", url });
+}
+
 async function request<T>(config: AxiosRequestConfig): Promise<ApiEnvelope<T>> {
   try {
     const response = await http.request<ApiEnvelope<T>>(config);
-    return sanitizeEnvelope(response.data);
+    const envelope = sanitizeEnvelope(response.data);
+    if (!envelope.success) {
+      throw contractError(envelope, response.status);
+    }
+    return envelope;
   } catch (error) {
     throw normalizeError(error);
   }
@@ -82,13 +90,14 @@ function isSensitiveKey(key: string): boolean {
 }
 
 function normalizeError(error: unknown): FrontendApiError {
+  if (isFrontendApiError(error)) return error;
   const axiosError = error as AxiosError<ApiEnvelope>;
   const envelope = axiosError.response?.data;
   if (envelope) {
     return {
       success: false,
-      code: envelope.code || "API_ERROR",
-      message: envelope.message || "API request failed",
+      code: envelope.error?.code || envelope.code || "API_ERROR",
+      message: envelope.error?.message || envelope.message || "API request failed",
       traceId: envelope.trace_id,
       status: axiosError.response?.status,
       data: sanitizeSensitive(envelope.data)
@@ -100,4 +109,19 @@ function normalizeError(error: unknown): FrontendApiError {
     message: axiosError.message || "Network request failed",
     status: axiosError.response?.status
   };
+}
+
+function contractError(envelope: ApiEnvelope, status?: number): FrontendApiError {
+  return {
+    success: false,
+    code: envelope.error?.code || envelope.code || "API_ERROR",
+    message: envelope.error?.message || envelope.message || "API request failed",
+    traceId: envelope.trace_id,
+    status,
+    data: envelope.error?.details
+  };
+}
+
+function isFrontendApiError(value: unknown): value is FrontendApiError {
+  return Boolean(value && typeof value === "object" && (value as { success?: unknown }).success === false && "code" in value);
 }

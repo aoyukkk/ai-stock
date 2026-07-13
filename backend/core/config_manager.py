@@ -150,6 +150,16 @@ EDITABLE_CONFIG_SPECS: tuple[ConfigSpec, ...] = (
     _spec("position_sizing.max_chain_percent", "position_sizing", ("position_sizing", "max_chain_percent"), 0.35, "number", "position_sizing", "Industry-chain exposure cap", {"min": 0, "max": 1}),
     _spec("position_sizing.max_liquidity_participation", "position_sizing", ("position_sizing", "max_liquidity_participation"), 0.01, "number", "position_sizing", "Daily liquidity participation cap", {"min": 0, "max": 1}),
     _spec("position_sizing.default_lot_size", "position_sizing", ("position_sizing", "default_lot_size"), 100, "integer", "position_sizing", "Default trading lot", {"min": 1, "max": 10000}),
+    _spec("selection_performance.default_lookback_value", "review", ("selection_performance", "default_lookback_value"), 5, "integer", "selection_performance", "Default trading-day lookback", {"min": 1, "max": 120}),
+    _spec("selection_performance.max_lookback_value", "review", ("selection_performance", "max_lookback_value"), 120, "integer", "selection_performance", "Maximum trading-day lookback", {"min": 1, "max": 120}),
+    _spec("selection_performance.default_return_basis", "review", ("selection_performance", "default_return_basis"), "NEXT_OPEN", "string", "selection_performance", "Default return basis", {"allowed_values": ["NEXT_OPEN", "SIGNAL_CLOSE"]}),
+    _spec("selection_performance.default_selection_scope", "review", ("selection_performance", "default_selection_scope"), "FINAL_CANDIDATES", "string", "selection_performance", "Default selection scope", {"allowed_values": ["FINAL_CANDIDATES", "LLM_ONLY", "MANUAL_ONLY", "BOTH_ONLY", "NON_ZERO_POSITION", "ALL_CANDIDATES_INCLUDING_ZERO_POSITION"]}),
+    _spec("selection_performance.default_weighting_mode", "review", ("selection_performance", "default_weighting_mode"), "EQUAL_WEIGHT", "string", "selection_performance", "Default portfolio weighting", {"allowed_values": ["EQUAL_WEIGHT", "SUGGESTED_POSITION_WEIGHT"]}),
+    _spec("selection_performance.auto_refresh_after_data_ready", "review", ("selection_performance", "auto_refresh_after_data_ready"), True, "boolean", "selection_performance", "Refresh after data-ready event", {}),
+    _spec("selection_performance.min_coverage_ratio", "review", ("selection_performance", "min_coverage_ratio"), 0.95, "number", "selection_performance", "Minimum complete coverage", {"min": 0, "max": 1}),
+    _spec("selection_performance.include_zero_position_stocks", "review", ("selection_performance", "include_zero_position_stocks"), True, "boolean", "selection_performance", "Include zero-position candidates", {}),
+    _spec("selection_performance.include_risk_blocked_stocks", "review", ("selection_performance", "include_risk_blocked_stocks"), True, "boolean", "selection_performance", "Include risk-blocked candidates", {}),
+    _spec("selection_performance.auto_export_excel", "review", ("selection_performance", "auto_export_excel"), False, "boolean", "selection_performance", "Automatically export performance workbook", {}),
 )
 
 EDITABLE_CONFIG_BY_KEY = {spec.config_key: spec for spec in EDITABLE_CONFIG_SPECS}
@@ -694,6 +704,12 @@ class ConfigManager:
                 code="CONFIG_VALUE_INVALID",
                 message="real_trading_enabled must remain false",
                 data={"real_trading_enabled": False},
+            )
+
+        if int(proposed_values["selection_performance.default_lookback_value"]) > int(proposed_values["selection_performance.max_lookback_value"]):
+            raise ConfigManagerError(
+                code="CONFIG_VALUE_INVALID",
+                message="Selection performance default lookback cannot exceed maximum lookback",
             )
 
         deployable = float(proposed_values["position_sizing.deployable_capital_percent"])

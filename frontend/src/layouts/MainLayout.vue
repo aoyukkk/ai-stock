@@ -1,224 +1,87 @@
 <template>
-  <el-container class="app-shell">
-    <el-aside class="sidebar" width="248px">
-      <div class="brand">
-          <div class="brand__mark">AI</div>
-          <div>
-            <div class="brand__name">{{ app.appName }}</div>
-          <div class="brand__sub">{{ language.t("brand.controlPanel") }}</div>
-        </div>
-      </div>
-      <el-menu router :default-active="route.path" class="nav-menu">
-        <el-menu-item v-for="item in navItems" :key="item.path" :index="item.path">
-          <el-icon><component :is="item.icon" /></el-icon>
-          <span>{{ item.label }}</span>
+  <el-container class="workbench-shell">
+    <el-aside width="204px" class="workbench-nav">
+      <div class="brand">交易员每日筛选工作台</div>
+      <el-menu router :default-active="route.path">
+        <el-menu-item v-for="item in nav" :key="item.path" :index="item.path">
+          <el-icon><component :is="item.icon" /></el-icon><span>{{ item.label }}</span>
+          <StatusTag v-if="item.key" class="nav-status" :status="statusFor(item.key)" />
         </el-menu-item>
       </el-menu>
     </el-aside>
 
     <el-container>
-      <el-header class="topbar" height="64px">
-        <div class="topbar__left">
-          <el-tag :type="app.apiConnected ? 'success' : 'danger'" effect="plain">
-            {{ language.t("status.api") }} {{ app.apiConnected ? language.t("status.connected") : language.t("status.disconnected") }}
-          </el-tag>
-          <el-tag :type="app.realTradingEnabled ? 'danger' : 'success'" effect="plain">
-            real_trading_enabled={{ app.realTradingEnabled }}
-          </el-tag>
-          <el-tag effect="plain">{{ language.t("status.llm") }} {{ language.displayValue(app.llmMode) }}</el-tag>
-          <el-tag effect="plain">{{ language.t("status.data") }} {{ language.displayValue(app.dataSourceMode) }}</el-tag>
-        </div>
-        <div class="topbar__right">
-          <el-select
-            class="language-select"
-            :aria-label="language.t('language.label')"
-            :model-value="language.current"
-            size="small"
-            @update:model-value="updateLanguage"
-          >
-            <el-option
-              v-for="option in language.options"
-              :key="option.value"
-              :label="option.nativeLabel"
-              :value="option.value"
-            >
-              <span>{{ option.nativeLabel }}</span>
-              <span class="language-select__meta">{{ option.label }}</span>
-            </el-option>
+      <el-header height="64px" class="workbench-header">
+        <div class="header-status">
+          <el-select v-model="store.tradeDate" class="date-select" size="small" placeholder="选择交易日" @change="store.refresh">
+            <el-option v-for="item in store.availableDates" :key="item.trade_date" :label="item.trade_date" :value="item.trade_date" />
           </el-select>
-          <span class="trace mono">{{ app.currentTraceId || language.t("status.noTrace") }}</span>
-          <el-button
-            :icon="Refresh"
-            circle
-            :loading="app.loading"
-            :title="language.t('common.refresh')"
-            :aria-label="language.t('common.refresh')"
-            @click="app.refreshStatus"
-          />
+          <span>来源：{{ sourceLabel }}</span>
+          <span>数据：<StatusTag :status="store.status?.data.status" /></span>
+          <span>Quant：<StatusTag :status="store.status?.quant.status" /></span>
+          <span>LLM：<StatusTag :status="store.status?.flash.status" /></span>
+          <span>终排：<StatusTag :status="store.status?.final.status" /></span>
+          <span>Token：{{ number(store.status?.token.used) }} / {{ number(store.status?.token.limit) }}</span>
+          <span>真实交易：已关闭</span>
+        </div>
+        <div class="header-actions">
+          <el-select class="language-select" :model-value="language.current" size="small" aria-label="Language" @update:model-value="updateLanguage">
+            <el-option v-for="option in language.options" :key="option.value" :label="option.nativeLabel" :value="option.value" />
+          </el-select>
+          <el-button :icon="FolderOpened" circle title="打开输出目录" aria-label="打开输出目录" />
+          <el-button :icon="Setting" circle title="设置" aria-label="设置" @click="$router.push('/settings')" />
+          <el-button :icon="Refresh" circle :loading="store.loading" title="刷新状态" aria-label="刷新状态" @click="store.refresh" />
         </div>
       </el-header>
-      <el-main class="main-content">
-        <SafetyBanner :real-trading-enabled="app.realTradingEnabled" />
-        <el-alert v-if="app.lastError" class="global-error" type="error" :closable="false" show-icon :title="app.lastError" />
+      <el-main class="workbench-main">
+        <el-alert v-if="store.error" :title="store.error" type="error" show-icon :closable="false" />
         <RouterView />
-        <footer class="app-footer">
-          <span>{{ app.appName }} v{{ app.appVersion }}</span>
-          <span class="mono">{{ app.apiBaseUrl }}</span>
-        </footer>
       </el-main>
     </el-container>
   </el-container>
 </template>
 
 <script setup lang="ts">
-import {
-  Bell,
-  Connection,
-  DataAnalysis,
-  DataLine,
-  Document,
-  House,
-  Memo,
-  Monitor,
-  Refresh,
-  Setting,
-  Tickets
-} from "@element-plus/icons-vue";
+import { DataAnalysis, Document, FolderOpened, List, Refresh, Setting, Tickets, User, Wallet } from "@element-plus/icons-vue";
 import { computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
 
-import SafetyBanner from "@/components/SafetyBanner.vue";
-import { useAppStore } from "@/stores/appStore";
+import StatusTag from "@/components/common/StatusTag.vue";
 import { useLanguageStore } from "@/stores/languageStore";
+import { useWorkbenchStore } from "@/stores/workbench";
 
-const app = useAppStore();
+const store = useWorkbenchStore();
 const language = useLanguageStore();
 const route = useRoute();
-
-const navItems = computed(() => [
-  { path: "/dashboard", label: language.t("nav.dashboard"), icon: House },
-  { path: "/system-status", label: language.t("nav.systemStatus"), icon: Monitor },
-  { path: "/system-config", label: language.t("nav.systemConfig"), icon: Setting },
-  { path: "/model-management", label: language.t("nav.modelManagement"), icon: DataAnalysis },
-  { path: "/data-sources", label: language.t("nav.dataSources"), icon: Connection },
-  { path: "/quant-scan", label: language.t("nav.quantScan"), icon: DataLine },
-  { path: "/light-screening", label: language.t("nav.lightScreening"), icon: Tickets },
-  { path: "/committee-ranking", label: language.t("nav.aiCommittee"), icon: Tickets },
-  { path: "/order-price-plans", label: language.t("nav.orderPricePlans"), icon: Document },
-  { path: "/virtual-trading", label: language.t("nav.virtualTrading"), icon: Monitor },
-  { path: "/alerts-center", label: language.t("nav.alertsCenter"), icon: Bell },
-  { path: "/pre-market-recheck", label: language.t("nav.preMarketRecheck"), icon: Refresh },
-  { path: "/daily-review", label: language.t("nav.dailyReview"), icon: Memo },
-  { path: "/memory-console", label: language.t("nav.memoryConsole"), icon: Memo }
+const nav = computed(() => [
+  { path: "/workbench", label: "流程工作台", icon: DataAnalysis, key: "" },
+  { path: "/data-status", label: "数据状态", icon: List, key: "data" },
+  { path: "/quant-ranking", label: "全 A 量化排名", icon: DataAnalysis, key: "quant" },
+  { path: "/llm-screening", label: "LLM 二筛评分", icon: Tickets, key: "flash" },
+  { path: "/manual-selection", label: "人工选股", icon: User, key: "manual" },
+  { path: "/final-ranking", label: "最终排序", icon: List, key: "final" },
+  { path: "/order-position", label: "挂单与仓位", icon: Wallet, key: "final" },
+  { path: "/fundamentals", label: "重点基本面", icon: Document, key: "final" },
+  { path: "/selection-performance", label: "选股收益统计", icon: DataAnalysis, key: "" },
+  { path: "/runs", label: "运行记录", icon: List, key: "" },
+  { path: "/settings", label: "设置", icon: Setting, key: "" }
 ]);
-
-function updateLanguage(value: string) {
-  language.setLanguage(value);
-}
-
-onMounted(() => {
-  void app.refreshStatus();
-});
+const sourceLabel = computed(() => store.status?.source_mode === "DATABASE" ? "数据库历史结果" : store.status?.source_mode === "MOCK" ? "演示数据" : "无数据");
+function statusFor(key: string) { return store.status?.[key as "data" | "quant" | "flash" | "manual" | "final"].status; }
+function updateLanguage(value: string) { language.setLanguage(value); }
+function number(value?: number): string { return (value ?? 0).toLocaleString("zh-CN"); }
+onMounted(() => void store.refresh());
 </script>
 
 <style scoped>
-.app-shell {
-  min-height: 100vh;
-}
-
-.sidebar {
-  border-right: 1px solid #dfe3eb;
-  background: #ffffff;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 64px;
-  padding: 0 18px;
-  border-bottom: 1px solid #eef0f4;
-}
-
-.brand__mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 8px;
-  background: #1f2937;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.brand__name {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.brand__sub {
-  color: #667085;
-  font-size: 12px;
-}
-
-.nav-menu {
-  border-right: 0;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid #dfe3eb;
-  background: #ffffff;
-}
-
-.topbar__left,
-.topbar__right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.language-select {
-  width: 112px;
-}
-
-.language-select__meta {
-  float: right;
-  margin-left: 12px;
-  color: #98a2b3;
-  font-size: 12px;
-}
-
-.trace {
-  max-width: 260px;
-  overflow: hidden;
-  color: #667085;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.main-content {
-  padding: 18px;
-  background: #f5f7fb;
-}
-
-.global-error {
-  margin-bottom: 14px;
-  border-radius: 8px;
-}
-
-.app-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 22px;
-  color: #667085;
-  font-size: 12px;
-}
+.workbench-shell { min-height: 100vh; }
+.workbench-nav { background: #fff; border-right: 1px solid #dfe5ec; }
+.brand { height: 64px; padding: 20px 16px; color: #17365d; font-weight: 700; border-bottom: 1px solid #e6ebf0; }
+.nav-status { margin-left: auto; }
+.workbench-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #dfe5ec; background: #fff; }
+.header-status, .header-actions { display: flex; align-items: center; gap: 8px; font-size: 12px; white-space: nowrap; }
+.header-status { overflow-x: auto; }
+.date-select { width: 132px; }
+.language-select { width: 100px; }
+.workbench-main { padding: 16px; background: #f4f6f8; }
 </style>

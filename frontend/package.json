@@ -14,6 +14,7 @@
     "electron:build": "npm run build && npx electron-builder --config electron-builder.config.js --publish never",
     "package:win": "npm run build && npx electron-builder --config electron-builder.config.js --win --publish never",
     "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
     "preview": "vite preview --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
@@ -28,10 +29,13 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.11",
     "concurrently": "^9.1.0",
     "electron": "^33.2.1",
+    "jsdom": "^29.1.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
+    "vitest": "^4.1.10",
     "vue-tsc": "^2.1.10",
     "wait-on": "^8.0.1"
   }
