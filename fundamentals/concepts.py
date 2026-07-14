@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+
+from backend.core.runtime_paths import tushare_cache_root
 from typing import Any
 
 from stock_codes import normalize_ts_code
@@ -21,8 +23,8 @@ class ConceptLookupResult:
 class TushareConceptIndex:
     """Build a local stock-to-THS reverse index without per-stock API calls."""
 
-    def __init__(self, cache_root: Path | str = "data/cache/tushare") -> None:
-        self.cache_root = Path(cache_root)
+    def __init__(self, cache_root: Path | str | None = None) -> None:
+        self.cache_root = Path(cache_root) if cache_root is not None else tushare_cache_root()
         self._names, self._members, self._raw_counts = self._load()
 
     def lookup(self, stock_code: str) -> ConceptLookupResult:

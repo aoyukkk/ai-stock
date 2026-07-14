@@ -107,7 +107,7 @@ def test_key_v03_config_skeletons_exist() -> None:
     assert "reprice_conditions" in order_price["order_price"]
     assert "quality_control" in memory["memory"]
     assert virtual_trading["virtual_trading"]["rules"]["t_plus_one"] is True
-    assert schedule["schedule"]["pre_market_recheck"]["enabled"] is True
+    assert all(item["enabled"] is False for item in schedule["schedule"].values())
     assert "trading_hours" in market_data["market_data"]
     assert event_trigger["event_trigger"]["order"]["reprice_threshold_percent"] == 1.5
     assert agents["agents"]["controller_agent"]["enabled"] is True

@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from backend.core.runtime_paths import output_root
 from database.models.quant_run import QuantRankResult, QuantRun
 from database.models.system import LLMUsage
 from database.models.temporal import RunDataManifestRecord
@@ -265,7 +266,7 @@ class HistoricalPipelineRunResolver:
         }
 
     def _find_export(self, pro: ProResumeRun) -> dict[str, Any]:
-        root = ROOT_DIR / "outputs" / pro.base_trade_date.isoformat()
+        root = output_root() / pro.base_trade_date.isoformat()
         candidates: list[Path] = []
         expected_hashes: set[str] = set()
         if root.exists():
@@ -280,7 +281,12 @@ class HistoricalPipelineRunResolver:
                 self._collect_export_metadata(payload, candidates, expected_hashes)
             candidates.extend(root.rglob("ai_trader_flash_v4_*_state_clean.xlsx"))
         for path in candidates:
-            resolved = path if path.is_absolute() else (ROOT_DIR / path)
+            if path.is_absolute():
+                resolved = path
+            elif path.parts and path.parts[0].lower() == "outputs":
+                resolved = output_root().parent / path
+            else:
+                resolved = root / path
             resolved = resolved.resolve()
             if not resolved.is_file() or root.resolve() not in resolved.parents:
                 continue

@@ -1,0 +1,5 @@
+# Build-only dependencies for AI Trader Assistant 1.0.0.
+# Runtime dependencies are locked separately in requirements-runtime.lock.txt.
+pyinstaller==6.21.0
+pyinstaller-hooks-contrib==2026.6
+pytest==8.4.2

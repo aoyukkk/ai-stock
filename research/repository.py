@@ -71,7 +71,8 @@ class FundamentalRepository:
             )
             if existing:
                 continue
-            self.session.add(ResearchEvidenceRecord(run_id=run_id, **item.model_dump()))
+            payload = item.model_dump(exclude={"source_temporal_status", "query_time"})
+            self.session.add(ResearchEvidenceRecord(run_id=run_id, **payload))
             inserted += 1
         self.session.commit()
         return inserted

@@ -30,6 +30,9 @@ class DatabaseError(RuntimeError):
 
 
 def get_database_url() -> str:
+    database_path = os.getenv("AI_TRADER_DB_PATH", "").strip()
+    if database_path:
+        return f"sqlite:///{Path(database_path).expanduser().resolve().as_posix()}"
     return os.getenv("DATABASE_URL") or DEFAULT_SQLITE_URL
 
 

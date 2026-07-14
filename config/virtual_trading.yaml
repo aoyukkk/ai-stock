@@ -1,5 +1,5 @@
 virtual_trading:
-  enabled: true
+  enabled: false
   real_trading_enabled: false
   account_type: AI_SIMULATION
   initial_cash: 1000000

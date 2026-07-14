@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from logging.handlers import RotatingFileHandler
+import os
 from pathlib import Path
 
 
@@ -23,9 +25,14 @@ def configure_logging(log_level: str = "INFO") -> None:
     console_handler.setLevel(level)
     root_logger.addHandler(console_handler)
 
-    logs_dir = Path("logs")
-    logs_dir.mkdir(exist_ok=True)
-    file_handler = logging.FileHandler(logs_dir / "backend.log", encoding="utf-8")
+    logs_dir = Path(os.getenv("AI_TRADER_LOG_DIR", "logs"))
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        logs_dir / "backend.log",
+        maxBytes=5 * 1024 * 1024,
+        backupCount=5,
+        encoding="utf-8",
+    )
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)
     root_logger.addHandler(file_handler)

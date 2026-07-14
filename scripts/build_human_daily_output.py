@@ -228,7 +228,11 @@ def _human_issue(row: dict[str, Any], llm_by_code: dict[str, dict], *, order: bo
     elif "no_unsupported_leadership_claim" in reason:
         reason = "内容包含缺少依据的行业领先表述，需要人工确认"
     elif order:
-        reason = "基本面补全未通过，挂单和仓位建议已按规则阻断"
+        reason = (
+            "基本面已完成外部资料核验；原挂单与仓位结果保持阻断，等待下游重新评估"
+            if "EXTERNAL_FUNDAMENTAL_COMPLETED_DOWNSTREAM_REVIEW_PENDING" in reason
+            else "基本面补全未通过，挂单和仓位建议已按规则阻断"
+        )
     return {
         "股票代码": code, "股票名称": llm.get("stock_name") or "",
         "问题类型": "规则提醒" if order else "基本面补全",

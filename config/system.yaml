@@ -1,6 +1,6 @@
 system:
   name: AI Trader Assistant
-  version: "0.3"
+  version: "1.0.0"
   environment: development
   timezone: Asia/Shanghai
   language: zh-CN
@@ -41,19 +41,19 @@ safety:
 
 schedule:
   post_market_plan:
-    enabled: true
+    enabled: false
     start_time: "15:30"
   pre_market_recheck:
-    enabled: true
+    enabled: false
     start_time: "09:00"
     end_time: "09:25"
   intraday_monitor:
-    enabled: true
+    enabled: false
   noon_review:
-    enabled: true
+    enabled: false
     start_time: "11:35"
   daily_review:
-    enabled: true
+    enabled: false
     start_time: "15:45"
 
 refresh_frequency:

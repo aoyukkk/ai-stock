@@ -2,21 +2,29 @@ import axios, { type AxiosError, type AxiosRequestConfig } from "axios";
 
 import type { ApiEnvelope, FrontendApiError } from "@/types/api";
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const developmentApiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 const sensitiveKeys = ["api_key", "password", "secret", "token", "username", "credential"];
 
 export const http = axios.create({
-  baseURL: apiBaseUrl,
   timeout: 20000
 });
+
+let desktopConnection: { baseUrl: string; sessionToken: string } | null = null;
 
 export function createTraceId(): string {
   const random = Math.random().toString(16).slice(2);
   return `frontend-${Date.now()}-${random}`;
 }
 
-http.interceptors.request.use((config) => {
+http.interceptors.request.use(async (config) => {
   config.headers = config.headers || {};
+  if (window.aiTraderShell) {
+    desktopConnection ||= await window.aiTraderShell.getConnection();
+    config.baseURL = desktopConnection.baseUrl;
+    config.headers["X-AI-Trader-Token"] = desktopConnection.sessionToken;
+  } else {
+    config.baseURL = developmentApiBaseUrl;
+  }
   if (!config.headers["X-Trace-Id"]) {
     config.headers["X-Trace-Id"] = createTraceId();
   }

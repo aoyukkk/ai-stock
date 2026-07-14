@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 from datetime import date
 from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.application.workflow import WorkflowApplicationService, execute_persisted_job
 from backend.core.responses import error_response, success_response
 from backend.workbench.service import WorkbenchService
 from database.session import get_session, init_db
@@ -19,7 +21,9 @@ router = APIRouter(prefix="/api/workbench", tags=["trader-daily-workbench"])
 class JobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     trade_date: date
-    mode: Literal["USE_EXISTING", "MOCK"] = "USE_EXISTING"
+    mode: Literal["USE_EXISTING", "REAL"] = "USE_EXISTING"
+    confirm_budget: bool = False
+    force: bool = False
 
 
 class ManualSelectionRequest(BaseModel):
@@ -143,11 +147,16 @@ def data_update(body: DataUpdateRequest, request: Request, background_tasks: Bac
     session, service = _service()
     try:
         if body.mode in {"MISSING_ONLY", "FORCE_REFRESH"}:
-            return error_response(
-                "DATA_PROVIDER_NOT_ENABLED",
-                "当前工作台仅允许使用本地已有数据或 Mock，不会在此接口请求外部数据源。",
-                trace_id=request.state.trace_id,
-            )
+            if not os.getenv("TUSHARE_TOKEN", "").strip():
+                return error_response(
+                    "DATA_PROVIDER_NOT_ENABLED",
+                    "尚未配置 Tushare Token，无法更新行情数据。",
+                    trace_id=request.state.trace_id,
+                )
+            result = WorkflowApplicationService(session).start("DATA", body.trade_date, {"force": body.mode == "FORCE_REFRESH"})
+            if result.get("duplicate_status") == "NEW_JOB":
+                background_tasks.add_task(execute_persisted_job, result["job_id"])
+            return success_response(data=result, trace_id=request.state.trace_id)
         result = service.start_job("DATA", body.trade_date, mode=body.mode)
         performance = SelectionPerformanceService(session)
         settings = performance.settings()
@@ -350,10 +359,23 @@ def clear_manual_selections(trade_date: date, request: Request) -> dict:
 
 
 @router.post("/{job_type}/run")
-def start_job(job_type: Literal["data", "quant", "flash", "final", "export"], body: JobRequest, request: Request) -> dict:
+def start_job(job_type: Literal["data", "quant", "flash", "final", "export"], body: JobRequest, request: Request, background_tasks: BackgroundTasks) -> dict:
     session, service = _service()
     try:
-        return success_response(data=service.start_job(job_type.upper(), body.trade_date, mode=body.mode), trace_id=request.state.trace_id)
+        if body.mode == "USE_EXISTING":
+            result = service.start_job(job_type.upper(), body.trade_date, mode=body.mode)
+        else:
+            if job_type == "quant" and not os.getenv("TUSHARE_TOKEN", "").strip():
+                raise ValueError("TUSHARE_TOKEN_NOT_CONFIGURED")
+            if job_type in {"flash", "final"}:
+                if not os.getenv("DEEPSEEK_API_KEY", "").strip():
+                    raise ValueError("DEEPSEEK_API_KEY_NOT_CONFIGURED")
+                if not body.confirm_budget:
+                    raise ValueError("LLM_BUDGET_CONFIRMATION_REQUIRED")
+            result = WorkflowApplicationService(session).start(job_type.upper(), body.trade_date, {"confirm_budget": body.confirm_budget, "force": body.force})
+            if result.get("duplicate_status") == "NEW_JOB":
+                background_tasks.add_task(execute_persisted_job, result["job_id"])
+        return success_response(data=result, trace_id=request.state.trace_id)
     except ValueError as exc:
         return error_response("WORKBENCH_JOB_BLOCKED", str(exc), trace_id=request.state.trace_id)
     finally:
@@ -361,10 +383,16 @@ def start_job(job_type: Literal["data", "quant", "flash", "final", "export"], bo
 
 
 @router.post("/export/excel")
-def export_excel(body: JobRequest, request: Request) -> dict:
+def export_excel(body: JobRequest, request: Request, background_tasks: BackgroundTasks) -> dict:
     session, service = _service()
     try:
-        return success_response(data=service.start_job("EXPORT", body.trade_date, mode=body.mode), trace_id=request.state.trace_id)
+        if body.mode == "USE_EXISTING":
+            result = service.start_job("EXPORT", body.trade_date, mode=body.mode)
+        else:
+            result = WorkflowApplicationService(session).start("EXPORT", body.trade_date, {"force": body.force})
+            if result.get("duplicate_status") == "NEW_JOB":
+                background_tasks.add_task(execute_persisted_job, result["job_id"])
+        return success_response(data=result, trace_id=request.state.trace_id)
     except ValueError as exc:
         return error_response("WORKBENCH_JOB_BLOCKED", str(exc), trace_id=request.state.trace_id)
     finally:
@@ -398,7 +426,7 @@ def job(job_id: str, request: Request) -> dict:
 def cancel_job(job_id: str, request: Request) -> dict:
     session, service = _service()
     try:
-        return success_response(data=service.cancel_job(job_id), trace_id=request.state.trace_id)
+        return success_response(data=WorkflowApplicationService(session).cancel(job_id), trace_id=request.state.trace_id)
     except ValueError as exc:
         return error_response("JOB_NOT_FOUND", str(exc), trace_id=request.state.trace_id)
     finally:
@@ -406,10 +434,13 @@ def cancel_job(job_id: str, request: Request) -> dict:
 
 
 @router.post("/jobs/{job_id}/resume")
-def resume_job(job_id: str, request: Request) -> dict:
+def resume_job(job_id: str, request: Request, background_tasks: BackgroundTasks) -> dict:
     session, service = _service()
     try:
-        return success_response(data=service.resume_job(job_id), trace_id=request.state.trace_id)
+        result = WorkflowApplicationService(session).resume(job_id)
+        if result.get("duplicate_status") == "NEW_JOB":
+            background_tasks.add_task(execute_persisted_job, result["job_id"])
+        return success_response(data=result, trace_id=request.state.trace_id)
     except ValueError as exc:
         return error_response("JOB_NOT_RESUMABLE", str(exc), trace_id=request.state.trace_id)
     finally:

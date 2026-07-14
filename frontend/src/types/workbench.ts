@@ -1,4 +1,4 @@
-export type RunStatus = "EMPTY" | "NOT_RUN" | "PENDING" | "RUNNING" | "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED" | "CANCELLED" | "READY" | "LOADED" | "COMPLETED" | "BLOCKED" | "NOT_READY" | "WARNING";
+export type RunStatus = "EMPTY" | "NOT_RUN" | "PENDING" | "RUNNING" | "CANCELLATION_REQUESTED" | "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED" | "CANCELLED" | "READY" | "LOADED" | "COMPLETED" | "BLOCKED" | "NOT_READY" | "WARNING";
 
 export interface StageStatus {
   status: RunStatus;
@@ -27,6 +27,7 @@ export interface WorkbenchStatus {
   consistency: { status: "PASS" | "WARNING" | "EMPTY"; differences: Record<string, unknown>[] };
   manual_count: number;
   token: { used: number; limit: number; remaining: number; usage_ratio: number; unavailable_usage_count: number };
+  flash_budget: { used: number; limit: number; remaining: number; usage_ratio: number };
   providers: Record<string, { configured: boolean }>;
   database: { status: string };
   mode: string;
@@ -65,7 +66,11 @@ export interface PipelineJob {
   cost_usd: number;
   started_at: string | null;
   finished_at: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
   run_ids: Record<string, string | null>;
+  output_path?: string | null;
+  checkpoint?: Record<string, unknown>;
 }
 
 export interface ManualSelection {

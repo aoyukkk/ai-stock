@@ -10,10 +10,12 @@ from typing import Any
 from sqlalchemy import func, select
 
 from database.models.quant_run import QuantRankResult, QuantRun
+from database.models.research import ResearchEvidenceRecord
 from database.models.stock import StockMaster
 from database.models.system import ConfigHistory, LLMUsage, SystemConfig
 from database.models.validation import (
     ModelValidationAllocation,
+    ModelValidationLLMAudit,
     ModelValidationOrderPlan,
     ModelValidationRun,
     ModelValidationSample,
@@ -24,6 +26,7 @@ from database.models.workbench import ManualSelectionRecord, PipelineJob
 from database.session import assert_database_path_consistency, get_database_identity, get_database_url
 from backend.workbench.historical import HistoricalPipelineRunResolver
 from stock_codes import display_stock_code, normalize_ts_code
+from trader_demo.budget import PipelineBudgetConfig
 
 
 ACTIVE_JOB_STATUSES = {"PENDING", "RUNNING"}
@@ -60,6 +63,7 @@ class WorkbenchService:
             "export": stages.get("export", empty_stage),
             "manual_count": int((bundle.get("counts") or {}).get("manual", 0)),
             "token": bundle["token_usage"],
+            "flash_budget": self._flash_budget(trade_date),
             "providers": {key: {"configured": bool(os.getenv(env))} for key, env in SECRET_ENV.items()},
             "database": {"status": "READY", **get_database_identity()},
             "mode": "HISTORICAL_READBACK",
@@ -70,6 +74,27 @@ class WorkbenchService:
                 "flash_run_id": bundle.get("flash_run_id"),
                 "pro_run_id": bundle.get("pro_run_id"),
             },
+        }
+
+    def _flash_budget(self, trade_date: date) -> dict[str, int | float]:
+        used = int(self.session.scalar(
+            select(func.coalesce(func.sum(
+                ModelValidationLLMAudit.input_tokens + ModelValidationLLMAudit.output_tokens
+            ), 0))
+            .join(
+                ModelValidationRun,
+                ModelValidationRun.run_id == ModelValidationLLMAudit.validation_run_id,
+            )
+            .where(
+                ModelValidationRun.base_market_trade_date == trade_date,
+            )
+        ) or 0)
+        limit = PipelineBudgetConfig().flash_limit
+        return {
+            "used": used,
+            "limit": limit,
+            "remaining": max(0, limit - used),
+            "usage_ratio": round(used / limit, 6) if limit else 1.0,
         }
 
     def available_dates(self) -> list[dict[str, Any]]:
@@ -293,17 +318,46 @@ class WorkbenchService:
             return []
         final = {normalize_ts_code(item["stock_code"]): item for item in self.final_results(trade_date, pipeline_run_id)}
         rows = self.session.scalars(select(ModelValidationSample).where(ModelValidationSample.validation_run_id == run_id)).all()
+        research_run_ids = {
+            str(((row.fundamental_result or {}).get("external_research_audit") or {}).get("research_run_id"))
+            for row in rows
+            if ((row.fundamental_result or {}).get("external_research_audit") or {}).get("research_run_id")
+        }
+        evidence_by_run: dict[str, list[ResearchEvidenceRecord]] = {}
+        if research_run_ids:
+            for evidence in self.session.scalars(select(ResearchEvidenceRecord).where(
+                ResearchEvidenceRecord.run_id.in_(research_run_ids)
+            ).order_by(ResearchEvidenceRecord.id)):
+                evidence_by_run.setdefault(evidence.run_id, []).append(evidence)
         result = []
         for row in rows:
             code = normalize_ts_code(row.stock_code)
             if code not in final:
                 continue
             fundamental = row.fundamental_result or {}
+            audit = fundamental.get("external_research_audit") or {}
+            evidence = evidence_by_run.get(str(audit.get("research_run_id") or ""), [])
             result.append({
                 **final[code], "industry_chain": _field(fundamental.get("industry_chain"), "chain_name"),
-                "chain_position": _field(fundamental.get("industry_chain"), "chain_position"), "main_business": _field(fundamental.get("main_business_summary"), "summary"),
-                "core_products": fundamental.get("core_products") or [], "concept_tags": fundamental.get("concept_tags") or [],
+                "chain_position": _field(fundamental.get("industry_chain"), "chain_position"),
+                "chain_position_label": _status_label(
+                    _field(fundamental.get("industry_chain"), "chain_position")
+                ),
+                "main_business": _field(fundamental.get("main_business_summary"), "summary"),
+                "core_products": fundamental.get("core_products") or [],
+                "concept_tags": _concept_names(fundamental.get("concept_tags") or []),
                 "investment_logic": _field(fundamental.get("investment_logic"), "summary"), "financial_status": _fundamental_status(fundamental),
+                "analysis_status": fundamental.get("analysis_status") or "UNKNOWN",
+                "analysis_status_label": _status_label(fundamental.get("analysis_status")),
+                "research_mode": fundamental.get("research_mode") or "UNKNOWN",
+                "research_mode_label": _status_label(fundamental.get("research_mode")),
+                "financial_status_label": _status_label(_fundamental_status(fundamental)),
+                "as_of_time": fundamental.get("as_of_time"),
+                "financial_summary": _financial_snapshot_summary(fundamental.get("financial_snapshot") or {}),
+                "key_risks": fundamental.get("key_risks") or [],
+                "evidence_count": len(evidence),
+                "evidence_sources": [item.title for item in evidence],
+                "evidence_urls": [item.url for item in evidence],
             })
         return result
 
@@ -514,6 +568,66 @@ def _field(value: Any, key: str) -> Any:
 def _fundamental_status(fundamental: dict[str, Any]) -> str | None:
     value = fundamental.get("financial_status")
     return value.get("status") if isinstance(value, dict) else value
+
+
+def _financial_snapshot_summary(snapshot: dict[str, Any]) -> str:
+    if not snapshot:
+        return ""
+    annual_revenue = snapshot.get("annual_revenue")
+    q1_revenue = snapshot.get("q1_revenue")
+    q1_deducted = snapshot.get("q1_deducted_net_profit")
+    q1_non_recurring = snapshot.get("q1_non_recurring_gain")
+    parts = []
+    if annual_revenue is not None:
+        parts.append(
+            f"2025营收{float(annual_revenue) / 100_000_000:.2f}亿元"
+            f"（同比{float(snapshot.get('annual_revenue_yoy_pct') or 0):+.2f}%）"
+        )
+    if q1_revenue is not None:
+        parts.append(
+            f"2026Q1营收{float(q1_revenue) / 100_000_000:.2f}亿元"
+            f"（同比{float(snapshot.get('q1_revenue_yoy_pct') or 0):+.2f}%）"
+        )
+    if q1_deducted is not None:
+        parts.append(
+            f"扣非净利{float(q1_deducted) / 10_000:.2f}万元"
+            f"（同比{float(snapshot.get('q1_deducted_net_profit_yoy_pct') or 0):+.2f}%）"
+        )
+    if q1_non_recurring is not None:
+        parts.append(f"非经常性损益{float(q1_non_recurring) / 10_000:.2f}万元")
+    return "；".join(parts)
+
+
+def _concept_names(values: list[Any]) -> list[str]:
+    result = []
+    for value in values:
+        name = (
+            str(value.get("name") or value.get("value") or "").strip()
+            if isinstance(value, dict)
+            else str(value).strip()
+        )
+        if name:
+            result.append(name)
+    return result
+
+
+def _status_label(value: Any) -> str:
+    return {
+        "SUCCESS": "已补全",
+        "FAILED": "失败",
+        "UNKNOWN": "信息不足",
+        "EXTERNAL_VERIFIED": "外部资料已核验",
+        "DEEPSEEK_UNVERIFIED": "模型推断未核验",
+        "STRUCTURED_INPUT_ONLY": "结构化数据",
+        "UPSTREAM": "上游",
+        "MIDSTREAM": "中游",
+        "DOWNSTREAM": "下游",
+        "MULTI_SEGMENT": "多环节",
+        "SERVICE_PLATFORM": "服务平台",
+        "STABLE": "稳定",
+        "PRESSURED": "承压",
+        "INSUFFICIENT_DATA": "信息不足",
+    }.get(str(value or "UNKNOWN"), str(value or "信息不足"))
 
 
 def _priority(value: str) -> str:

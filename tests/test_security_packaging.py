@@ -20,6 +20,7 @@ def test_packaging_configs_do_not_reference_runtime_env_file() -> None:
         ROOT / "packaging" / "pyinstaller_backend.spec",
         ROOT / "packaging" / "electron-builder.config.js",
         ROOT / "frontend" / "electron-builder.config.js",
+        ROOT / "build" / "pyinstaller" / "ai_trader_backend.spec",
     ]
 
     for path in packaging_files:

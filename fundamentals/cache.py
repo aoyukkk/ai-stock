@@ -7,13 +7,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from backend.core.runtime_paths import tushare_cache_root
+
 
 SCHEMA_VERSION = "fundamental-cache-v1"
 
 
 class ReportPeriodCache:
-    def __init__(self, root: Path | str = "data/cache/tushare/fundamental", ttl_hours: int = 24) -> None:
-        self.root = Path(root)
+    def __init__(self, root: Path | str | None = None, ttl_hours: int = 24) -> None:
+        self.root = Path(root) if root is not None else tushare_cache_root() / "fundamental"
         self.ttl = timedelta(hours=ttl_hours)
 
     def path_for(self, interface: str, period: str, params: dict[str, Any] | None = None) -> Path:

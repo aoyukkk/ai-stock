@@ -7,6 +7,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+from backend.core.runtime_paths import tushare_cache_root
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -48,9 +49,9 @@ NON_ACTIONABLE_NOTICE = "仅供模型验证，不可作为正式交易仓位建�
 
 
 class GuardedValidationService:
-    def __init__(self, session: Session, cache_root: Path | str = "data/cache/tushare") -> None:
+    def __init__(self, session: Session, cache_root: Path | str | None = None) -> None:
         self.session = session
-        self.cache_root = Path(cache_root)
+        self.cache_root = Path(cache_root) if cache_root is not None else tushare_cache_root()
 
     def preview(self, *, quant_run_id: str | None = None, ranks: tuple[int, ...] = (1, 250, 500)) -> dict[str, Any]:
         run, manifest, samples = self._load_context(quant_run_id, ranks=ranks)

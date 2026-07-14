@@ -35,7 +35,7 @@ class ApiContractEnvelopeMiddleware(BaseHTTPMiddleware):
         except (UnicodeDecodeError, json.JSONDecodeError):
             return _rebuild_response(response, body)
 
-        converted = to_api_contract_payload(payload, request.state.trace_id)
+        converted = to_api_contract_payload(payload, getattr(request.state, "trace_id", None))
         if converted is payload:
             return _rebuild_response(response, body)
 

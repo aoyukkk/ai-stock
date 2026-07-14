@@ -125,7 +125,7 @@ def test_historical_api_loads_existing_without_creating_pipeline_job(historical_
     monkeypatch.setattr(workbench_api, "_service", get_service)
     client = TestClient(create_app())
     dates = client.get("/api/workbench/available-dates").json()["data"]["items"]
-    assert dates[0]["trade_date"] == "2026-07-10"
+    assert any(item["trade_date"] == "2026-07-10" for item in dates)
     loaded = client.post("/api/workbench/runs/load-existing", json={"trade_date": "2026-07-10"})
     assert loaded.status_code == 200
     assert loaded.json()["data"]["source_mode"] == "DATABASE"

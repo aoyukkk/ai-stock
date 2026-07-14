@@ -34,7 +34,7 @@ from trader_demo.pro_resume import (
     _bounded,
     portfolio_wire_schema,
 )
-from trader_demo.usage_ledger import AuthoritativeUsageLedger, PIPELINE_RUN_ID, UsageContext
+from trader_demo.usage_ledger import AuthoritativeUsageLedger, UsageContext
 
 
 SINGLE_CONTRACT_VERSION = "pro_candidate_single_wire_v3"
@@ -397,7 +397,7 @@ class ProSingleV3Service:
         task: str, prompt_version: str, extra: dict[str, Any] | None = None,
     ) -> None:
         self.ledger.record_response(response, UsageContext(
-            call_id=call_id, pipeline_run_id=PIPELINE_RUN_ID,
+            call_id=call_id, pipeline_run_id=getattr(resume, "pipeline_run_id", self.ledger.pipeline_run_id),
             validation_run_id=resume.flash_validation_run_id,
             pro_resume_run_id=resume.run_id, agent_name="controller_agent",
             task=task, task_type="committee_controller", task_tier="HIGH_IMPACT",
@@ -533,14 +533,22 @@ def deterministic_v3_review_order(reviews, by_code):
 
 
 def select_v3_canary(samples: list[ModelValidationSample]) -> list[ModelValidationSample]:
+    if len(samples) < 3:
+        raise ValueError("PRO_V3_CANARY_REQUIRES_THREE_CANDIDATES")
     by_code = {normalize_ts_code(sample.stock_code): sample for sample in samples}
-    first = by_code["603019.SH"]
+    ordered = stable_v3_order(samples)
+    first = ordered[0]
     second = max(
-        (sample for sample in samples if normalize_ts_code(sample.stock_code) != "603019.SH"),
+        (sample for sample in samples if normalize_ts_code(sample.stock_code) != normalize_ts_code(first.stock_code)),
         key=lambda sample: (float((sample.screening_result or {}).get("llm_score") or -1), -int(sample.rank)),
     )
-    manual = [sample for sample in samples if (sample.screening_result or {}).get("_trader_demo", {}).get("manual_selected")]
-    third = max(manual, key=lambda sample: int(sample.rank))
+    manual = [
+        sample for sample in samples
+        if (sample.screening_result or {}).get("_trader_demo", {}).get("manual_selected")
+        and normalize_ts_code(sample.stock_code) not in {normalize_ts_code(first.stock_code), normalize_ts_code(second.stock_code)}
+    ]
+    remaining = [sample for sample in reversed(ordered) if normalize_ts_code(sample.stock_code) not in {normalize_ts_code(first.stock_code), normalize_ts_code(second.stock_code)}]
+    third = max(manual, key=lambda sample: int(sample.rank)) if manual else remaining[0]
     selected = [first, second, third]
     if len({normalize_ts_code(sample.stock_code) for sample in selected}) != 3:
         raise ValueError("PRO_V3_CANARY_NOT_DISTINCT")

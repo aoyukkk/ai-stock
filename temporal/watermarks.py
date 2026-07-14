@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
+from backend.core.runtime_paths import tushare_cache_root
 from typing import Any
 
 import yaml
@@ -12,8 +13,8 @@ from temporal.schemas import DatasetWatermark
 
 
 class DatasetWatermarkService:
-    def __init__(self, cache_root: Path | str = "data/cache/tushare", expected_count: int | None = None) -> None:
-        self.cache_root = Path(cache_root)
+    def __init__(self, cache_root: Path | str | None = None, expected_count: int | None = None) -> None:
+        self.cache_root = Path(cache_root) if cache_root is not None else tushare_cache_root()
         self.expected_codes = self._expected_universe_codes()
         self.expected_count = expected_count or len(self.expected_codes)
         policy = yaml.safe_load((CONFIG_DIR / "temporal.yaml").read_text(encoding="utf-8"))

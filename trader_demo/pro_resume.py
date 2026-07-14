@@ -369,7 +369,7 @@ class ProResumeService:
         prompt_version: str,
     ) -> None:
         self.ledger.record_response(response, UsageContext(
-            call_id=call_id, pipeline_run_id=PIPELINE_RUN_ID,
+            call_id=call_id, pipeline_run_id=getattr(resume, "pipeline_run_id", self.ledger.pipeline_run_id),
             validation_run_id=resume.flash_validation_run_id,
             pro_resume_run_id=resume.run_id, agent_name="controller_agent",
             task=task, task_type="committee_controller", task_tier="HIGH_IMPACT",

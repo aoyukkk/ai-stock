@@ -13,6 +13,9 @@ SCRIPT_MODULES = [
     "scripts.package_windows_app",
     "scripts.run_final_smoke",
     "scripts.run_all_checks",
+    "scripts.generate_v1_release_metadata",
+    "scripts.scan_v1_release",
+    "scripts.smoke_backend_executable",
 ]
 
 

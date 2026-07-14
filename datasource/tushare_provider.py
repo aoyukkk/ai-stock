@@ -27,9 +27,10 @@ from datasource.models.market import (
     RealtimeQuote,
 )
 from datasource.schemas import ProviderStatus
+from backend.core.runtime_paths import tushare_cache_root
 
 
-CACHE_DIR = Path("data/cache/tushare")
+CACHE_DIR = tushare_cache_root()
 DEFAULT_TOKEN_ENV = "TUSHARE_TOKEN"
 MISSING_TOKEN_MESSAGE = "TUSHARE_TOKEN is not configured"
 PERMISSION_NEEDLES = (

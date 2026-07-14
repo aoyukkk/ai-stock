@@ -11,6 +11,7 @@ from backend.core.responses import error_response, success_response
 from database.session import get_session, init_db
 from review.performance_schemas import PerformanceRequest
 from review.performance_excel import PerformanceExcelExporter
+from backend.core.runtime_paths import output_root
 from review.selection_performance_service import SelectionPerformanceService
 
 
@@ -188,7 +189,7 @@ def export_excel(body: ExportRequest, request: Request) -> dict:
     session, service = _service()
     try:
         detail = service.run_detail(body.performance_run_id)
-        output = Path("outputs") / detail["evaluation_end_date"].isoformat() / f"selection_performance_{detail['evaluation_end_date'].isoformat()}_{detail['lookback_value']}td.xlsx"
+        output = output_root() / detail["evaluation_end_date"].isoformat() / f"selection_performance_{detail['evaluation_end_date'].isoformat()}_{detail['lookback_value']}td.xlsx"
         payload = {"cohorts": service.cohort_summary(body.performance_run_id), "daily": service.portfolio_daily(body.performance_run_id), "stocks": service.stock_daily(body.performance_run_id), "methodology": service.methodology() | {"run": detail}}
         return success_response(data=PerformanceExcelExporter().export(output, payload), trace_id=request.state.trace_id)
     except (ValueError, RuntimeError) as exc:

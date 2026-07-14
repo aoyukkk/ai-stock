@@ -13,6 +13,7 @@ from database.session import get_session
 from llm_gateway.schemas import LLMResponse
 
 
+# Legacy replay scripts explicitly use this audited historical run identifier.
 PIPELINE_RUN_ID = "daily-full-20260710"
 
 USAGE_COLUMNS = {
@@ -47,7 +48,7 @@ def ensure_usage_schema(engine: Engine) -> None:
 @dataclass(frozen=True)
 class UsageContext:
     call_id: str
-    pipeline_run_id: str
+    pipeline_run_id: str | None
     validation_run_id: str
     pro_resume_run_id: str
     agent_name: str
@@ -59,8 +60,9 @@ class UsageContext:
 
 
 class AuthoritativeUsageLedger:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, pipeline_run_id: str | None = None) -> None:
         self.engine = engine
+        self.pipeline_run_id = pipeline_run_id
         ensure_usage_schema(engine)
 
     def record_response(self, response: LLMResponse, context: UsageContext) -> int:
@@ -236,7 +238,7 @@ class AuthoritativeUsageLedger:
     def summary(self, *, pro_resume_run_id: str | None = None) -> dict[str, int | float]:
         session = get_session(self.engine)
         try:
-            rows = list(session.scalars(select(LLMUsage).where(LLMUsage.pipeline_run_id == PIPELINE_RUN_ID)))
+            rows = list(session.scalars(select(LLMUsage).where(LLMUsage.pipeline_run_id == self.pipeline_run_id)))
         finally:
             session.close()
         historical = [row for row in rows if row.usage_source == "HISTORICAL_API_USAGE"]
@@ -276,7 +278,7 @@ class AuthoritativeUsageLedger:
             if session.scalar(select(LLMUsage.id).where(LLMUsage.call_id == values["call_id"])) is not None:
                 return
             session.add(LLMUsage(
-                call_id=values["call_id"], pipeline_run_id=PIPELINE_RUN_ID,
+                call_id=values["call_id"], pipeline_run_id=self.pipeline_run_id,
                 validation_run_id=values["validation_run_id"] or None,
                 pro_resume_run_id=None, usage_source=values["usage_source"],
                 is_cached=False, is_reused=False, provider=values["provider"],

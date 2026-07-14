@@ -19,6 +19,7 @@ def health(request: Request) -> dict:
             "real_trading_enabled": config.real_trading_enabled,
             "external_services_connected": False,
             "external_services_mode": "mock_only",
+            "desktop_mode": config.env.get("AI_TRADER_DESKTOP_MODE", "false").lower() in {"1", "true", "yes", "on"},
         },
         trace_id=request.state.trace_id,
     )

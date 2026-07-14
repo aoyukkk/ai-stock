@@ -14,7 +14,9 @@ FLASH_RANKING_VERSION = "flash-ranking-v4"
 
 
 class FlashBatchDegenerateError(ValueError):
-    pass
+    def __init__(self, message: str, *, audit: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.audit = audit or {}
 
 
 @dataclass(frozen=True)
@@ -115,17 +117,21 @@ def calculate_flash_v4(
 
 def assert_flash_batch_quality(rows: list[dict[str, Any]], *, canary: bool = False) -> dict[str, Any]:
     if not rows:
-        raise FlashBatchDegenerateError("FLASH_SCORE_DEGENERATE:EMPTY_BATCH")
+        raise FlashBatchDegenerateError(
+            "FLASH_SCORE_DEGENERATE:EMPTY_BATCH",
+            audit={"count": 0, "degenerate": True},
+        )
     scores = [Decimal(str(row.get("llm_score") or 0)) for row in rows]
     decisions = [str(row.get("screening_decision") or "") for row in rows]
     confidence = [Decimal(str(row.get("confidence") or 0)) for row in rows]
     score_counts = Counter(scores)
     most_common_ratio = max(score_counts.values()) / len(scores)
     nonzero = sum(value > 0 for value in scores)
+    low_score_diversity = len(score_counts) <= max(2, len(rows) // 10)
     degenerate = (
         most_common_ratio > 0.90
-        or len(set(decisions)) == 1
-        or len(set(confidence)) == 1
+        or (len(set(decisions)) == 1 and low_score_diversity)
+        or (len(set(confidence)) == 1 and low_score_diversity)
         or (canary and nonzero < min(3, len(rows)))
     )
     audit = {
@@ -135,8 +141,9 @@ def assert_flash_batch_quality(rows: list[dict[str, Any]], *, canary: bool = Fal
         "unique_decision_count": len(set(decisions)),
         "unique_confidence_count": len(set(confidence)),
         "most_common_score_ratio": most_common_ratio,
+        "low_score_diversity": low_score_diversity,
         "degenerate": degenerate,
     }
     if degenerate:
-        raise FlashBatchDegenerateError("FLASH_SCORE_DEGENERATE")
+        raise FlashBatchDegenerateError("FLASH_SCORE_DEGENERATE", audit=audit)
     return audit

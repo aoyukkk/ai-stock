@@ -9,11 +9,13 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from backend.version import APP_VERSION
+
 from backend.core.security import sanitize_config
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-CONFIG_DIR = ROOT_DIR / "config"
+CONFIG_DIR = Path(os.getenv("AI_TRADER_CONFIG_DIR") or ROOT_DIR / "config").resolve()
 
 REQUIRED_CONFIG_FILES = (
     "system.yaml",
@@ -67,7 +69,7 @@ class AppConfig:
 
     @property
     def version(self) -> str:
-        return _normalize_version(self.system.get("version") or "0.3.0")
+        return APP_VERSION
 
     @property
     def environment(self) -> str:
@@ -95,6 +97,8 @@ class AppConfig:
 
     @property
     def cors_allowed_origins(self) -> list[str]:
+        if self.env.get("AI_TRADER_DESKTOP_MODE", "false").lower() in {"1", "true", "yes", "on"}:
+            return ["null"]
         frontend = self.env.get("FRONTEND_DEV_SERVER") or "http://localhost:5173"
         return [
             frontend,

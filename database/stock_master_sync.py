@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from database.models.stock import StockMaster
 from stock_codes import normalize_ts_code
+from backend.core.runtime_paths import tushare_cache_root
 
 
-DEFAULT_CACHE_ROOT = Path("data/cache/tushare/fundamental/stock_basic")
+DEFAULT_CACHE_ROOT = tushare_cache_root() / "fundamental" / "stock_basic"
 
 
 class StockMasterSyncError(RuntimeError):

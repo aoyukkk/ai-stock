@@ -35,7 +35,12 @@ from model_validation.service import (
 from quant.run_repository import QuantRunRepository
 from research.knowledge_mode import LLMKnowledgeMode, validate_knowledge_mode
 from research.input_quality import summarize_structured_input
-from research.flash_v4 import FLASH_RANKING_VERSION, FLASH_SCORE_VERSION, assert_flash_batch_quality
+from research.flash_v4 import (
+    FLASH_RANKING_VERSION,
+    FLASH_SCORE_VERSION,
+    FlashBatchDegenerateError,
+    assert_flash_batch_quality,
+)
 from research.structured_validation import (
     FUNDAMENTAL_PROMPT_VERSION,
     MODEL_ALIAS,
@@ -296,8 +301,15 @@ class TraderDemoService:
             self.session.commit()
             completed_stocks += len(job_batch)
             if checkpoint_callback:
+                success_count = sum(
+                    item["screening"].get("_trader_demo", {}).get("execution_status") == "SUCCESS"
+                    for item in batch_items
+                )
                 checkpoint_callback({
                     "completed_stocks": completed_stocks, "total_stocks": len(pool),
+                    "success_count": success_count,
+                    "failure_count": len(batch_items) - success_count,
+                    "current_stock": normalize_ts_code(job_batch[-1]["rank_row"].stock_code),
                     "input_tokens": sum(int(row.get("input_tokens") or 0) for row in all_audits),
                     "output_tokens": sum(int(row.get("output_tokens") or 0) for row in all_audits),
                     "repair_input_tokens": sum(int((row.get("diagnostics") or {}).get("repair_input_tokens") or 0) for row in all_audits),
@@ -310,9 +322,25 @@ class TraderDemoService:
                 item["screening"] for item in batch_items
                 if item["screening"].get("_trader_demo", {}).get("execution_status") == "SUCCESS"
             ]
+            try:
+                quality = assert_flash_batch_quality(successful_screening)
+            except FlashBatchDegenerateError as exc:
+                run_row.config_snapshot = {
+                    **dict(run_row.config_snapshot or {}),
+                    "flash_batch_quality": {**exc.audit, "usable_for_final": False},
+                    "reusable_source_only": True,
+                }
+                run_row.status = "PARTIAL_SUCCESS" if batch_items else "FAILED"
+                run_row.warnings = sorted(set([
+                    *list(run_row.warnings or []), "FLASH_SCORE_DEGENERATE_SOURCE_ONLY",
+                ]))
+                flag_modified(run_row, "config_snapshot")
+                self.session.commit()
+                raise
             run_row.config_snapshot = {
                 **dict(run_row.config_snapshot or {}),
-                "flash_batch_quality": assert_flash_batch_quality(successful_screening),
+                "flash_batch_quality": {**quality, "usable_for_final": True},
+                "reusable_source_only": False,
             }
             flag_modified(run_row, "config_snapshot")
             selected = select_model_validation_items(batch_items, model_validation_top_n)
@@ -669,6 +697,10 @@ class TraderDemoService:
             ).order_by(ModelValidationSample.id.desc())
         ))
         for sample in samples:
+            if task == "structured_light_screening" and not self._screening_reuse_allowed(
+                sample.validation_run_id
+            ):
+                continue
             audit = self.session.scalar(
                 select(ModelValidationLLMAudit).where(
                     ModelValidationLLMAudit.validation_run_id == sample.validation_run_id,
@@ -690,6 +722,10 @@ class TraderDemoService:
     def _task_from_sample(
         self, sample: ModelValidationSample, task: str,
     ) -> tuple[ModelValidationSample, ModelValidationLLMAudit] | None:
+        if task == "structured_light_screening" and not self._screening_reuse_allowed(
+            sample.validation_run_id
+        ):
+            return None
         prompt_version = FUNDAMENTAL_PROMPT_VERSION if task == "fundamental_structured_inference" else SCREENING_PROMPT_VERSION
         audit = self.session.scalar(select(ModelValidationLLMAudit).where(
             ModelValidationLLMAudit.validation_run_id == sample.validation_run_id,
@@ -700,6 +736,15 @@ class TraderDemoService:
             ModelValidationLLMAudit.schema_status == "PASS",
         ).order_by(ModelValidationLLMAudit.id.desc()))
         return (sample, audit) if audit else None
+
+    def _screening_reuse_allowed(self, validation_run_id: str) -> bool:
+        source_run = self.session.scalar(select(ModelValidationRun).where(
+            ModelValidationRun.run_id == validation_run_id
+        ))
+        if source_run is None:
+            return False
+        quality = dict((source_run.config_snapshot or {}).get("flash_batch_quality") or {})
+        return not quality.get("degenerate") and quality.get("usable_for_final", True) is not False
 
     @staticmethod
     def _reused_task_audit(source: ModelValidationLLMAudit) -> dict[str, Any]:

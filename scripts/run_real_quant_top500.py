@@ -49,9 +49,10 @@ from datasource.schemas import (
     MarketEmotionSnapshot,
     RealtimeQuote,
 )
+from backend.core.runtime_paths import cache_root, report_root
 
 
-REPORT_PATH = Path("data/reports/real_quant_top500_report.json")
+REPORT_PATH = report_root() / "real_quant_top500_report.json"
 MIN_KLINE_BARS = 20
 
 
@@ -81,9 +82,8 @@ def run_real_quant_top500(
     run_started = time.perf_counter()
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    Path("data/cache/akshare").mkdir(parents=True, exist_ok=True)
-    Path("data/cache/baostock").mkdir(parents=True, exist_ok=True)
-    Path("data/cache/tushare").mkdir(parents=True, exist_ok=True)
+    for provider_name in ("akshare", "baostock", "tushare"):
+        (cache_root() / provider_name).mkdir(parents=True, exist_ok=True)
 
     warnings: list[str] = []
     errors_sample: list[dict[str, Any]] = []

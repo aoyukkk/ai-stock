@@ -45,10 +45,10 @@ const columnMaps: Record<string, TableColumn[]> = {
   flash: ["rank|二筛排名", "stock_code|股票代码", "stock_name|股票名称", "quant_score|量化分数", "flash_score|Flash 分数", "decision|二筛结论", "confidence|置信度", "llm_selected|Top20", "manual_selected|人工选择", "execution_status|执行状态", "error_category|错误类别"].map(parseColumn),
   final: ["final_rank|最终排名", "stock_code|股票代码", "stock_name|股票名称", "source|来源", "pro_score|Pro 评分", "pro_priority|优先级", "flash_score|Flash 评分", "flash_decision|Flash 结论", "quant_rank|量化排名", "financial_status|财务状态", "summary|最终摘要"].map(parseColumn),
   orders: ["final_rank|最终排名", "stock_code|股票代码", "stock_name|股票名称", "source|来源", "recommended_price|推荐价", "stop_loss_price|止损价", "take_profit_1|止盈 1", "take_profit_2|止盈 2", "risk_reward|风险收益比", "position_percent|建议仓位", "suggested_capital|建议资金", "suggested_quantity|建议股数", "max_loss|最大损失", "status|状态", "warnings|风险警告"].map(parseColumn),
-  fundamentals: ["final_rank|最终排名", "stock_code|股票代码", "stock_name|股票名称", "source|来源", "industry_chain|产业链", "chain_position|产业链环节", "main_business|主营业务", "core_products|核心产品", "concept_tags|概念标签", "investment_logic|投资逻辑", "financial_status|财务状态"].map(parseColumn)
+  fundamentals: ["final_rank|最终排名", "stock_code|股票代码", "stock_name|股票名称", "source|来源", "analysis_status_label|补全状态", "research_mode_label|资料模式", "industry_chain|产业链", "chain_position_label|产业链环节", "main_business|主营业务", "core_products|核心产品", "concept_tags|概念标签", "investment_logic|投资逻辑", "financial_status_label|财务状态", "financial_summary|最新财务摘要", "key_risks|主要风险", "evidence_count|证据数", "evidence_sources|核验来源"].map(parseColumn)
 };
 
-function parseColumn(value: string): TableColumn { const [key, label] = value.split("|"); return { key, label, minWidth: ["summary", "warnings", "main_business", "investment_logic"].includes(key) ? 260 : 120 }; }
+function parseColumn(value: string): TableColumn { const [key, label] = value.split("|"); return { key, label, minWidth: ["summary", "warnings", "main_business", "investment_logic", "financial_summary", "key_risks", "evidence_sources"].includes(key) ? 260 : 120 }; }
 
 async function load() {
   const current = ++sequence;

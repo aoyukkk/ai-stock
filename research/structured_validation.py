@@ -30,7 +30,7 @@ from stock_codes import normalize_ts_code
 
 
 FUNDAMENTAL_PROMPT_VERSION = "structured_fundamental_enrichment_v4"
-SCREENING_PROMPT_VERSION = "structured_light_screening_v4"
+SCREENING_PROMPT_VERSION = "structured_light_screening_v5"
 MODEL_ALIAS = "light-screening-default"
 SYSTEM_PROMPT = (
     "你只能使用用户提供的结构化输入，不得使用外部知识、当前新闻、排名、市场份额或URL。"
@@ -179,7 +179,10 @@ class StructuredValidationProvider:
             "instruction": (
                 "依据context填写与example键完全相同的一个JSON对象，不得增加键。"
                 "Fundamental任务必须从主营和业务范围保守提取产品、宽泛产业链和结构性判断，不能统一UNKNOWN；"
-                "Flash任务只评价0-100组件分，不得计算最终分数或决定。未知时降低分数并列入missing_fields。"
+                "Flash任务只评价0-100组件分，不得计算最终分数或决定。"
+                "每个组件必须结合当前股票的quant、fundamental_inference、financial_status、"
+                "missing_fields和input_quality独立评分；不得照抄example数值，不得把所有组件统一设为50。"
+                "未知时降低对应分数并列入missing_data。"
             ),
             "example": example,
             "context": context,
@@ -191,6 +194,8 @@ class StructuredValidationProvider:
         ))
         diagnostics = _diagnose_response(response)
         category, field, detail, parsed = self._validate_response(response, schema, expected_code)
+        if not category:
+            category, field, detail = _flash_component_semantic_error(parsed, schema, example)
         original_category = category
         if category:
             diagnostics["repair_attempted"] = True
@@ -208,6 +213,8 @@ class StructuredValidationProvider:
             diagnostics["repair_input_tokens"] = repaired.input_tokens
             diagnostics["repair_output_tokens"] = repaired.output_tokens
             category, field, detail, parsed = self._validate_response(repaired, schema, expected_code)
+            if not category:
+                category, field, detail = _flash_component_semantic_error(parsed, schema, example)
             diagnostics["repair_response"] = repair_diagnostics
             response = _combined_response(response, repaired)
         else:
@@ -309,7 +316,10 @@ class StructuredValidationProvider:
                 "删除所有第一、领先、龙头、唯一供应商、市场份额、客户名称和订单陈述；"
                 "改用可能、潜在、需核验等中性表达。"
             )
-        if category in {"EMPTY_JSON_CONTENT", "JSON_TRUNCATED", "PROVIDER_CONTENT_POLICY_REFUSAL"}:
+        if category in {
+            "EMPTY_JSON_CONTENT", "JSON_TRUNCATED", "PROVIDER_CONTENT_POLICY_REFUSAL",
+            "DEGENERATE_COMPONENT_RESPONSE",
+        }:
             payload["context"] = context
         else:
             payload["candidate"] = (response.content or "")[:12000]
@@ -392,6 +402,33 @@ def _diagnose_response(response: LLMResponse) -> dict[str, Any]:
         "local_scanner_result": "NOT_RUN",
         "violation_code": "", "violation_json_path": "", "violation_rule": "",
     }
+
+
+def _flash_component_semantic_error(
+    parsed: BaseModel | None,
+    schema: type[BaseModel],
+    example: dict[str, Any],
+) -> tuple[str, str, str]:
+    if parsed is None or schema is not FlashComponentWireV4:
+        return "", "", ""
+    fields = (
+        "quant_consistency_score", "fundamental_quality_score", "financial_quality_score",
+        "risk_fit_score", "data_quality_score",
+    )
+    payload = parsed.model_dump(mode="json")
+    values = tuple(float(payload[field]) for field in fields)
+    example_values = tuple(float(example[field]) for field in fields)
+    if len(set(values)) == 1:
+        return (
+            "DEGENERATE_COMPONENT_RESPONSE", "$.quant_consistency_score",
+            "All Flash component scores are identical.",
+        )
+    if values == example_values:
+        return (
+            "DEGENERATE_COMPONENT_RESPONSE", "$.quant_consistency_score",
+            "Flash component scores copied the prompt example.",
+        )
+    return "", "", ""
 
 
 def _combined_response(first: LLMResponse, second: LLMResponse) -> LLMResponse:

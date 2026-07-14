@@ -17,8 +17,11 @@ from research.flash_v4 import (
     assert_flash_batch_quality,
     calculate_flash_v4,
 )
+from research.structured_validation import _flash_component_semantic_error
 from research.wire_schemas import (
+    FlashComponentWireV4,
     FundamentalEnrichmentWireV4,
+    flash_component_v4_example,
     fundamental_v4_example,
     fundamental_v4_to_domain,
 )
@@ -64,8 +67,10 @@ def test_flash_v4_batch_rejects_degenerate_scores_decisions_and_quant_fallback()
         {"stock_code": f"0000{i:02d}.SZ", "llm_score": Decimal("0"), "screening_decision": "WATCH_ONLY", "confidence": Decimal("0.1")}
         for i in range(20)
     ]
-    with pytest.raises(FlashBatchDegenerateError, match="FLASH_SCORE_DEGENERATE"):
+    with pytest.raises(FlashBatchDegenerateError, match="FLASH_SCORE_DEGENERATE") as exc_info:
         assert_flash_batch_quality(rows)
+    assert exc_info.value.audit["degenerate"] is True
+    assert exc_info.value.audit["most_common_score_ratio"] == 1.0
 
 
 def test_flash_v4_batch_accepts_meaningful_distribution():
@@ -81,6 +86,61 @@ def test_flash_v4_batch_accepts_meaningful_distribution():
     audit = assert_flash_batch_quality(rows)
     assert audit["unique_score_count"] == 20
     assert audit["degenerate"] is False
+
+
+def test_flash_v4_batch_accepts_varied_scores_in_one_decision_band():
+    rows = [
+        {
+            "stock_code": f"0000{i:02d}.SZ",
+            "llm_score": Decimal(str(55 + i / 2)),
+            "screening_decision": "HOLD",
+            "confidence": Decimal("0.70"),
+        }
+        for i in range(20)
+    ]
+    audit = assert_flash_batch_quality(rows)
+    assert audit["unique_decision_count"] == 1
+    assert audit["unique_score_count"] == 20
+    assert audit["degenerate"] is False
+
+
+def test_flash_v4_prompt_example_is_not_neutral_fifty_fallback():
+    example = flash_component_v4_example("603019.SH")
+    component_scores = {
+        example[key]
+        for key in (
+            "quant_consistency_score", "fundamental_quality_score",
+            "financial_quality_score", "risk_fit_score", "data_quality_score",
+        )
+    }
+    assert len(component_scores) > 1
+    assert example["stock_code"] == "603019.SH"
+
+
+def test_flash_v4_rejects_copied_example_and_identical_component_scores():
+    example = flash_component_v4_example("603019.SH")
+    copied = FlashComponentWireV4.model_validate(example)
+    assert _flash_component_semantic_error(copied, FlashComponentWireV4, example)[0] == (
+        "DEGENERATE_COMPONENT_RESPONSE"
+    )
+
+    identical_payload = {**example}
+    for key in (
+        "quant_consistency_score", "fundamental_quality_score", "financial_quality_score",
+        "risk_fit_score", "data_quality_score",
+    ):
+        identical_payload[key] = 50
+    identical = FlashComponentWireV4.model_validate(identical_payload)
+    assert _flash_component_semantic_error(identical, FlashComponentWireV4, example)[0] == (
+        "DEGENERATE_COMPONENT_RESPONSE"
+    )
+
+
+def test_flash_v4_accepts_meaningfully_varied_components():
+    example = flash_component_v4_example("603019.SH")
+    payload = {**example, "quant_consistency_score": 81, "risk_fit_score": 72}
+    parsed = FlashComponentWireV4.model_validate(payload)
+    assert _flash_component_semantic_error(parsed, FlashComponentWireV4, example) == ("", "", "")
 
 
 def test_tushare_concept_reverse_index_normalizes_suffix_and_audits_counts(tmp_path: Path):

@@ -4,7 +4,7 @@
     <div class="settings-grid">
       <el-card shadow="never">
         <template #header>筛选数量</template>
-        <el-form label-width="150px"><el-form-item v-for="field in screeningFields" :key="field.key" :label="field.label"><el-input-number v-model="workbench[field.key]" :min="1" /></el-form-item></el-form>
+        <el-form label-width="150px"><el-form-item v-for="field in screeningFields" :key="field.key" :label="field.label"><el-input-number v-model="workbench[field.key]" :min="field.min" :max="field.max" /></el-form-item></el-form>
       </el-card>
       <el-card shadow="never">
         <template #header>收益统计</template>
@@ -26,7 +26,7 @@
         <div v-for="provider in providers" :key="provider" class="secret-row">
           <span>{{ provider }}</span><StatusTag :status="secretStatus[provider]?.configured ? 'READY' : 'NOT_RUN'" />
           <el-input v-model="secretInput[provider]" type="password" show-password placeholder="提交后立即清空" />
-          <el-button @click="saveSecret(provider)">更新</el-button><el-button @click="testSecret(provider)">测试</el-button>
+          <el-button @click="saveSecret(provider)">更新</el-button><el-button @click="testSecret(provider)">测试</el-button><el-button type="danger" plain :disabled="!secretStatus[provider]?.configured" @click="deleteSecret(provider)">删除</el-button>
         </div>
         <p>密钥只提交给本地后端进程，不进入浏览器存储、数据库配置历史或Excel。</p>
       </el-card>
@@ -36,13 +36,20 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 
 import { performanceApi } from "@/api/performance";
 import { workbenchApi } from "@/api/workbench";
 import StatusTag from "@/components/common/StatusTag.vue";
 
-const screeningFields = [{ key: "quant_top_n", label: "Quant入选数量" }, { key: "llm_analysis_n", label: "LLM分析数量" }, { key: "llm_top_n", label: "LLM入选数量" }, { key: "final_display_n", label: "最终展示数量" }, { key: "manual_soft_limit", label: "人工池软提示" }, { key: "manual_max_limit", label: "人工池最大数量" }];
+const screeningFields = [
+  { key: "quant_top_n", label: "Quant入选数量", min: 1, max: 5000 },
+  { key: "llm_analysis_n", label: "Flash分析数量", min: 1, max: 5000 },
+  { key: "llm_top_n", label: "最终模型入选", min: 1, max: 5000 },
+  { key: "final_display_n", label: "最终展示数量", min: 1, max: 5000 },
+  { key: "manual_soft_limit", label: "人工池软提示", min: 1, max: 100 },
+  { key: "manual_max_limit", label: "人工池最大数量", min: 1, max: 100 }
+];
 const workbench = reactive<Record<string, number>>({});
 const performance = reactive<Record<string, string | number | boolean>>({});
 const providers = ["tushare", "deepseek", "openai"];
@@ -50,21 +57,35 @@ const secretInput = reactive<Record<string, string>>({ tushare: "", deepseek: ""
 const secretStatus = ref<Record<string, { configured: boolean }>>({});
 
 async function load() {
-  const [settings, performanceSettings, secrets] = await Promise.all([workbenchApi.settings(), performanceApi.settings(), workbenchApi.secretStatus()]);
-  Object.assign(workbench, settings.data); Object.assign(performance, performanceSettings.data); secretStatus.value = secrets.data;
+  const [settings, performanceSettings] = await Promise.all([workbenchApi.settings(), performanceApi.settings()]);
+  Object.assign(workbench, settings.data); Object.assign(performance, performanceSettings.data);
+  secretStatus.value = window.aiTraderShell ? await window.aiTraderShell.secrets.status() : (await workbenchApi.secretStatus()).data;
 }
 async function saveAll() {
   try { await Promise.all([workbenchApi.updateSettings(workbench), performanceApi.updateSettings(performance)]); ElMessage.success("设置已保存并写入配置历史"); }
   catch { ElMessage.error("设置校验失败"); }
 }
-async function saveSecret(provider: string) { const value = secretInput[provider]; if (!value) return; await workbenchApi.setSecret(provider, value); secretInput[provider] = ""; await load(); ElMessage.success("密钥状态已更新"); }
-async function testSecret(provider: string) { const response = await workbenchApi.testSecret(provider); ElMessage.info(response.data.status); }
+async function saveSecret(provider: string) {
+  const value = secretInput[provider]; if (!value) return;
+  if (window.aiTraderShell) await window.aiTraderShell.secrets.set(provider, value); else await workbenchApi.setSecret(provider, value);
+  secretInput[provider] = ""; await load(); ElMessage.success("密钥已加密保存");
+}
+async function testSecret(provider: string) {
+  const response = window.aiTraderShell ? await window.aiTraderShell.secrets.test(provider) : await workbenchApi.testSecret(provider);
+  const payload = response as { data?: { status?: string } };
+  ElMessage.info(payload.data?.status || "测试完成");
+}
+async function deleteSecret(provider: string) {
+  await ElMessageBox.confirm("删除后相关真实任务将不可用，是否继续？", "删除密钥", { type: "warning" });
+  if (window.aiTraderShell) await window.aiTraderShell.secrets.delete(provider); else await workbenchApi.deleteSecret(provider);
+  await load(); ElMessage.success("密钥已删除");
+}
 onMounted(() => void load());
 </script>
 
 <style scoped>
 .page-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }.page-title h1 { margin:0; font-size:22px; }
 .settings-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }.secrets { grid-column:1 / -1; }
-.secret-row { display:grid; grid-template-columns:80px 80px minmax(200px,1fr) auto auto; gap:8px; align-items:center; margin-bottom:10px; }
+.secret-row { display:grid; grid-template-columns:80px 80px minmax(200px,1fr) auto auto auto; gap:8px; align-items:center; margin-bottom:10px; }
 .secrets p { color:#667085; font-size:12px; text-align:center; }
 </style>

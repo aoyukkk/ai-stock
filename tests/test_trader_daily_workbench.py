@@ -67,6 +67,12 @@ def test_workbench_api_isolated_readback_and_secret_redaction(tmp_path, monkeypa
     status = client.get("/api/workbench/status", params={"trade_date": "2026-07-10"})
     assert status.status_code == 200
     assert status.json()["data"]["real_trading_enabled"] is False
+    assert status.json()["data"]["flash_budget"] == {
+        "used": 0,
+        "limit": 3_500_000,
+        "remaining": 3_500_000,
+        "usage_ratio": 0.0,
+    }
     check = client.post("/api/workbench/data/check", json={"trade_date": "2026-07-10"})
     assert check.status_code == 200
     assert check.json()["data"]["provider_contacted"] is False
@@ -95,9 +101,7 @@ def test_workbench_api_isolated_readback_and_secret_redaction(tmp_path, monkeypa
     assert blocked_update.json()["error"]["code"] == "DATA_PROVIDER_NOT_ENABLED"
 
     job = client.post("/api/workbench/quant/run", json={"trade_date": "2026-07-10", "mode": "MOCK"})
-    assert job.status_code == 200
-    assert job.json()["data"]["stage"] == "MOCK_COMPLETED"
+    assert job.status_code == 422
     exported = client.post("/api/workbench/export/excel", json={"trade_date": "2026-07-10", "mode": "MOCK"})
-    assert exported.status_code == 200
-    assert exported.json()["data"]["job_type"] == "EXPORT"
-    assert client.get("/api/workbench/jobs", params={"trade_date": "2026-07-10"}).json()["data"]["items"]
+    assert exported.status_code == 422
+    assert client.get("/api/workbench/jobs", params={"trade_date": "2026-07-10"}).json()["data"]["items"] == []

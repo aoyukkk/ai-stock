@@ -79,8 +79,8 @@ def test_empty_response_is_repaired_once_and_diagnostics_do_not_store_content(mo
     monkeypatch.setenv("RUN_REAL_FUNDAMENTAL_RESEARCH", "true")
     repaired = {
         "schema_version": "flash_component_wire_v4", "stock_code": "001390.SZ",
-        "quant_consistency_score": 50, "fundamental_quality_score": 50,
-        "financial_quality_score": 50, "risk_fit_score": 50, "data_quality_score": 50,
+        "quant_consistency_score": 52, "fundamental_quality_score": 49,
+        "financial_quality_score": 47, "risk_fit_score": 51, "data_quality_score": 53,
         "data_quality_penalty": 0, "risk_penalty": 0,
         "confidence": 0.2, "reason": "输入有限", "risk_note": "需人工复核",
         "data_conflict": False, "requires_manual_review": True,
@@ -102,6 +102,36 @@ def test_empty_response_is_repaired_once_and_diagnostics_do_not_store_content(mo
     assert diagnostics["repair_attempted"] is True
     assert diagnostics["repair_category"] == "EMPTY_JSON_CONTENT"
     assert "content" not in diagnostics
+
+
+def test_copied_flash_example_is_repaired_with_context(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fixture")
+    monkeypatch.setenv("LLM_REAL_CALLS_ENABLED", "true")
+    monkeypatch.setenv("RUN_REAL_FUNDAMENTAL_RESEARCH", "true")
+    from research.wire_schemas import flash_component_v4_example
+
+    copied = flash_component_v4_example("001390.SZ")
+    repaired = {
+        **copied,
+        "quant_consistency_score": 78,
+        "fundamental_quality_score": 61,
+        "financial_quality_score": 55,
+        "risk_fit_score": 69,
+        "data_quality_score": 83,
+    }
+    gateway = QueueGateway([
+        _response(json.dumps(copied, ensure_ascii=False)),
+        _response(json.dumps(repaired, ensure_ascii=False)),
+    ])
+    provider = StructuredValidationProvider(gateway)
+    context = {"stock_code": "001390", "missing_fields": [], "quant": {"total_score": 78}}
+    result = provider.screening(context, run_mode="HISTORICAL_REPLAY", use_real_llm=True)
+
+    assert result["llm_score"] != 50
+    assert len(gateway.requests) == 2
+    repair_payload = json.loads(gateway.requests[1].messages[1].content)
+    assert repair_payload["context"]["quant"]["total_score"] == 78
+    assert provider.audit[0]["diagnostics"]["repair_category"] == "DEGENERATE_COMPONENT_RESPONSE"
 
 
 def test_length_and_fence_have_distinct_categories():
