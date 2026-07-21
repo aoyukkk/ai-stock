@@ -23,7 +23,7 @@ from review.performance_market import MarketDataBatchLoader
 from review.performance_schemas import MemberSnapshot, PerformanceRequest
 
 
-ALGORITHM_VERSION = "selection-performance-v1"
+ALGORITHM_VERSION = "selection-performance-v2-dual-review"
 SCHEMA_VERSION = "1.0"
 TRADE_CALENDAR_VERSION = "local-batch-calendar-v1"
 ACTIVE = {"PENDING", "RUNNING"}
@@ -139,7 +139,8 @@ class SelectionPerformanceService:
             valid = sum(row["daily_return"] is not None for row in stock_payloads)
             coverage = valid / expected if expected else 0.0
             min_coverage = float(run.config_snapshot_json["settings"]["min_coverage_ratio"])
-            run.status = "SUCCESS" if expected and coverage >= min_coverage else "PARTIAL_SUCCESS"
+            empty_recommendation_set = bool(cohorts) and not all_members
+            run.status = "SUCCESS" if (empty_recommendation_set or (expected and coverage >= min_coverage)) else "PARTIAL_SUCCESS"
             run.cohort_count, run.stock_count = len(cohorts), len(all_members)
             run.daily_record_count, run.portfolio_record_count = len(stock_payloads), len(portfolio_payloads)
             run.coverage_ratio, run.completed_at = coverage, datetime.now(timezone.utc)

@@ -445,6 +445,16 @@ class ProSingleV3Service:
     def _candidate_repair_request(
         self, code: str, candidate: str, diagnostics: dict[str, Any], max_tokens: int,
     ) -> LLMRequest:
+        error_category = diagnostics.get("error_category")
+        repair_rules = [
+            "Preserve the supplied stock_code and valid score fields.",
+            "Use only facts already present in invalid_candidate; do not introduce new facts.",
+        ]
+        if error_category == "UNSUPPORTED_CLAIM":
+            repair_rules.extend([
+                "Remove all leadership, ranking, market-share, named-customer, order-value, and current-information claims.",
+                "Replace unsupported wording with a conservative statement that the external fact is not verified.",
+            ])
         example = {
             "schema_version": SINGLE_CONTRACT_VERSION, "stock_code": code,
             "pro_score": 0, "priority": "REVIEW_ONLY", "final_summary": "信息不足，需人工复核。",
@@ -458,8 +468,9 @@ class ProSingleV3Service:
             messages=[
                 LLMMessage(role="system", content="Repair one JSON object only. Do not add commentary or reasoning."),
                 LLMMessage(role="user", content=json.dumps({
-                    "stock_code": code, "error_category": diagnostics.get("error_category"),
+                    "stock_code": code, "error_category": error_category,
                     "error_paths": diagnostics.get("schema_error_paths") or [],
+                    "repair_rules": repair_rules,
                     "wire_example": example, "invalid_candidate": (candidate or "")[:8000],
                 }, ensure_ascii=False, separators=(",", ":"))),
             ],

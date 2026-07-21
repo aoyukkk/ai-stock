@@ -10,11 +10,15 @@ import subprocess
 import sys
 import uuid
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
+from openpyxl import load_workbook
+from openpyxl.cell.cell import MergedCell
+from openpyxl.styles import Alignment
+from sqlalchemy import select
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,16 +27,14 @@ if str(ROOT) not in sys.path:
 load_dotenv(ROOT / ".env", override=False)
 
 from database.session import get_session, init_db
+from database.models.validation import ProResumeRun
+from backend.core.config_manager import ConfigManager
 from scripts.run_guarded_llm_excel_validation import _secret_scan
 from scripts.run_trader_demo_excel import _serialize_readback
 from trader_demo.service import TraderDemoService
+from reporting.workbook_standard import validate_trading_assistant_workbook
+from reporting.workbook_style import WorkbookStyleService
 
-
-SAFE_RUNTIME = {
-    "LLM_REAL_CALLS_ENABLED": "false",
-    "RUN_REAL_FUNDAMENTAL_RESEARCH": "false",
-    "LLM_GATEWAY_MOCK_ONLY": "true",
-}
 
 DECISIONS = {
     "ADVANCE": "优先复核",
@@ -62,9 +64,11 @@ def main() -> int:
     trade_date = date.fromisoformat(args.date).isoformat()
     _assert_safe_runtime()
 
-    checkpoint_path = _find_checkpoint(trade_date)
-    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
-    validation_run_id = args.validation_run or str(checkpoint.get("flash_v4_run_id") or "")
+    validation_run_id = args.validation_run.strip()
+    if not validation_run_id:
+        checkpoint_path = _find_checkpoint(trade_date)
+        checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        validation_run_id = str(checkpoint.get("flash_v4_run_id") or "")
     if not validation_run_id:
         raise ValueError("FLASH_VALIDATION_RUN_ID_REQUIRED")
 
@@ -72,9 +76,28 @@ def main() -> int:
     session = get_session()
     try:
         raw = _serialize_readback(TraderDemoService(session).readback(validation_run_id))
+        minimum_recommendation_score = float(
+            ConfigManager(session=session)
+            .get_effective_config()["values"]
+            .get("selection_performance.minimum_recommendation_score", 60)
+        )
+        pro_run = session.scalar(
+            select(ProResumeRun)
+            .where(
+                ProResumeRun.flash_validation_run_id == validation_run_id,
+                ProResumeRun.status == "COMPLETED",
+            )
+            .order_by(ProResumeRun.created_at.desc())
+        )
     finally:
         session.close()
-    payload = build_human_payload(raw, trade_date)
+    verifications = _load_verification_overlays(trade_date)
+    payload = build_human_payload(
+        raw,
+        trade_date,
+        verifications=verifications,
+        minimum_recommendation_score=minimum_recommendation_score,
+    )
     if not _secret_scan(json.dumps(payload, ensure_ascii=False, default=str)):
         raise ValueError("HUMAN_OUTPUT_SECRET_SCAN_FAILED")
 
@@ -84,17 +107,28 @@ def main() -> int:
         raise ValueError("DAILY_OUTPUT_PATH_OUTSIDE_OUTPUTS")
     daily_root.mkdir(parents=True, exist_ok=True)
     output_path = daily_root / f"智能交易助手_{trade_date}.xlsx"
-    if output_path.exists() and args.replace_existing:
-        history_dir = daily_root / "历史版本"
-        history_dir.mkdir(parents=True, exist_ok=True)
-        old_hash = hashlib.sha256(output_path.read_bytes()).hexdigest()[:8]
-        output_path.replace(history_dir / f"{output_path.stem}_修订前_{old_hash}.xlsx")
-    if output_path.exists() and not args.use_existing:
+    if output_path.exists() and not args.use_existing and not args.replace_existing:
         raise FileExistsError(f"OUTPUT_EXISTS:{output_path.name}")
     preview_dir = daily_root / "预览"
-    if not output_path.exists():
-        _build_workbook(payload, output_path, preview_dir)
-    validation = _validate_workbook(output_path)
+    if args.use_existing:
+        if not output_path.exists():
+            raise FileNotFoundError(f"OUTPUT_NOT_FOUND:{output_path.name}")
+        validation = _validate_workbook(output_path)
+    else:
+        candidate = output_path.with_name(f".{output_path.stem}_{uuid.uuid4().hex[:8]}_candidate.xlsx")
+        try:
+            _build_workbook(payload, candidate, preview_dir)
+            _polish_workbook(candidate)
+            validation = _validate_workbook(candidate)
+            if output_path.exists():
+                history_dir = daily_root / "历史版本"
+                history_dir.mkdir(parents=True, exist_ok=True)
+                old_hash = hashlib.sha256(output_path.read_bytes()).hexdigest()[:8]
+                output_path.replace(history_dir / f"{output_path.stem}_修订前_{old_hash}.xlsx")
+            candidate.replace(output_path)
+        finally:
+            candidate.unlink(missing_ok=True)
+            Path(f"{candidate}.inspect.ndjson").unlink(missing_ok=True)
     workbook_hash = hashlib.sha256(output_path.read_bytes()).hexdigest()
 
     audit_dir = daily_root / "审计"
@@ -103,9 +137,14 @@ def main() -> int:
         "交易日": trade_date,
         "生成状态": "完成",
         "数据来源运行": validation_run_id,
+        "最终复核运行": pro_run.run_id if pro_run else None,
+        "流水线运行": pro_run.pipeline_run_id if pro_run else None,
+        "候选集摘要": pro_run.candidate_set_hash if pro_run else None,
         "工作簿": str(output_path),
         "工作簿摘要": workbook_hash,
         "候选数量": len(payload["candidates"]),
+        "今日推荐数量": len(payload["recommendations"]),
+        "今日推荐最低最终复核分": payload["minimum_recommendation_score"],
         "非零仓位数量": sum(int(row["建议股数"] or 0) > 0 for row in payload["orders"]),
         "当前问题数量": len(payload["issues"]),
         "检查结果": validation,
@@ -118,7 +157,14 @@ def main() -> int:
     return 0
 
 
-def build_human_payload(raw: dict[str, Any], trade_date: str) -> dict[str, Any]:
+def build_human_payload(
+    raw: dict[str, Any],
+    trade_date: str,
+    *,
+    verifications: dict[str, dict[str, Any]] | None = None,
+    minimum_recommendation_score: float = 60,
+) -> dict[str, Any]:
+    verifications = verifications or {}
     llm_by_code = {row["stock_code"]: row for row in raw["llm_rows"]}
     fundamental_by_code = {row["stock_code"]: row for row in raw["fundamental_rows"]}
     candidates = []
@@ -187,9 +233,17 @@ def build_human_payload(raw: dict[str, Any], trade_date: str) -> dict[str, Any]:
             "财务说明": _human_text(fundamental.get("financial_status_reason")),
             "人工复核": _yes_no(fundamental.get("manual_review")),
         })
+        verification = verifications.get(str(code)[:6])
+        if verification:
+            _apply_verification_overlay(candidates[-1], fundamentals[-1], verification)
     candidates.sort(key=lambda row: (row["深度复核排名"] is None, row["深度复核排名"] or 9999, row["股票代码"]))
     orders.sort(key=lambda row: (row["深度复核排名"] is None, row["深度复核排名"] or 9999, row["股票代码"]))
     fundamentals.sort(key=lambda row: (row["深度复核排名"] is None, row["深度复核排名"] or 9999, row["股票代码"]))
+    recommendations = [
+        row for row in candidates
+        if row["深度复核分"] is not None
+        and float(row["深度复核分"]) >= float(minimum_recommendation_score)
+    ]
 
     quant_top100 = [{
         "量化排名": row["rank"], "股票代码": row["stock_code"], "股票名称": row["stock_name"],
@@ -198,8 +252,17 @@ def build_human_payload(raw: dict[str, Any], trade_date: str) -> dict[str, Any]:
         "情绪得分": row["emotion_score"], "动量得分": row["momentum_score"], "风险得分": row["risk_score"],
         "进入二筛": _yes_no(row["llm_evaluated"]), "进入重点候选": _yes_no(row["selection_source"]),
     } for row in raw["quant_rows"] if int(row["rank"]) <= 100]
-    issues = [_human_issue(row, llm_by_code, order=False) for row in raw.get("errors") or []]
-    issues.extend(_human_issue(row, llm_by_code, order=True) for row in raw.get("warnings") or [])
+    verified_codes = set(verifications)
+    issues = [
+        _human_issue(row, llm_by_code, order=False)
+        for row in raw.get("errors") or []
+        if str(row.get("stock_code") or "")[:6] not in verified_codes
+    ]
+    issues.extend(
+        _human_issue(row, llm_by_code, order=True)
+        for row in raw.get("warnings") or []
+        if _is_reportable_order_warning(row, verified_codes)
+    )
     run = raw["run"]
     return {
         "title": f"{trade_date} A股短线观察清单",
@@ -209,21 +272,95 @@ def build_human_payload(raw: dict[str, Any], trade_date: str) -> dict[str, Any]:
         "summary": {
             "量化股票数": len(raw["quant_rows"]), "二筛股票数": len(raw["llm_rows"]),
             "重点候选数": len(candidates), "非零仓位数": sum(int(row["建议股数"] or 0) > 0 for row in orders),
+            "今日推荐数": len(recommendations),
             "当前问题数": len(issues),
             "历史已解决问题数": sum(
                 row.get("schema_status") == "RESOLVED_HISTORY" for row in raw.get("audits") or []
             ),
         },
+        "minimum_recommendation_score": float(minimum_recommendation_score),
+        "recommendations": recommendations,
         "top10": candidates[:10], "candidates": candidates, "orders": orders,
         "fundamentals": fundamentals, "quant_top100": quant_top100, "issues": issues,
     }
+
+
+def _load_verification_overlays(trade_date: str) -> dict[str, dict[str, Any]]:
+    overlays: dict[str, dict[str, Any]] = {}
+    outputs = ROOT / "outputs"
+    if not outputs.is_dir():
+        return overlays
+    for path in sorted(outputs.glob("*/**/*.json")):
+        parent_date = next((part for part in path.parts if re.fullmatch(r"\d{4}-\d{2}-\d{2}", part)), "")
+        if not parent_date or parent_date > trade_date:
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if not isinstance(items, list) or not payload.get("reviewed_at"):
+            continue
+        for item in items:
+            if not isinstance(item, dict) or not str(item.get("status") or "").startswith("已"):
+                continue
+            code = re.sub(r"\D", "", str(item.get("stock_code") or ""))[:6]
+            if len(code) == 6:
+                overlays[code] = item
+    return overlays
+
+
+def _apply_verification_overlay(
+    candidate: dict[str, Any],
+    fundamental: dict[str, Any],
+    verification: dict[str, Any],
+) -> None:
+    business = str(verification.get("business") or "").strip()
+    industry_chain = str(verification.get("industry_chain") or "").strip()
+    conclusion = str(verification.get("conclusion") or "").strip()
+    risks = str(verification.get("risks") or "").strip()
+    if industry_chain:
+        candidate["产业链"] = industry_chain
+        fundamental["产业链"] = industry_chain
+        if "上游" in industry_chain:
+            fundamental["链条位置"] = "上游"
+        elif "中游" in industry_chain:
+            fundamental["链条位置"] = "中游"
+        elif "下游" in industry_chain:
+            fundamental["链条位置"] = "下游"
+    if business:
+        fundamental["主营业务"] = business
+        products = business.removeprefix("主营").split("，", 1)[0].rstrip("。")
+        if products:
+            fundamental["核心产品"] = products
+    if conclusion:
+        candidate["核心逻辑"] = conclusion
+        fundamental["潜在优势"] = conclusion
+        fundamental["行业趋势"] = conclusion
+        fundamental["核心逻辑"] = conclusion
+        fundamental["财务说明"] = conclusion
+    if risks:
+        candidate["主要风险"] = risks
+        fundamental["失效条件"] = risks
+    fundamental["人工复核"] = ""
+
+
+def _is_reportable_order_warning(row: dict[str, Any], verified_codes: set[str]) -> bool:
+    code = str(row.get("stock_code") or "")[:6]
+    if code in verified_codes:
+        return False
+    reason = str(row.get("reason") or "")
+    expected_manual_block = "人工选择，但LLM未入选" in reason and "人工选择，但LLM分析失败" not in reason
+    return not expected_manual_block
 
 
 def _human_issue(row: dict[str, Any], llm_by_code: dict[str, dict], *, order: bool) -> dict[str, Any]:
     code = str(row.get("stock_code") or "")
     llm = llm_by_code.get(code, {})
     reason = str(row.get("reason") or "")
-    if "no_unsupported_customer" in reason:
+    if "Flash component scores copied the prompt example" in reason or "quant_consistency_score" in reason:
+        reason = "二筛评分结构与模板示例过于一致，结果已标记为待人工确认"
+    elif "no_unsupported_customer" in reason:
         reason = "内容包含未核验的客户信息，需要人工确认"
     elif "no_unsupported_leadership_claim" in reason:
         reason = "内容包含缺少依据的行业领先表述，需要人工确认"
@@ -342,7 +479,7 @@ def _validate_workbook(path: Path) -> dict[str, Any]:
             raise ValueError("HUMAN_WORKBOOK_ZIP_ERROR")
         workbook_xml = archive.read("xl/workbook.xml").decode("utf-8", errors="replace")
         sheet_count = len(re.findall(r"<(?:\w+:)?sheet\b", workbook_xml))
-        if sheet_count not in {5, 6}:
+        if sheet_count not in {6, 7}:
             raise ValueError("HUMAN_WORKBOOK_SHEET_COUNT_ERROR")
         xml = "\n".join(
             archive.read(name).decode("utf-8", errors="ignore")
@@ -353,12 +490,50 @@ def _validate_workbook(path: Path) -> dict[str, Any]:
     forbidden = ("MODEL_VALIDATION", "NON_ACTIONABLE", "WATCH_ONLY", "ADVANCE", "request_hash", "reasoning_content")
     if any(value.lower() in xml.lower() for value in forbidden):
         raise ValueError("HUMAN_WORKBOOK_TECHNICAL_TEXT_LEAK")
-    return {"状态": "通过", "工作表数量": sheet_count, "压缩包完整性": "通过", "敏感信息检查": "通过"}
+    standard = validate_trading_assistant_workbook(path)
+    excel_compatibility = WorkbookStyleService.validate_excel_compatibility(path)
+    return {
+        "状态": "通过",
+        "工作表数量": sheet_count,
+        "压缩包完整性": "通过",
+        "敏感信息检查": "通过",
+        "统一制表规范": standard,
+        "Excel兼容性": excel_compatibility,
+    }
+
+
+def _polish_workbook(path: Path) -> None:
+    """Apply deterministic table alignment and freeze panes after export."""
+    workbook = load_workbook(path)
+    for worksheet in workbook.worksheets:
+        WorkbookStyleService.set_freeze_panes_safely(
+            worksheet,
+            "A9" if worksheet.title == "今日概览" else "D5" if worksheet.title in {
+                "今日推荐", "重点候选", "挂单与仓位", "价格与权重", "基本面摘要", "复核依据"
+            } else "A5",
+        )
+        worksheet.sheet_view.showGridLines = False
+        table_start_row = 8 if worksheet.title == "今日概览" else 4
+        for row in worksheet.iter_rows(min_row=table_start_row, max_row=worksheet.max_row):
+            for cell in row:
+                if isinstance(cell, MergedCell) or cell.value is None:
+                    continue
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    try:
+        trade_date = date.fromisoformat(path.parent.name)
+        reference = WorkbookStyleService.resolve_recent_successful_reference(
+            ROOT / "outputs",
+            start=trade_date - timedelta(days=7),
+            end=trade_date - timedelta(days=1),
+        )
+        WorkbookStyleService(reference).align_existing_workbook(workbook)
+    except (FileNotFoundError, ValueError):
+        pass
+    workbook.save(path)
 
 
 def _assert_safe_runtime() -> None:
-    current = {key: os.getenv(key, default) for key, default in SAFE_RUNTIME.items()}
-    if current != SAFE_RUNTIME or os.getenv("ENABLE_REAL_TRADING", "false").lower() != "false":
+    if os.getenv("ENABLE_REAL_TRADING", "false").strip().lower() != "false":
         raise RuntimeError("UNSAFE_RUNTIME_SWITCHES")
 
 

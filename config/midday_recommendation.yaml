@@ -1,0 +1,93 @@
+midday_recommendation:
+  enabled: true
+  auto_run_midday: false
+  start_after: "11:32"
+  latest_start_time: "12:50"
+  hard_window_end: "12:55"
+  valid_from: "13:00"
+  valid_until: "14:45"
+  require_afternoon_recheck: true
+  source_mode: PREVIOUS_DAY_TUSHARE_WITH_MORNING_IFIND_SHADOW
+  pool:
+    base_top_n: 100
+    maximum_size: 120
+    minute_pool_size: 30
+    flash_pool_size: 30
+    pro_pool_size: 20
+    final_count: 20
+  ifind:
+    fast_minutes_only: true
+    index_max_codes: 8
+    snapshot_max_stocks: 120
+    minute_max_stocks: 30
+    max_external_calls: 30
+    minimum_call_interval_ms: 1000
+    snapshot_batch_size: 4
+    index_batch_size: 2
+    allow_cache_reuse: true
+    asof_batch_size: 20
+    asof_max_concurrency: 1
+    asof_retry_count: 1
+    volume_semantics: INCREMENTAL_SHARES
+    amount_semantics: INCREMENTAL_CNY
+    near_cutoff_tolerance_seconds: 180
+  overlay:
+    scale: 0.12
+    snapshot_minimum: -2.0
+    snapshot_maximum: 2.0
+    minute_minimum: -6.0
+    minute_maximum: 6.0
+    minimum_minute_completeness: 0.95
+  llm:
+    expected_token_budget: 500000
+    hard_token_budget: 800000
+    flash_model_alias: light-screening-default
+    pro_model_alias: controller-high-capability
+    flash_prompt_version: midday_flash_screening_v1
+    pro_prompt_version: midday_pro_review_v1
+    flash_max_tokens: 1400
+    pro_max_tokens: 1800
+    pro_retry_max_tokens: 700
+    maximum_repair_calls: 5
+    thinking_mode: disabled
+  safety:
+    advisory_only: true
+    actionable: false
+    create_orders: false
+    scheduler_enabled: false
+    real_trading_enabled: false
+  full_a_radar:
+    enabled: true
+    version: MIDDAY_FULL_A_RADAR_V1
+    minimum_eligible_count: 1000
+    minimum_full_a_coverage: 0.95
+    minimum_listing_days: 60
+    minimum_average_amount_cny: 5000000
+    top_count: 200
+    minute_candidate_count: 50
+    validation_sample_count: 20
+    snapshot_batch_size: 100
+    minute_reconstruction_batch_size: 60
+    maximum_provider_calls: 30
+    winsor_lower_quantile: 0.01
+    winsor_upper_quantile: 0.99
+    weights:
+      baseline_quant: 0.40
+      morning_relative_strength: 0.20
+      morning_volume_price: 0.15
+      sector_resonance: 0.15
+      opening_risk_quality: 0.10
+    relative_strength_weights:
+      stock_return_percentile: 0.35
+      industry_alpha_percentile: 0.30
+      market_alpha_percentile: 0.20
+      morning_close_location: 0.15
+    volume_price_weights:
+      morning_amount_ratio: 0.30
+      turnover_strength: 0.25
+      price_volume_consistency: 0.25
+      morning_trend_efficiency: 0.20
+    sector_weights:
+      industry_return_rank: 0.40
+      industry_breadth: 0.30
+      stock_rank_within_industry: 0.30

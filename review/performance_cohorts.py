@@ -6,6 +6,7 @@ from datetime import date
 
 from sqlalchemy import select
 
+from backend.core.config_manager import ConfigManager
 from database.models.performance import SelectionCohort, SelectionCohortMember
 from database.models.validation import (
     ModelValidationAllocation,
@@ -39,7 +40,18 @@ class SelectionCohortResolver:
 
     def members(self, cohort: SelectionCohort, scope: str, include_zero: bool, include_risk_blocked: bool) -> list[SelectionCohortMember]:
         rows = list(self.session.scalars(select(SelectionCohortMember).where(SelectionCohortMember.cohort_id == cohort.id)))
-        if scope == "LLM_ONLY":
+        if scope == "FINAL_CANDIDATES":
+            minimum_score = self._minimum_recommendation_score()
+            rows = [row for row in rows if row.pro_score is not None and float(row.pro_score) >= minimum_score]
+        elif scope == "FINAL_LLM_ONLY":
+            minimum_score = self._minimum_recommendation_score()
+            rows = [
+                row for row in rows
+                if row.selection_source == "LLM"
+                and row.pro_score is not None
+                and float(row.pro_score) >= minimum_score
+            ]
+        elif scope == "LLM_ONLY":
             rows = [row for row in rows if row.selection_source == "LLM"]
         elif scope == "MANUAL_ONLY":
             rows = [row for row in rows if row.selection_source == "MANUAL"]
@@ -52,6 +64,13 @@ class SelectionCohortResolver:
         if not include_risk_blocked:
             rows = [row for row in rows if row.risk_status not in {"BLOCKED", "REJECTED", "RISK_BLOCKED"}]
         return rows
+
+    def _minimum_recommendation_score(self) -> float:
+        return float(
+            ConfigManager(session=self.session)
+            .get_effective_config()["values"]
+            .get("selection_performance.minimum_recommendation_score", 60)
+        )
 
     def _is_complete(self, run: ModelValidationRun) -> bool:
         samples = self._candidate_samples(run.run_id)
@@ -79,11 +98,12 @@ class SelectionCohortResolver:
         member_payloads = []
         for sample in samples:
             code = normalize_ts_code(sample.stock_code)
+            review = reviews.get(code)
             screening = sample.screening_result or {}
             meta = screening.get("_trader_demo") or {}
             source = _source(meta.get("selection_source"), bool(meta.get("llm_selected")), bool(meta.get("manual_selected")))
             source_counts[source] += 1
-            review, allocation, plan = reviews.get(code), allocations.get(code), plans.get(code)
+            allocation, plan = allocations.get(code), plans.get(code)
             member_payloads.append({
                 "stock_code": code, "stock_name_snapshot": sample.stock_name, "selection_source": source,
                 "quant_rank": sample.rank, "quant_score": (sample.quant_scores or {}).get("total_score"),
@@ -93,7 +113,7 @@ class SelectionCohortResolver:
                 "suggested_position_percent": allocation.suggested_position_percent if allocation else 0,
                 "risk_status": plan.status if plan else "UNKNOWN",
             })
-        candidate_hash = pro.candidate_set_hash if pro else _hash_members(member_payloads)
+        candidate_hash = _hash_members(member_payloads)
         position_ids = sorted({row.allocation_run_id for row in allocations.values()})
         cohort = SelectionCohort(
             selection_trade_date=run.base_market_trade_date, pipeline_run_id=pipeline_run_id,
@@ -101,7 +121,15 @@ class SelectionCohortResolver:
             position_run_id=position_ids[0] if len(position_ids) == 1 else _hash_values(position_ids),
             candidate_set_hash=candidate_hash, stock_count=len(member_payloads), llm_count=source_counts["LLM"],
             manual_count=source_counts["MANUAL"], both_count=source_counts["BOTH"], status="IMMUTABLE",
-            completed_at=run.updated_at, config_snapshot_json={"validation": run.config_snapshot, "candidate_set_hash": candidate_hash},
+            completed_at=run.updated_at, config_snapshot_json={
+                "validation": run.config_snapshot,
+                "candidate_set_hash": candidate_hash,
+                "upstream_candidate_set_hash": pro.candidate_set_hash if pro else None,
+                "cohort_policy": {
+                    "version": "full-key-candidates-v1",
+                    "contains_all_key_candidates": True,
+                },
+            },
         )
         self.session.add(cohort)
         self.session.flush()

@@ -137,6 +137,13 @@ class LLMRouter:
         if explicit_real and decision.task_tier in {TaskTier.COMPLEX, TaskTier.HIGH_IMPACT}:
             allow_fallback = False
 
+        thinking_mode = request.thinking_mode or decision.thinking_mode
+        reasoning_effort = (
+            None
+            if thinking_mode == "disabled"
+            else request.reasoning_effort or decision.reasoning_effort
+        )
+
         return request.model_copy(
             update={
                 "task_type": decision.task_type,
@@ -144,8 +151,8 @@ class LLMRouter:
                 "model_alias": decision.model_alias,
                 "provider": decision.provider,
                 "model": decision.model,
-                "thinking_mode": request.thinking_mode or decision.thinking_mode,
-                "reasoning_effort": request.reasoning_effort or decision.reasoning_effort,
+                "thinking_mode": thinking_mode,
+                "reasoning_effort": reasoning_effort,
                 "temperature": request.temperature if request.temperature is not None else decision.temperature,
                 "max_tokens": request.max_tokens if request.max_tokens is not None else decision.max_tokens,
                 "allow_fallback": allow_fallback,

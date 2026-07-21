@@ -5,10 +5,16 @@ import hashlib
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from reporting.workbook_standard import validate_trading_assistant_workbook
+
+
 OUTPUTS = (ROOT / "outputs").resolve()
 DATE_PATTERN = re.compile(r"(20\d{2})(\d{2})(\d{2})")
 
@@ -115,6 +121,7 @@ def _update_current_checkpoint(current_date: str) -> Path:
     workbook = daily_root / f"智能交易助手_{current_date}.xlsx"
     if not checkpoint_path.exists() or not workbook.exists():
         raise FileNotFoundError("CURRENT_CHECKPOINT_OR_HUMAN_WORKBOOK_MISSING")
+    workbook_validation = validate_trading_assistant_workbook(workbook)
     checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
     machine_workbook = daily_root / "历史版本" / "完整流水线" / "ai_trader_flash_v4_20260710_state_clean.xlsx"
     checkpoint.update({
@@ -122,6 +129,7 @@ def _update_current_checkpoint(current_date: str) -> Path:
         "excel_path": str(workbook), "workbook_sha256": _sha256(workbook),
         "machine_excel_path": str(machine_workbook) if machine_workbook.exists() else None,
         "output_layout": "outputs/YYYY-MM-DD",
+        "workbook_profile": workbook_validation,
     })
     checkpoint_path.write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2), encoding="utf-8")
     return checkpoint_path

@@ -18,11 +18,11 @@
       </el-form>
       <div class="shortcuts"><span>快捷范围</span><el-button v-for="days in [5, 10, 20, 60]" :key="days" size="small" @click="quick(days)">近{{ days }}日</el-button></div>
       <div class="actions">
-        <el-button type="primary" :loading="loading" @click="run(false)">更新统计</el-button>
+        <el-button v-if="auth.canWrite" type="primary" :loading="loading" @click="run(false)">更新统计</el-button>
         <el-button :disabled="!summary.performance_run_id" @click="load">使用已有结果</el-button>
-        <el-button :disabled="!summary.performance_run_id" @click="incremental">增量更新</el-button>
-        <el-button :disabled="!summary.performance_run_id" @click="run(true)">强制重新计算</el-button>
-        <el-button :disabled="!summary.performance_run_id" @click="exportExcel">导出Excel</el-button>
+        <el-button v-if="auth.canWrite" :disabled="!summary.performance_run_id" @click="incremental">增量更新</el-button>
+        <el-button v-if="auth.canWrite" :disabled="!summary.performance_run_id" @click="run(true)">强制重新计算</el-button>
+        <el-button v-if="auth.canWrite" :disabled="!summary.performance_run_id" @click="exportExcel">导出Excel</el-button>
         <el-button @click="methodologyVisible = true">查看计算说明</el-button>
       </div>
       <el-alert v-if="form.return_basis === 'SIGNAL_CLOSE'" title="信号评价口径，不代表可以在选股日收盘价成交。" type="warning" :closable="false" show-icon />
@@ -66,13 +66,16 @@ import { performanceApi } from "@/api/performance";
 import CenteredDataTable from "@/components/common/CenteredDataTable.vue";
 import StatusTag from "@/components/common/StatusTag.vue";
 import PerformanceCharts from "@/components/performance/PerformanceCharts.vue";
+import { useInternalAuthStore } from "@/stores/internalAuth";
 import type { PerformanceRequest, PerformanceSummary } from "@/types/performance";
 import type { TableColumn } from "@/types/workbench";
 
 const form = reactive<PerformanceRequest>({ evaluation_end_date: "2026-07-10", lookback_value: 5, lookback_unit: "TRADING_DAYS", start_selection_date: null, end_selection_date: null, return_basis: "NEXT_OPEN", selection_scope: "FINAL_CANDIDATES", weighting_mode: "EQUAL_WEIGHT", include_zero_position_stocks: true, include_risk_blocked_stocks: true, force_recalculate: false });
+const auth = useInternalAuthStore();
 const customRange = ref<[string, string] | null>(null);
 const scopes = [
-  { label: "全部最终候选", value: "FINAL_CANDIDATES" }, { label: "仅LLM", value: "LLM_ONLY" },
+  { label: "今日推荐（60分以上）", value: "FINAL_CANDIDATES" }, { label: "完整重点候选", value: "KEY_CANDIDATES" },
+  { label: "仅LLM", value: "LLM_ONLY" },
   { label: "仅人工", value: "MANUAL_ONLY" }, { label: "仅BOTH", value: "BOTH_ONLY" },
   { label: "非零仓位", value: "NON_ZERO_POSITION" }, { label: "含零仓位全部候选", value: "ALL_CANDIDATES_INCLUDING_ZERO_POSITION" }
 ];

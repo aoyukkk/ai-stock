@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import zipfile
 from pathlib import Path
 
@@ -39,6 +40,36 @@ def test_desktop_local_api_requires_ephemeral_token(monkeypatch) -> None:
     )
     assert response.status_code == 200
     assert response.json()["data"]["app_version"] == "1.0.0"
+
+
+def test_desktop_runtime_accepts_ifind_login_secrets_without_readback(monkeypatch) -> None:
+    monkeypatch.setenv("AI_TRADER_DESKTOP_MODE", "true")
+    monkeypatch.setenv("AI_TRADER_LOCAL_API_TOKEN", "test-session-token-with-at-least-32-characters")
+    monkeypatch.delenv("IFIND_USERNAME", raising=False)
+    monkeypatch.delenv("IFIND_PASSWORD", raising=False)
+    client = TestClient(create_app())
+    headers = {"X-AI-Trader-Token": "test-session-token-with-at-least-32-characters"}
+
+    username = client.post(
+        "/api/runtime/secrets",
+        headers=headers,
+        json={"provider": "ifind_username", "value": "ifind-user"},
+    )
+    assert username.status_code == 200
+    assert username.json()["data"] == {
+        "provider": "ifind_username",
+        "configured": True,
+        "updated_at": username.json()["data"]["updated_at"],
+    }
+    assert "ifind-user" not in username.text
+
+    password = client.post(
+        "/api/runtime/secrets",
+        headers=headers,
+        json={"provider": "ifind_password", "value": "short"},
+    )
+    assert password.json()["error"]["code"] == "SECRET_UPDATE_INVALID"
+    assert "IFIND_PASSWORD" not in os.environ
 
 
 def test_release_versions_and_embedded_runtime_configs_are_consistent() -> None:
@@ -83,7 +114,8 @@ def test_release_scanner_rejects_known_secret_and_env_file(tmp_path: Path, monke
 def test_release_scanner_inspects_portable_zip_contents(tmp_path: Path) -> None:
     archive = tmp_path / "portable.zip"
     with zipfile.ZipFile(archive, "w") as output:
-        output.writestr("resources/config.txt", "ghp_abcdefghijklmnopqrstuvwxyz123456")
+        fake_token = "ghp_" + "abcdefghijklmnopqrstuvwxyz123456"
+        output.writestr("resources/config.txt", fake_token)
     report = scan(tmp_path)
     assert report["passed"] is False
     assert report["known_secret_file_hits"] == ["portable.zip!/resources/config.txt"]
@@ -95,3 +127,5 @@ def test_first_run_copies_seed_only_when_database_is_absent() -> None:
     assert "copyFile(databaseSource, paths.database)" in source
     assert "SEED_DATABASE_CHECKSUM_MISMATCH" in source
     assert "if (!(await exists(destination)))" in source
+    for config_name in ("reporting.yaml", "market_review.yaml", "midday_recommendation.yaml", "intraday_monitor.yaml"):
+        assert f'"{config_name}"' in source

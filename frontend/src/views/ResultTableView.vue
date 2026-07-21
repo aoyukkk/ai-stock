@@ -1,6 +1,12 @@
 <template>
   <section>
-    <div class="page-title"><div><h1>{{ title }}</h1><p>{{ subtitle }}</p></div><el-button :loading="loading" @click="load">刷新</el-button></div>
+    <div class="page-title">
+      <div><h1>{{ title }}</h1><p>{{ subtitle }}</p></div>
+      <div class="actions">
+        <el-button v-if="monitorEnabled && auth.canWrite" type="primary" :disabled="!selectedRows.length" @click="addSelectedToMonitor">加入盯盘</el-button>
+        <el-button :loading="loading" @click="load">刷新</el-button>
+      </div>
+    </div>
     <el-alert v-if="store.status?.source_mode === 'EMPTY'" title="该交易日没有已完成的正式流水线结果。" type="info" show-icon :closable="false" />
     <CenteredDataTable
       v-else
@@ -11,7 +17,9 @@
       :total="paginated ? total : undefined"
       :current-page="query.page"
       :page-size="query.pageSize"
+      :selectable="monitorEnabled && auth.canWrite"
       @pagination-change="handlePaginationChange"
+      @selection-change="handleSelection"
     />
   </section>
 </template>
@@ -21,15 +29,21 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 
 import { workbenchApi } from "@/api/workbench";
 import CenteredDataTable from "@/components/common/CenteredDataTable.vue";
+import { useMonitorPool } from "@/composables/useMonitorPool";
 import { useWorkbenchStore } from "@/stores/workbench";
+import { useInternalAuthStore } from "@/stores/internalAuth";
+import type { MonitorPoolCandidate } from "@/types/realtime";
 import type { TableColumn } from "@/types/workbench";
 
 const props = defineProps<{ kind: "quant" | "flash" | "final" | "orders" | "fundamentals" }>();
 const store = useWorkbenchStore();
+const auth = useInternalAuthStore();
 const rows = ref<Record<string, unknown>[]>([]);
 const total = ref(0);
 const query = reactive({ page: 1, pageSize: 50, keyword: "", sortBy: "rank", sortOrder: "asc" });
 const loading = ref(false);
+const selectedRows = ref<Record<string, unknown>[]>([]);
+const { addToMonitor } = useMonitorPool();
 let sequence = 0;
 let controller: AbortController | null = null;
 
@@ -38,6 +52,7 @@ const subtitles = { quant: "读取当前 Quant Run 的完整服务端分页结�
 const title = computed(() => titles[props.kind]);
 const subtitle = computed(() => subtitles[props.kind]);
 const paginated = computed(() => ["quant", "flash"].includes(props.kind));
+const monitorEnabled = computed(() => ["final", "orders"].includes(props.kind));
 const columns = computed<TableColumn[]>(() => columnMaps[props.kind]);
 
 const columnMaps: Record<string, TableColumn[]> = {
@@ -74,6 +89,23 @@ function handlePaginationChange(payload: { page: number; pageSize: number }) {
   query.pageSize = payload.pageSize;
   void load();
 }
+function handleSelection(value: Record<string, unknown>[]) { selectedRows.value = value; }
+async function addSelectedToMonitor() {
+  const source = props.kind === "orders" ? "ACTIVE_ORDER_PLAN" : "FINAL_CANDIDATE";
+  const candidates: MonitorPoolCandidate[] = selectedRows.value.map((row) => ({
+    stock_code: String(row.stock_code || ""),
+    stock_name: String(row.stock_name || ""),
+    sources: [source],
+    monitor_profile: "CANDIDATE_MONITOR",
+    priority: props.kind === "orders" ? "HIGH" : "NORMAL",
+    recommended_price: numberOrNull(row.recommended_price),
+    stop_loss: numberOrNull(row.stop_loss_price),
+    take_profit_1: numberOrNull(row.take_profit_1),
+    take_profit_2: numberOrNull(row.take_profit_2)
+  }));
+  await addToMonitor(store.tradeDate, candidates, source, store.status?.pipeline_run_id || undefined);
+}
+function numberOrNull(value: unknown): number | null { const result = Number(value); return Number.isFinite(result) ? result : null; }
 watch(() => [store.tradeDate, store.status?.pipeline_run_id, props.kind], () => { query.page = 1; void load(); }, { immediate: true });
 onBeforeUnmount(() => controller?.abort());
 </script>
@@ -82,4 +114,5 @@ onBeforeUnmount(() => controller?.abort());
 .page-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .page-title h1 { margin: 0; font-size: 22px; }
 .page-title p { margin: 5px 0 0; color: #667085; font-size: 13px; }
+.actions { display: flex; align-items: center; gap: 8px; }
 </style>

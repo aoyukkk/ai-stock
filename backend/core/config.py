@@ -40,8 +40,9 @@ REQUIRED_CONFIG_FILES = (
     "fundamental_research.yaml",
     "position_sizing.yaml",
     "temporal.yaml",
+    "reporting.yaml",
 )
-OPTIONAL_CONFIG_FILES = ("data_sources.yaml", "review.yaml")
+OPTIONAL_CONFIG_FILES = ("data_sources.yaml", "review.yaml", "market_review.yaml", "ifind_probe.yaml", "ifind_shadow.yaml", "post_close_action.yaml", "midday_recommendation.yaml", "intraday_monitor.yaml", "internal_web.yaml", "entry_timing.yaml", "candidate_threshold.yaml", "entry_timing_v2_1.yaml", "entry_timing_v2_2.yaml")
 
 
 class ConfigLoadError(RuntimeError):

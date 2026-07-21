@@ -1,0 +1,36 @@
+entry_timing:
+  enabled: false
+  shadow_only: true
+  config_version: entry_timing_v1.0.0
+  minimum_data_quality: 0.55
+  weights:
+    position: 25
+    pullback: 20
+    volume_price: 20
+    sector_resonance: 15
+    market_fit: 10
+    liquidity: 10
+  admission:
+    pass_score: 70
+    review_score: 60
+    minimum_quant_score: 45
+    minimum_risk_score: 30
+    red_market_regimes:
+      - BROAD_SELL_OFF
+      - RISK_OFF
+    yellow_market_regimes:
+      - MIXED_ROTATION
+      - RANGE_BOUND
+      - ROTATION
+  high_position_risk:
+    five_day_return: 0.30
+    twenty_day_high_distance: 0.02
+    ten_day_return: 0.50
+    distribution_amount_ratio: 1.50
+    distribution_max_return: 0.01
+  safety:
+    advisory_only: true
+    actionable: false
+    create_orders: false
+    scheduler_enabled: false
+    real_trading_enabled: false

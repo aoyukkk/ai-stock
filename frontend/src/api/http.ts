@@ -2,7 +2,7 @@ import axios, { type AxiosError, type AxiosRequestConfig } from "axios";
 
 import type { ApiEnvelope, FrontendApiError } from "@/types/api";
 
-const developmentApiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const browserApiBaseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://127.0.0.1:8000" : "");
 const sensitiveKeys = ["api_key", "password", "secret", "token", "username", "credential"];
 
 export const http = axios.create({
@@ -23,7 +23,11 @@ http.interceptors.request.use(async (config) => {
     config.baseURL = desktopConnection.baseUrl;
     config.headers["X-AI-Trader-Token"] = desktopConnection.sessionToken;
   } else {
-    config.baseURL = developmentApiBaseUrl;
+    config.baseURL = browserApiBaseUrl;
+    if (!["GET", "HEAD", "OPTIONS"].includes(String(config.method || "GET").toUpperCase())) {
+      const csrf = sessionStorage.getItem("ai-trader-csrf");
+      if (csrf) config.headers["X-CSRF-Token"] = csrf;
+    }
   }
   if (!config.headers["X-Trace-Id"]) {
     config.headers["X-Trace-Id"] = createTraceId();
@@ -101,6 +105,17 @@ function normalizeError(error: unknown): FrontendApiError {
   if (isFrontendApiError(error)) return error;
   const axiosError = error as AxiosError<ApiEnvelope>;
   const envelope = axiosError.response?.data;
+  const errorCode = envelope?.error?.code || envelope?.code;
+  if (
+    (axiosError.response?.status === 401 && errorCode === "LOCAL_SESSION_REQUIRED") ||
+    (axiosError.response?.status === 403 && errorCode === "PASSWORD_CHANGE_REQUIRED")
+  ) {
+    if (window.location.pathname !== "/local-login") window.location.assign("/local-login");
+  } else if (axiosError.response?.status === 401 && window.location.pathname !== "/local-login") {
+    window.location.assign("/unauthorized");
+  } else if (axiosError.response?.status === 403 && window.location.pathname !== "/forbidden") {
+    window.location.assign("/forbidden");
+  }
   if (envelope) {
     return {
       success: false,

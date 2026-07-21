@@ -30,6 +30,9 @@ ALLOWED_LOCAL_SECRET_KEYS = {
     "OKX_API_KEY",
     "OKX_SECRET_KEY",
     "OKX_PASSPHRASE",
+    "IFIND_ACCESS_TOKEN",
+    "IFIND_REFRESH_TOKEN",
+    "IFIND_PASSWORD",
 }
 
 
@@ -187,6 +190,7 @@ def _check_source_literals(root: Path, report: CheckReport) -> None:
 def _check_packaging_configs(root: Path, report: CheckReport) -> None:
     configs = [
         root / "packaging" / "pyinstaller_backend.spec",
+        root / "packaging" / "pyinstaller_internal_web.spec",
         root / "packaging" / "electron-builder.config.js",
         root / "frontend" / "electron-builder.config.js",
     ]
@@ -208,6 +212,7 @@ def _check_packaging_outputs(root: Path, report: CheckReport) -> None:
         root / "frontend" / "release",
         root / "frontend" / "dist",
         root / "frontend" / "dist-electron",
+        root / "release" / "internal-web",
     )
     sensitive_names = {".env", "id_rsa", "id_ed25519"}
     for path in iter_files(output_roots):

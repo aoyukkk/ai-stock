@@ -116,7 +116,7 @@ export const useWorkbenchStore = defineStore("workbench", () => {
     }
   }
 
-  async function run(type: "data" | "quant" | "flash" | "final" | "export", confirmBudget = false) {
+  async function run(type: "data" | "quant" | "flash" | "final" | "market_review" | "export", confirmBudget = false) {
     const response = await workbenchApi.run(type, tradeDate.value, confirmBudget);
     currentJob.value = response.data;
     upsertJob(response.data);

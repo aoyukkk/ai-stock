@@ -21,8 +21,8 @@
       :closable="false"
     />
     <div v-if="job" class="actions">
-      <el-button v-if="active" type="danger" plain @click="$emit('cancel', job.job_id)">取消任务</el-button>
-      <el-button v-if="resumable" type="primary" @click="$emit('resume', job.job_id)">断点续跑</el-button>
+      <el-button v-if="canOperate && active" type="danger" plain @click="$emit('cancel', job.job_id)">取消任务</el-button>
+      <el-button v-if="canOperate && resumable" type="primary" @click="$emit('resume', job.job_id)">断点续跑</el-button>
     </div>
     <el-empty v-else description="当前没有任务记录" :image-size="54" />
   </el-card>
@@ -34,7 +34,7 @@ import StatusTag from "@/components/common/StatusTag.vue";
 import { isActiveJob, isResumableJob } from "@/stores/workbench";
 import type { PipelineJob } from "@/types/workbench";
 
-const props = defineProps<{ job?: PipelineJob }>();
+const props = withDefaults(defineProps<{ job?: PipelineJob; canOperate?: boolean }>(), { canOperate: true });
 defineEmits<{ cancel: [jobId: string]; resume: [jobId: string] }>();
 const percent = computed(() => {
   if (!props.job?.progress_total) return 0;

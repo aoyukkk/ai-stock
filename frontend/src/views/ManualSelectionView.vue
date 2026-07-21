@@ -14,7 +14,8 @@
             <el-form-item class="form-action"><el-button type="primary" @click="add">添加</el-button></el-form-item>
           </el-form>
         </el-card>
-        <CenteredDataTable :rows="currentRows" :columns="currentColumns">
+        <div class="table-actions"><el-button type="primary" :disabled="!monitorRows.length" @click="addManualToMonitor">加入盯盘</el-button></div>
+        <CenteredDataTable :rows="currentRows" :columns="currentColumns" selectable @selection-change="handleMonitorSelection">
           <template #actions="{ row }"><el-button text type="danger" @click="remove(Number(row.id))">删除</el-button></template>
         </CenteredDataTable>
       </el-tab-pane>
@@ -28,7 +29,9 @@ import { ElMessage } from "element-plus";
 
 import { workbenchApi } from "@/api/workbench";
 import CenteredDataTable from "@/components/common/CenteredDataTable.vue";
+import { useMonitorPool } from "@/composables/useMonitorPool";
 import { useWorkbenchStore } from "@/stores/workbench";
+import type { MonitorPoolCandidate } from "@/types/realtime";
 
 const store = useWorkbenchStore();
 const activeTab = ref("snapshot");
@@ -38,6 +41,8 @@ const stockCode = ref("");
 const reason = ref("");
 const priority = ref("MEDIUM");
 const loading = ref(false);
+const monitorRows = ref<Record<string, unknown>[]>([]);
+const { addToMonitor } = useMonitorPool();
 let controller: AbortController | null = null;
 const snapshotColumns = [
   { key: "stock_code", label: "股票代码" }, { key: "stock_name", label: "股票名称" },
@@ -73,6 +78,15 @@ async function add() {
   ElMessage.success("已添加到当前人工池；历史快照未修改");
 }
 async function remove(id: number) { await workbenchApi.deleteManual(id); await load(); }
+function handleMonitorSelection(value: Record<string, unknown>[]) { monitorRows.value = value; }
+async function addManualToMonitor() {
+  const candidates: MonitorPoolCandidate[] = monitorRows.value.map((row) => ({
+    stock_code: String(row.stock_code || ""), stock_name: String(row.stock_name || ""),
+    sources: ["MANUAL_SELECTION"], monitor_profile: "CANDIDATE_MONITOR",
+    priority: String(row.priority || "HIGH") === "LOW" ? "LOW" : "HIGH"
+  }));
+  await addToMonitor(store.tradeDate, candidates, "MANUAL_SELECTION", store.status?.pipeline_run_id || undefined);
+}
 watch(() => [store.tradeDate, store.status?.pipeline_run_id], () => void load(), { immediate: true });
 onBeforeUnmount(() => controller?.abort());
 </script>
@@ -84,5 +98,6 @@ onBeforeUnmount(() => controller?.abort());
 .form-card { margin-bottom: 12px; }
 .selection-form { display: grid; grid-template-columns: 1.2fr 140px 2fr auto; gap: 10px; align-items: end; }
 .form-action { margin-bottom: 18px; }
+.table-actions { display: flex; justify-content: flex-end; margin: 0 0 10px; }
 @media (max-width: 900px) { .selection-form { grid-template-columns: 1fr; } }
 </style>

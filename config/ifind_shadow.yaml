@@ -1,0 +1,53 @@
+ifind_shadow:
+  integration_mode: SHADOW
+  enabled: false
+  transport: HTTP
+  fallback_provider: tushare
+  persistence_purposes:
+    - SHADOW_VALIDATION
+    - REALTIME_MONITOR
+    - MARKET_REVIEW_INDEX
+  realtime:
+    max_batch_codes: 4
+    cache_ttl_seconds: 15
+    stale_after_seconds: 90
+  index:
+    max_batch_codes: 2
+    cache_ttl_seconds: 30
+  minute:
+    max_batch_codes: 1
+    cache_ttl_seconds: 60
+    max_range_minutes: 240
+  auto_refresh:
+    enabled: false
+    allowed_intervals_seconds: [30, 60, 120]
+
+ifind_shadow_acceptance:
+  fallback_sample:
+    - 600000.SH
+    - 000001.SZ
+    - 300750.SZ
+    - 688981.SH
+  realtime:
+    minimum_coverage_ratio: 0.95
+    preferred_p95_delay_seconds: 60
+    maximum_acceptable_delay_seconds: 120
+    require_provider_timestamp_ratio: 0.95
+  index:
+    minimum_coverage_ratio: 0.875
+    preferred_p95_delay_seconds: 60
+    maximum_acceptable_delay_seconds: 120
+  minute:
+    minimum_bar_completeness_ratio: 0.95
+    maximum_latest_bar_delay_seconds: 120
+
+ifind_comparison:
+  price:
+    absolute_tolerance: 0.01
+    relative_tolerance: 0.0005
+  percentage:
+    absolute_tolerance: 0.01
+  volume:
+    relative_tolerance: 0.01
+  amount:
+    relative_tolerance: 0.01

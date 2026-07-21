@@ -7,7 +7,14 @@ const [inputPath, outputPath, previewDir] = process.argv.slice(2);
 if (!inputPath || !outputPath) throw new Error("缺少输入或输出路径");
 const data = JSON.parse(await fs.readFile(inputPath, "utf8"));
 const workbook = Workbook.create();
-const names = ["今日概览", "重点候选", "挂单与仓位", "基本面摘要", "量化前100", "当前问题"];
+const isMidday = data.output_mode === "midday";
+const priceSheetName = isMidday ? "价格与权重" : "挂单与仓位";
+const contextSheetName = isMidday ? "复核依据" : "基本面摘要";
+const minimumRecommendationScore = Number(data.minimum_recommendation_score ?? 60);
+const recommendations = Array.isArray(data.recommendations)
+  ? data.recommendations
+  : (data.candidates || []).filter((row) => Number(row["深度复核分"]) >= minimumRecommendationScore);
+const names = ["今日概览", "今日推荐", "重点候选", priceSheetName, contextSheetName, "量化前100", "当前问题"];
 const sheets = Object.fromEntries(names.map((name) => [name, workbook.worksheets.add(name)]));
 
 const C = {
@@ -28,9 +35,11 @@ const colorScale = (range) => range.conditionalFormats.add("colorScale", {criter
   {type: "lowestValue", color: "#F4CCCC"}, {type: "percentile", value: 50, color: "#FFF2CC"},
   {type: "highestValue", color: "#C6E0B4"},
 ]});
-const tableBlock = (sheet, startRow, headers, rows, tableName) => {
+const tableBlock = (sheet, startRow, headers, rows, tableName, emptyLabel = "无待处理事项") => {
   const endCol = col(headers.length);
-  const body = rows.length ? rows.map((row) => row.map(safe)) : [headers.map(() => "")];
+  const body = rows.length
+    ? rows.map((row) => row.map(safe))
+    : [headers.map((_, index) => index === 0 ? emptyLabel : "")];
   const endRow = startRow + body.length;
   sheet.getRange(`A${startRow}:${endCol}${startRow}`).values = [headers];
   sheet.getRange(`A${startRow}:${endCol}${startRow}`).format = {
@@ -70,24 +79,49 @@ const card = (labelRange, valueRange, label, formula, fill) => {
   overview.getRange(labelRange).format = {fill, font: {bold: true, color: C.navy, size: 10}, horizontalAlignment: "center"};
   overview.getRange(valueRange).format = {fill, font: {bold: true, color: C.ink, size: 18}, horizontalAlignment: "center", verticalAlignment: "center", rowHeight: 28};
 };
-card("A5:C5", "A6:C7", "重点候选", "=COUNTA('重点候选'!B5:B200)", C.blue);
-card("D5:F5", "D6:F7", "有仓位建议", `=COUNTIF('挂单与仓位'!V5:V${4 + data.orders.length},\">0\")`, C.green);
-card("G5:I5", "G6:I7", "当前问题", "=COUNTA('当前问题'!A5:A100)", C.red);
-card("J5:L5", "J6:L7", "二筛股票", `=${data.summary["二筛股票数"]}`, C.yellow);
-overview.getRange("A9:L9").merge(); overview.getRange("A9").values = [["优先复核清单"]];
-overview.getRange("A9:L9").format = {fill: C.teal, font: {bold: true, color: C.white, size: 11}, rowHeight: 24};
+card("A4:C4", "A5:C6", "重点候选", "=COUNTA('重点候选'!B5:B200)", C.blue);
+const positionedCountFormula = data.summary["非零仓位数量"] === undefined
+  ? `=COUNTIF('挂单与仓位'!V5:V${4 + data.orders.length},\">0\")`
+  : `=${data.summary["非零仓位数量"]}`;
+card("D4:F4", "D5:F6", isMidday ? "等权候选" : "有仓位建议", positionedCountFormula, C.green);
+card("G4:I4", "G5:I6", "当前问题", "=COUNTA('当前问题'!A5:A100)", C.red);
+card("J4:L4", "J5:L6", "今日推荐", `=${recommendations.length}`, C.yellow);
+overview.getRange("A7:L7").merge(); overview.getRange("A7").values = [["优先复核清单"]];
+overview.getRange("A7:L7").format = {fill: C.teal, font: {bold: true, color: C.white, size: 11}, rowHeight: 24};
 const topHeaders = ["复核排名","股票代码","股票名称","来源","二筛分","深度复核分","结论","建议仓位","参考价","止损价","第二目标价","核心逻辑"];
 const topRows = data.top10.map((r) => [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["二筛得分"],r["深度复核分"],r["二筛结论"],r["建议仓位"],r["参考价"],r["止损价"],r["第二目标价"],r["核心逻辑"]]);
-const top = tableBlock(overview, 10, topHeaders, topRows, "OverviewTopCandidates");
+const top = tableBlock(overview, 8, topHeaders, topRows, "OverviewTopCandidates");
 overview.freezePanes.freezeRows(3);
-overview.getRange(`B11:B${top.endRow}`).format.numberFormat = "@";
-overview.getRange(`E11:F${top.endRow}`).format.numberFormat = "0.00";
-overview.getRange(`H11:H${top.endRow}`).format.numberFormat = "0.00%";
-overview.getRange(`I11:K${top.endRow}`).format.numberFormat = "0.00";
-overview.getRange(`L11:L${top.endRow}`).format.wrapText = true;
-contains(overview.getRange(`G11:G${top.endRow}`), "优先复核", C.green);
-contains(overview.getRange(`G11:G${top.endRow}`), "规则阻断", C.red);
+overview.getRange(`B9:B${top.endRow}`).format.numberFormat = "@";
+overview.getRange(`E9:F${top.endRow}`).format.numberFormat = "0.00";
+overview.getRange(`H9:H${top.endRow}`).format.numberFormat = "0.00%";
+overview.getRange(`I9:K${top.endRow}`).format.numberFormat = "0.00";
+overview.getRange(`L9:L${top.endRow}`).format.wrapText = true;
+contains(overview.getRange(`G9:G${top.endRow}`), "优先复核", C.green);
+contains(overview.getRange(`G9:G${top.endRow}`), "规则阻断", C.red);
 [10,13,14,12,10,12,12,12,11,11,11,42].forEach((w,i)=>setWidth(overview,i+1,w));
+
+// 今日推荐
+const recommendation = sheets["今日推荐"];
+titleBand(
+  recommendation,
+  "K",
+  "今日推荐",
+  `从重点候选中保留最终复核分不低于 ${minimumRecommendationScore.toFixed(0)} 分的股票；模型筛选、人工关注和共同入选使用同一门槛。`,
+);
+const rHeaders = ["复核排名","股票代码","股票名称","入选来源","最终复核分","复核优先级","一级行业","产业链","财务状态","核心逻辑","主要风险"];
+const rRows = recommendations.map((row) => [
+  row["深度复核排名"], row["股票代码"], row["股票名称"], row["入选来源"],
+  row["深度复核分"], row["复核优先级"], row["一级行业"], row["产业链"],
+  row["财务状态"], row["核心逻辑"], row["主要风险"],
+]);
+const rt = tableBlock(recommendation, 4, rHeaders, rRows, "HumanDailyRecommendations", "暂无推荐");
+recommendation.freezePanes.freezeRows(4); recommendation.freezePanes.freezeColumns(3);
+recommendation.getRange(`B5:B${rt.endRow}`).format.numberFormat = "@";
+recommendation.getRange(`E5:E${rt.endRow}`).format.numberFormat = "0.00";
+recommendation.getRange(`J5:K${rt.endRow}`).format.wrapText = true;
+if (recommendations.length) colorScale(recommendation.getRange(`E5:E${rt.endRow}`));
+[10,13,15,14,12,12,16,22,12,46,42].forEach((w,i)=>setWidth(recommendation,i+1,w));
 
 // 重点候选
 const candidate = sheets["重点候选"];
@@ -107,34 +141,64 @@ contains(candidate.getRange(`H5:H${ct.endRow}`),"优先复核",C.green); contain
 for(let i=1;i<=22;i++) setWidth(candidate,i,[20,21].includes(i)?42:[2,3,4,11,12].includes(i)?16:11);
 
 // 挂单与仓位
-const order = sheets["挂单与仓位"];
-titleBand(order,"X","挂单与仓位","价格与仓位均由本地规则计算；按深度复核排名排列。");
-const oHeaders=["复核排名","股票代码","股票名称","入选来源","量化得分","二筛得分","二筛结论","深度复核分","保守价","均衡价","积极价","参考价","最高接受价","止损价","第一目标价","第二目标价","第一目标收益比","第二目标收益比","当前收益比","建议仓位","建议资金","建议股数","预计最大损失","说明"];
-const oRows=data.orders.map((r)=>[r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["量化得分"],r["二筛得分"],r["二筛结论"],r["深度复核分"],r["保守价"],r["均衡价"],r["积极价"],r["参考价"],r["最高接受价"],r["止损价"],r["第一目标价"],r["第二目标价"],r["第一目标风险收益比"],r["第二目标风险收益比"],r["当前风险收益比"],r["建议仓位"],r["建议资金"],r["建议股数"],r["预计最大损失"],r["说明"]]);
+const order = sheets[priceSheetName];
+titleBand(order,isMidday?"R":"X",priceSheetName,isMidday?"价格由本地规则计算；最终候选采用等权参考。":"价格与仓位均由本地规则计算；按深度复核排名排列。");
+const oHeaders=isMidday
+  ? ["复核排名","股票代码","股票名称","入选来源","量化得分","二筛得分","二筛结论","深度复核分","参考价","最高接受价","止损价","第一目标价","第二目标价","第一目标收益比","第二目标收益比","当前收益比","建议仓位","说明"]
+  : ["复核排名","股票代码","股票名称","入选来源","量化得分","二筛得分","二筛结论","深度复核分","保守价","均衡价","积极价","参考价","最高接受价","止损价","第一目标价","第二目标价","第一目标收益比","第二目标收益比","当前收益比","建议仓位","建议资金","建议股数","预计最大损失","说明"];
+const oRows=data.orders.map((r)=>isMidday
+  ? [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["量化得分"],r["二筛得分"],r["二筛结论"],r["深度复核分"],r["参考价"],r["最高接受价"],r["止损价"],r["第一目标价"],r["第二目标价"],r["第一目标风险收益比"],r["第二目标风险收益比"],r["当前风险收益比"],r["建议仓位"],r["说明"]]
+  : [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["量化得分"],r["二筛得分"],r["二筛结论"],r["深度复核分"],r["保守价"],r["均衡价"],r["积极价"],r["参考价"],r["最高接受价"],r["止损价"],r["第一目标价"],r["第二目标价"],r["第一目标风险收益比"],r["第二目标风险收益比"],r["当前风险收益比"],r["建议仓位"],r["建议资金"],r["建议股数"],r["预计最大损失"],r["说明"]]);
 const ot=tableBlock(order,4,oHeaders,oRows,"HumanOrders");
 order.freezePanes.freezeRows(4); order.freezePanes.freezeColumns(3);
-order.getRange(`B5:B${ot.endRow}`).format.numberFormat="@"; order.getRange(`E5:S${ot.endRow}`).format.numberFormat="0.00";
-order.getRange(`T5:T${ot.endRow}`).format.numberFormat="0.00%"; order.getRange(`U5:U${ot.endRow}`).format.numberFormat="#,##0.00";
-order.getRange(`V5:V${ot.endRow}`).format.numberFormat="#,##0"; order.getRange(`W5:W${ot.endRow}`).format.numberFormat="#,##0.00";
-order.getRange(`X5:X${ot.endRow}`).format.wrapText=true; colorScale(order.getRange(`S5:S${ot.endRow}`));
-contains(order.getRange(`X5:X${ot.endRow}`),"阻断",C.red); contains(order.getRange(`X5:X${ot.endRow}`),"不足一手",C.yellow);
-const totalRow=ot.endRow+2; order.getRange(`T${totalRow}:W${totalRow}`).values=[["合计",null,null,null]];
-order.getRange(`T${totalRow}:W${totalRow}`).format={fill:C.navy,font:{bold:true,color:C.white}};
-order.getRange(`T${totalRow}`).formulas=[[`=SUM(T5:T${ot.endRow})`]]; order.getRange(`U${totalRow}`).formulas=[[`=SUM(U5:U${ot.endRow})`]];
-order.getRange(`V${totalRow}`).formulas=[[`=SUM(V5:V${ot.endRow})`]]; order.getRange(`W${totalRow}`).formulas=[[`=SUM(W5:W${ot.endRow})`]];
-order.getRange(`T${totalRow}`).format.numberFormat="0.00%"; order.getRange(`U${totalRow}:W${totalRow}`).format.numberFormat="#,##0.00";
-for(let i=1;i<=24;i++) setWidth(order,i,i===24?42:[2,3,4].includes(i)?15:11);
+order.getRange(`B5:B${ot.endRow}`).format.numberFormat="@";
+if(isMidday){
+  order.getRange(`E5:P${ot.endRow}`).format.numberFormat="0.00";
+  order.getRange(`Q5:Q${ot.endRow}`).format.numberFormat="0.00%";
+  order.getRange(`R5:R${ot.endRow}`).format.wrapText=true;
+  colorScale(order.getRange(`P5:P${ot.endRow}`));
+  const totalRow=ot.endRow+1;
+  order.getRange(`P${totalRow}:Q${totalRow}`).values=[["权重合计",null]];
+  order.getRange(`P${totalRow}:Q${totalRow}`).format={fill:C.navy,font:{bold:true,color:C.white},horizontalAlignment:"center",verticalAlignment:"center"};
+  order.getRange(`Q${totalRow}`).formulas=[[`=SUM(Q5:Q${ot.endRow})`]];
+  order.getRange(`Q${totalRow}`).format.numberFormat="0.00%";
+  for(let i=1;i<=18;i++) setWidth(order,i,i===18?38:[2,3,4].includes(i)?15:11);
+}else{
+  order.getRange(`E5:S${ot.endRow}`).format.numberFormat="0.00";
+  order.getRange(`T5:T${ot.endRow}`).format.numberFormat="0.00%"; order.getRange(`U5:U${ot.endRow}`).format.numberFormat="#,##0.00";
+  order.getRange(`V5:V${ot.endRow}`).format.numberFormat="#,##0"; order.getRange(`W5:W${ot.endRow}`).format.numberFormat="#,##0.00";
+  order.getRange(`X5:X${ot.endRow}`).format.wrapText=true; colorScale(order.getRange(`S5:S${ot.endRow}`));
+  contains(order.getRange(`X5:X${ot.endRow}`),"阻断",C.red); contains(order.getRange(`X5:X${ot.endRow}`),"不足一手",C.yellow);
+  const totalRow=ot.endRow+1; order.getRange(`T${totalRow}:W${totalRow}`).values=[["合计",null,null,null]];
+  order.getRange(`T${totalRow}:W${totalRow}`).format={fill:C.navy,font:{bold:true,color:C.white}};
+  order.getRange(`T${totalRow}`).formulas=[[`=SUM(T5:T${ot.endRow})`]]; order.getRange(`U${totalRow}`).formulas=[[`=SUM(U5:U${ot.endRow})`]];
+  order.getRange(`V${totalRow}`).formulas=[[`=SUM(V5:V${ot.endRow})`]]; order.getRange(`W${totalRow}`).formulas=[[`=SUM(W5:W${ot.endRow})`]];
+  order.getRange(`T${totalRow}`).format.numberFormat="0.00%"; order.getRange(`U${totalRow}:W${totalRow}`).format.numberFormat="#,##0.00";
+  for(let i=1;i<=24;i++) setWidth(order,i,i===24?42:[2,3,4].includes(i)?15:11);
+}
 
 // 基本面摘要
-const fundamental=sheets["基本面摘要"];
-titleBand(fundamental,"S","基本面摘要","星号表示基于现有主营和结构化信息作出的保守归纳，建议重点核验核心逻辑与失效条件。");
-const fHeaders=["复核排名","股票代码","股票名称","入选来源","一级行业","产业链","链条位置","主营业务","核心产品","概念标签","结构性方向","潜在优势","行业趋势","核心逻辑","失效条件","财务状态","财务说明","人工复核","复核优先级"];
-const fRows=data.fundamentals.map((r)=>[r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["一级行业"],r["产业链"],r["链条位置"],r["主营业务"],r["核心产品"],r["概念标签"],r["结构性方向"],r["潜在优势"],r["行业趋势"],r["核心逻辑"],r["失效条件"],r["财务状态"],r["财务说明"],r["人工复核"],r["复核优先级"]]);
+const fundamental=sheets[contextSheetName];
+titleBand(fundamental,isMidday?"L":"S",contextSheetName,isMidday?"汇总午间数据范围、入选逻辑和主要风险，便于快速人工复核。":"星号表示基于现有主营和结构化信息作出的保守归纳，建议重点核验核心逻辑与失效条件。");
+const fHeaders=isMidday
+  ? ["复核排名","股票代码","股票名称","入选来源","一级行业","数据范围","入选逻辑","主要风险","资料状态","财务说明","人工复核","复核优先级"]
+  : ["复核排名","股票代码","股票名称","入选来源","一级行业","产业链","链条位置","主营业务","核心产品","概念标签","结构性方向","潜在优势","行业趋势","核心逻辑","失效条件","财务状态","财务说明","人工复核","复核优先级"];
+const fRows=data.fundamentals.map((r)=>isMidday
+  ? [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["一级行业"],r["结构性方向"],r["核心逻辑"],r["失效条件"],r["财务状态"],r["财务说明"],r["人工复核"],r["复核优先级"]]
+  : [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["一级行业"],r["产业链"],r["链条位置"],r["主营业务"],r["核心产品"],r["概念标签"],r["结构性方向"],r["潜在优势"],r["行业趋势"],r["核心逻辑"],r["失效条件"],r["财务状态"],r["财务说明"],r["人工复核"],r["复核优先级"]]);
 const ft=tableBlock(fundamental,4,fHeaders,fRows,"HumanFundamentals");
 fundamental.freezePanes.freezeRows(4); fundamental.freezePanes.freezeColumns(3);
-fundamental.getRange(`B5:B${ft.endRow}`).format.numberFormat="@"; fundamental.getRange(`H5:Q${ft.endRow}`).format.wrapText=true;
-contains(fundamental.getRange(`P5:P${ft.endRow}`),"承压",C.orange); contains(fundamental.getRange(`R5:R${ft.endRow}`),"是",C.yellow);
-for(let i=1;i<=19;i++) setWidth(fundamental,i,[8,9,10,11,12,13,14,15,17].includes(i)?34:[2,3,4,5,6].includes(i)?16:11);
+fundamental.getRange(`B5:B${ft.endRow}`).format.numberFormat="@";
+if(isMidday){
+  fundamental.getRange(`G5:J${ft.endRow}`).format.wrapText=true;
+  fundamental.getRange(`A5:L${ft.endRow}`).format.rowHeight=54;
+  contains(fundamental.getRange(`K5:K${ft.endRow}`),"是",C.yellow);
+  for(let i=1;i<=12;i++) setWidth(fundamental,i,[7,8,10].includes(i)?38:[2,3,4,5,6,9].includes(i)?16:11);
+}else{
+  fundamental.getRange(`H5:Q${ft.endRow}`).format.wrapText=true;
+  contains(fundamental.getRange(`P5:P${ft.endRow}`),"承压",C.orange); contains(fundamental.getRange(`R5:R${ft.endRow}`),"是",C.yellow);
+  for(let i=1;i<=19;i++) setWidth(fundamental,i,[8,9,10,11,12,13,14,15,17].includes(i)?34:[2,3,4,5,6].includes(i)?16:11);
+}
 
 // 量化前100
 const quant=sheets["量化前100"];
@@ -161,7 +225,7 @@ const output=await SpreadsheetFile.exportXlsx(workbook); await output.save(outpu
 
 if(previewDir){
   await fs.mkdir(previewDir,{recursive:true});
-  const ranges={"今日概览":"A1:L22","重点候选":"A1:V16","挂单与仓位":"A1:X16","基本面摘要":"A1:S12","量化前100":"A1:L18","当前问题":"A1:E12"};
+  const ranges={"今日概览":"A1:L22","今日推荐":"A1:K16","重点候选":"A1:V16",[priceSheetName]:isMidday?"A1:R16":"A1:X16",[contextSheetName]:isMidday?"A1:L12":"A1:S12","量化前100":"A1:L18","当前问题":"A1:E12"};
   for(const [sheetName,range] of Object.entries(ranges)){
     const image=await workbook.render({sheetName,range,scale:1.1,format:"png"});
     await fs.writeFile(path.join(previewDir,`${sheetName}.png`),new Uint8Array(await image.arrayBuffer()));

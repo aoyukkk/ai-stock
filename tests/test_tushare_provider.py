@@ -230,3 +230,17 @@ def test_tushare_kline_falls_back_to_baostock(monkeypatch, tmp_path) -> None:
 
     assert bars[0].source == "baostock"
     assert provider.last_fallback_used is True
+
+
+def test_open_trade_dates_fall_back_to_verified_daily_cache(monkeypatch, tmp_path) -> None:
+    _install_fake_tushare(monkeypatch)
+    provider = TushareMarketDataProvider(cache_dir=tmp_path, request_interval_seconds=0)
+    provider.get_trade_calendar = lambda **kwargs: types.SimpleNamespace(status="empty", records=[])
+    daily_dir = tmp_path / "trade_date" / "daily"
+    daily_dir.mkdir(parents=True)
+    for name in ("20260713.json", "20260714.json", "20260716.json", "not-a-date.json"):
+        (daily_dir / name).write_text("[]", encoding="utf-8")
+
+    dates = provider.get_open_trade_dates("2026-07-14", "2026-07-16")
+
+    assert dates == ["20260714", "20260716"]

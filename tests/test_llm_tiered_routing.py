@@ -102,3 +102,84 @@ def test_explicit_real_high_impact_failure_does_not_fallback() -> None:
     assert response.task_tier == "HIGH_IMPACT"
     assert deepseek.calls == 1
     assert mock.calls == 0
+
+
+def test_explicit_disabled_thinking_overrides_high_impact_route() -> None:
+    config = LLMRouterConfig(
+        mock_only=False,
+        default_provider="deepseek",
+        default_model="deepseek-v4-pro",
+        cache_enabled=False,
+        cache_ttl_seconds=60,
+        routing={},
+        fallback={},
+        budgets={},
+        aliases={
+            "controller-high-capability": {
+                "provider": "deepseek",
+                "model": "deepseek-v4-pro",
+            },
+        },
+        task_types={"pro_single_review_v3": "HIGH_IMPACT"},
+        tier_routing={
+            "HIGH_IMPACT": {
+                "model_alias": "controller-high-capability",
+                "thinking": "enabled",
+                "reasoning_effort": "max",
+            },
+        },
+    )
+    router = LLMRouter(config, registry=LLMProviderRegistry({"deepseek": FailingProProvider()}))
+
+    resolved = router._resolve_request(
+        LLMRequest(
+            agent_name="pro_single_v3",
+            task="pro_single_review_v3",
+            messages=[LLMMessage(role="user", content="TEST_ONLY")],
+            thinking_mode="disabled",
+            reasoning_effort=None,
+        )
+    )
+
+    assert resolved.task_tier == "HIGH_IMPACT"
+    assert resolved.thinking_mode == "disabled"
+    assert resolved.reasoning_effort is None
+
+
+def test_high_impact_route_keeps_reasoning_when_request_does_not_override() -> None:
+    config = LLMRouterConfig(
+        mock_only=False,
+        default_provider="deepseek",
+        default_model="deepseek-v4-pro",
+        cache_enabled=False,
+        cache_ttl_seconds=60,
+        routing={},
+        fallback={},
+        budgets={},
+        aliases={
+            "controller-high-capability": {
+                "provider": "deepseek",
+                "model": "deepseek-v4-pro",
+            },
+        },
+        task_types={"pro_single_review_v3": "HIGH_IMPACT"},
+        tier_routing={
+            "HIGH_IMPACT": {
+                "model_alias": "controller-high-capability",
+                "thinking": "enabled",
+                "reasoning_effort": "max",
+            },
+        },
+    )
+    router = LLMRouter(config, registry=LLMProviderRegistry({"deepseek": FailingProProvider()}))
+
+    resolved = router._resolve_request(
+        LLMRequest(
+            agent_name="pro_single_v3",
+            task="pro_single_review_v3",
+            messages=[LLMMessage(role="user", content="TEST_ONLY")],
+        )
+    )
+
+    assert resolved.thinking_mode == "enabled"
+    assert resolved.reasoning_effort == "max"

@@ -2,7 +2,15 @@ import { safeStorage } from "electron";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-type Provider = "tushare" | "deepseek" | "openai";
+export type Provider =
+  | "tushare"
+  | "deepseek"
+  | "openai"
+  | "tavily"
+  | "ifind_username"
+  | "ifind_password"
+  | "ifind_access"
+  | "ifind_refresh";
 type SecretFile = Partial<Record<Provider, string>>;
 
 export class SecretManager {
@@ -17,12 +25,18 @@ export class SecretManager {
     return {
       tushare: { configured: Boolean(values.tushare) },
       deepseek: { configured: Boolean(values.deepseek) },
-      openai: { configured: Boolean(values.openai) }
+      openai: { configured: Boolean(values.openai) },
+      tavily: { configured: Boolean(values.tavily) },
+      ifind_username: { configured: Boolean(values.ifind_username) },
+      ifind_password: { configured: Boolean(values.ifind_password) },
+      ifind_access: { configured: Boolean(values.ifind_access) },
+      ifind_refresh: { configured: Boolean(values.ifind_refresh) }
     };
   }
 
   async set(provider: Provider, value: string): Promise<void> {
-    if (value.trim().length < 8) throw new Error("SECRET_TOO_SHORT");
+    const minimumLength = provider === "ifind_username" ? 1 : 8;
+    if (value.trim().length < minimumLength) throw new Error("SECRET_TOO_SHORT");
     if (!safeStorage.isEncryptionAvailable()) throw new Error("OS_ENCRYPTION_UNAVAILABLE");
     const values = await this.read();
     values[provider] = safeStorage.encryptString(value.trim()).toString("base64");
@@ -39,7 +53,10 @@ export class SecretManager {
     if (!safeStorage.isEncryptionAvailable()) return {};
     const values = await this.read();
     const result: Partial<Record<Provider, string>> = {};
-    for (const provider of ["tushare", "deepseek", "openai"] as Provider[]) {
+    for (const provider of [
+      "tushare", "deepseek", "openai", "tavily",
+      "ifind_username", "ifind_password", "ifind_access", "ifind_refresh"
+    ] as Provider[]) {
       const encrypted = values[provider];
       if (encrypted) result[provider] = safeStorage.decryptString(Buffer.from(encrypted, "base64"));
     }
@@ -62,4 +79,3 @@ export class SecretManager {
     await rename(temporary, this.filename);
   }
 }
-

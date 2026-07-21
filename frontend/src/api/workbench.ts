@@ -14,7 +14,9 @@ export const workbenchApi = {
   setSecret: (provider: string, value: string) => apiPost(`/api/workbench/secrets/${provider}`, { value }),
   testSecret: (provider: string) => apiPost<{ status: string }>(`/api/workbench/secrets/${provider}/test`),
   deleteSecret: (provider: string) => apiDelete(`/api/workbench/secrets/${provider}`),
-  run: (type: "data" | "quant" | "flash" | "final" | "export", tradeDate: string, confirmBudget = false, force = false) => apiPost<PipelineJob>(`/api/workbench/${type}/run`, { trade_date: tradeDate, mode: "REAL", confirm_budget: confirmBudget, force }),
+  run: (type: "data" | "quant" | "flash" | "final" | "market_review" | "export", tradeDate: string, confirmBudget = false, force = false) => type === "market_review"
+    ? apiPost<PipelineJob>("/api/workbench/market-review/run", { trade_date: tradeDate, mode: "DATA_ONLY", force, allow_real_pro: false })
+    : apiPost<PipelineJob>(`/api/workbench/${type}/run`, { trade_date: tradeDate, mode: "REAL", confirm_budget: confirmBudget, force }),
   jobs: (tradeDate: string, page = 1, pageSize = 20, signal?: AbortSignal) => apiGet<PageResult<PipelineJob & Record<string, unknown>>>(`/api/workbench/jobs?${dateQuery(tradeDate)}&page=${page}&page_size=${pageSize}`, { signal }),
   job: (jobId: string) => apiGet<PipelineJob>(`/api/workbench/jobs/${encodeURIComponent(jobId)}`),
   cancelJob: (jobId: string) => apiPost<PipelineJob>(`/api/workbench/jobs/${encodeURIComponent(jobId)}/cancel`),

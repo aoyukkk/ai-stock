@@ -7,6 +7,10 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  --app-border: #dce4eb;
+  --app-text: #1d2d3f;
+  --app-muted: #6f7d8d;
+  --app-blue: #235b91;
 }
 
 * {
@@ -19,6 +23,9 @@ body {
   min-height: 100vh;
   background: #f5f7fb;
 }
+
+button, input, textarea, select { font: inherit; }
+::selection { background: #dcebf8; color: #17365d; }
 
 a {
   color: inherit;
@@ -89,3 +96,20 @@ a {
 
 .return-up { color: #c0392b; }
 .return-down { color: #17834b; }
+
+.el-card { border-color: var(--app-border); border-radius: 6px; }
+.el-card__header { padding: 13px 16px; }
+.el-button { border-radius: 5px; }
+.el-input__wrapper, .el-select__wrapper, .el-textarea__inner { border-radius: 5px; }
+.el-tabs__item { font-weight: 600; }
+.el-tabs__nav-wrap::after { height: 1px; background: #e2e8ee; }
+.el-alert { border-radius: 6px; }
+.el-dialog, .el-drawer { --el-dialog-border-radius: 7px; }
+.el-overlay { backdrop-filter: blur(2px); }
+
+@media (max-width: 760px) {
+  .el-dialog { width: calc(100vw - 24px) !important; max-width: calc(100vw - 24px); margin-top: 5vh !important; }
+  .el-drawer { max-width: 100vw; }
+  .el-message-box { width: calc(100vw - 24px); max-width: 420px; }
+  .el-pagination { justify-content: center; flex-wrap: wrap; row-gap: 8px; }
+}

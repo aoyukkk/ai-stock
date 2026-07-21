@@ -1,0 +1,39 @@
+reporting:
+  default_workbook_profile: trading_assistant_human_v1
+  default_language: zh-CN
+  default_filename: "智能交易助手_YYYY-MM-DD.xlsx"
+  daily_output_directory: "outputs/YYYY-MM-DD"
+  midday_filename: "智能交易助手_午盘_YYYY-MM-DD.xlsx"
+  midday_output_directory: "outputs/YYYY-MM-DD/午盘"
+  sheet_order:
+    - 今日概览
+    - 今日推荐
+    - 重点候选
+    - 价格与权重或挂单与仓位
+    - 复核依据或基本面摘要
+    - 量化前100
+    - 当前问题
+  presentation:
+    use_human_readable_labels: true
+    center_table_cells: true
+    preserve_stock_code_leading_zero: true
+    hide_gridlines: true
+    freeze_table_headers: true
+    use_consistent_navy_header: true
+    keep_machine_audit_out_of_human_workbook: true
+    avoid_empty_data_rows: true
+    keep_empty_recommendation_table: true
+  validation:
+    require_recommendation_sheet: true
+    require_unique_table_names: true
+    require_table_header_metadata_match: true
+    reject_formula_errors: true
+    reject_blank_data_rows: true
+    reject_machine_enum_leaks: true
+    reject_broken_zip_package: true
+  delivery:
+    human_workbook_at_daily_root: true
+    midday_workbook_in_named_subdirectory: true
+    machine_detail_in_history_or_audit: true
+    preview_every_sheet: true
+    replace_only_after_validation_passes: true

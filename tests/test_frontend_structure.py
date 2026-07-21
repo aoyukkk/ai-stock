@@ -108,3 +108,22 @@ def test_frontend_language_selector_supports_chinese() -> None:
     assert "el-config-provider" in app
     assert "language.t('dashboard.title')" in dashboard
     assert "language.t('virtual.orders')" in virtual_trading
+
+
+def test_workbench_shell_is_grouped_and_mobile_responsive() -> None:
+    layout = (FRONTEND / "src/layouts/MainLayout.vue").read_text(encoding="utf-8")
+    workbench = (FRONTEND / "src/views/WorkbenchView.vue").read_text(encoding="utf-8")
+
+    for group in ("日常作业", "分析结果", "复盘与管理"):
+        assert group in layout
+    for path in (
+        "/workbench", "/midday-recommendation", "/realtime-monitor", "/post-close-actions",
+        "/quant-ranking", "/llm-screening", "/manual-selection", "/final-ranking",
+        "/market-review", "/selection-performance", "/settings",
+    ):
+        assert path in layout
+    assert "mobileNavOpen" in layout
+    assert "@media (max-width: 760px)" in layout
+    assert "quick-actions" in workbench
+    assert "pipeline-row" in workbench
+    assert workbench.count("<el-card") == 0

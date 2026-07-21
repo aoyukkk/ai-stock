@@ -70,7 +70,7 @@ class ExistingRunRequest(BaseModel):
 
 class SecretRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    value: str = Field(min_length=8, max_length=512)
+    value: str = Field(min_length=1, max_length=512)
 
 
 def _service() -> tuple[Any, WorkbenchService]:
@@ -153,7 +153,12 @@ def data_update(body: DataUpdateRequest, request: Request, background_tasks: Bac
                     "尚未配置 Tushare Token，无法更新行情数据。",
                     trace_id=request.state.trace_id,
                 )
-            result = WorkflowApplicationService(session).start("DATA", body.trade_date, {"force": body.mode == "FORCE_REFRESH"})
+            result = WorkflowApplicationService(session).start(
+                "DATA",
+                body.trade_date,
+                {"force": body.mode == "FORCE_REFRESH"},
+                actor=_actor(request),
+            )
             if result.get("duplicate_status") == "NEW_JOB":
                 background_tasks.add_task(execute_persisted_job, result["job_id"])
             return success_response(data=result, trace_id=request.state.trace_id)
@@ -372,7 +377,12 @@ def start_job(job_type: Literal["data", "quant", "flash", "final", "export"], bo
                     raise ValueError("DEEPSEEK_API_KEY_NOT_CONFIGURED")
                 if not body.confirm_budget:
                     raise ValueError("LLM_BUDGET_CONFIRMATION_REQUIRED")
-            result = WorkflowApplicationService(session).start(job_type.upper(), body.trade_date, {"confirm_budget": body.confirm_budget, "force": body.force})
+            result = WorkflowApplicationService(session).start(
+                job_type.upper(),
+                body.trade_date,
+                {"confirm_budget": body.confirm_budget, "force": body.force},
+                actor=_actor(request),
+            )
             if result.get("duplicate_status") == "NEW_JOB":
                 background_tasks.add_task(execute_persisted_job, result["job_id"])
         return success_response(data=result, trace_id=request.state.trace_id)
@@ -389,7 +399,9 @@ def export_excel(body: JobRequest, request: Request, background_tasks: Backgroun
         if body.mode == "USE_EXISTING":
             result = service.start_job("EXPORT", body.trade_date, mode=body.mode)
         else:
-            result = WorkflowApplicationService(session).start("EXPORT", body.trade_date, {"force": body.force})
+            result = WorkflowApplicationService(session).start(
+                "EXPORT", body.trade_date, {"force": body.force}, actor=_actor(request)
+            )
             if result.get("duplicate_status") == "NEW_JOB":
                 background_tasks.add_task(execute_persisted_job, result["job_id"])
         return success_response(data=result, trace_id=request.state.trace_id)
@@ -437,7 +449,7 @@ def cancel_job(job_id: str, request: Request) -> dict:
 def resume_job(job_id: str, request: Request, background_tasks: BackgroundTasks) -> dict:
     session, service = _service()
     try:
-        result = WorkflowApplicationService(session).resume(job_id)
+        result = WorkflowApplicationService(session).resume(job_id, actor=_actor(request))
         if result.get("duplicate_status") == "NEW_JOB":
             background_tasks.add_task(execute_persisted_job, result["job_id"])
         return success_response(data=result, trace_id=request.state.trace_id)
@@ -445,3 +457,8 @@ def resume_job(job_id: str, request: Request, background_tasks: BackgroundTasks)
         return error_response("JOB_NOT_RESUMABLE", str(exc), trace_id=request.state.trace_id)
     finally:
         session.close()
+
+
+def _actor(request: Request) -> dict[str, str] | None:
+    user = getattr(request.state, "internal_user", None)
+    return {"email": user.email, "role": user.role} if user else None

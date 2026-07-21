@@ -1,0 +1,52 @@
+entry_timing_v2_2:
+  enabled: false
+  shadow_only: true
+  versions:
+    regime: market_regime_v2
+    deployment: regime_deployment_v2_2
+    concentration: portfolio_concentration_v1
+    trigger: intraday_entry_trigger_v1
+    evaluation: market_adjusted_performance_v1
+  regime:
+    crash_cooldown_trading_days: 2
+    risk_on_confirmation_days: 2
+    risk_on_confirmations_in_three_days: 2
+    crash_equal_weight_return: -0.03
+    crash_declining_ratio: 0.85
+    crash_below_5_ratio: 0.30
+    crash_limit_down_count: 100
+    risk_off_equal_weight_return: -0.007
+    risk_off_declining_ratio: 0.65
+    risk_on_equal_weight_return: 0.007
+    risk_on_advancing_ratio: 0.65
+    risk_on_emotion_score: 65
+    risk_on_industry_advancing_ratio: 0.60
+  deployment:
+    RISK_ON: {maximum_candidates: 20, position_multiplier: 1.0}
+    ROTATION: {maximum_candidates: 8, position_multiplier: 0.65}
+    REPAIR: {maximum_candidates: 3, position_multiplier: 0.50}
+    RISK_OFF: {maximum_candidates: 0, position_multiplier: 0.0}
+    CRASH: {maximum_candidates: 0, position_multiplier: 0.0}
+    minimum_sector_rank_to_survive: 0.50
+  concentration:
+    maximum_per_sw_l1_industry: 3
+    maximum_industry_pool_ratio: 0.30
+    maximum_per_high_correlation_cluster: 2
+    minimum_sector_rank_to_survive: 0.50
+    diversification_enabled: true
+  trigger:
+    repair_confirmation_minutes: 15
+    maximum_opening_gap_percent: 5.0
+    minimum_volume_ratio: 1.20
+    minimum_sector_relative_strength_percent: 0.0
+    maximum_price_above_vwap_percent: 3.0
+  safety:
+    advisory_only: true
+    actionable: false
+    scheduler_enabled: false
+    create_orders: false
+    create_virtual_orders: false
+    real_trading_enabled: false
+    external_historical_calls_enabled: false
+    llm_calls_enabled: false
+    parameter_search_enabled: false

@@ -190,6 +190,36 @@ def test_thinking_parameters_are_explicit_and_temperature_is_omitted(monkeypatch
     assert response.raw_response_metadata["reasoning_tokens"] == 3
 
 
+def test_disabled_thinking_is_sent_explicitly_without_reasoning_effort(monkeypatch) -> None:
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "model": "deepseek-v4-pro",
+                "choices": [{"message": {"content": '{"result":"OK"}'}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12},
+            },
+        )
+
+    request = _request().model_copy(
+        update={
+            "model": "deepseek-v4-pro",
+            "thinking_mode": "disabled",
+            "reasoning_effort": None,
+            "temperature": 0.2,
+        }
+    )
+    _provider(monkeypatch, handler).chat(request)
+
+    assert captured["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in captured
+    assert captured["temperature"] == 0.2
+
+
 def test_remote_model_list_is_normalized(monkeypatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"

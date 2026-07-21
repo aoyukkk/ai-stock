@@ -1,0 +1,63 @@
+export interface MiddayStatus extends Record<string, unknown> {
+  run_id?: string;
+  trade_date?: string;
+  decision_time?: string;
+  market_session?: string;
+  baseline_trade_date?: string;
+  status: string;
+  current_stage?: string;
+  valid_from?: string;
+  valid_until?: string;
+  base_pool_count?: number;
+  snapshot_count?: number;
+  minute_count?: number;
+  flash_count?: number;
+  pro_count?: number;
+  final_count?: number;
+  held_count?: number;
+  token_usage?: number;
+  total_duration_ms?: number;
+  excel_path?: string;
+  previous_regime?: string;
+  midday_regime?: string;
+  counts?: Record<string, unknown>;
+  afternoon_recheck_run_id?: string;
+  afternoon_recheck_status?: string;
+}
+
+export interface MiddayResult extends Record<string, unknown> {
+  stock_code: string;
+  stock_name?: string;
+  position_status: string;
+  pool_sources: string[];
+  base_quant_rank: number;
+  base_quant_score: number;
+  feature_scope: string;
+  midday_delta: number;
+  midday_enhanced_score: number;
+  flash_score?: number;
+  pro_score?: number;
+  pro_rank?: number;
+  candidate_action: string;
+  held_action?: string;
+  recommended_price?: number;
+  max_acceptable_price?: number;
+  stop_loss?: number;
+  take_profit_1?: number;
+  take_profit_2?: number;
+  suggested_weight?: number;
+  key_reasons: string[];
+  key_risks: string[];
+  requires_manual_review: boolean;
+  result_layer?: "BUY_READY" | "AFTERNOON_WATCH" | "REGIME_BLOCKED_HIGH_SCORE" | "CONCENTRATION_REVIEW" | "BLOCKED";
+  strategy_id?: string;
+  base_strategy_id?: string;
+  strategy_source?: string;
+  live_strategy_status?: string;
+  strategy_still_valid?: boolean;
+  admission_score_v2_1?: number;
+  admission_status_v2?: string;
+  trigger_status?: string;
+  trigger_reasons?: string[];
+  afternoon_recheck?: Record<string, unknown>;
+}

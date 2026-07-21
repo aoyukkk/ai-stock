@@ -23,6 +23,7 @@ export interface WorkbenchStatus {
   manual: StageStatus;
   final: StageStatus;
   export: StageStatus;
+  market_review: StageStatus;
   counts: Record<string, number>;
   consistency: { status: "PASS" | "WARNING" | "EMPTY"; differences: Record<string, unknown>[] };
   manual_count: number;

@@ -4,13 +4,14 @@ import hashlib
 import json
 import os
 import uuid
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 
 from backend.application.excel_export import DailyExcelExportService
 from backend.application.pro_v3 import ProductionProV3ApplicationService
@@ -25,9 +26,11 @@ from database.models.validation import (
     ProResumeRun,
 )
 from database.models.workbench import ManualSelectionRecord, PipelineJob
+from database.models.internal_auth import JobExecutionLock
 from database.session import get_session, init_db
 from database.stock_master_sync import StockMasterSyncService
 from datasource.tushare_provider import TushareMarketDataProvider
+from market_review.service import MarketReviewService
 from quant.run_repository import QuantRunRepository
 from research.knowledge_mode import LLMKnowledgeMode
 from scripts.prewarm_tushare_trade_date_cache import run_prewarm
@@ -40,7 +43,7 @@ from trader_demo.service import ManualSelection, TraderDemoService
 
 
 ACTIVE = {"PENDING", "RUNNING", "CANCELLATION_REQUESTED"}
-JOB_TYPES = {"DATA", "QUANT", "FLASH", "FINAL", "EXPORT"}
+JOB_TYPES = {"DATA", "QUANT", "FLASH", "FINAL", "EXPORT", "MARKET_DAILY_REVIEW"}
 
 
 class WorkflowApplicationService:
@@ -49,11 +52,19 @@ class WorkflowApplicationService:
     def __init__(self, session) -> None:
         self.session = session
 
-    def start(self, job_type: str, trade_date: date, options: dict[str, Any] | None = None) -> dict[str, Any]:
+    def start(
+        self,
+        job_type: str,
+        trade_date: date,
+        options: dict[str, Any] | None = None,
+        *,
+        actor: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         normalized = job_type.upper()
         if normalized not in JOB_TYPES:
             raise ValueError("INVALID_JOB_TYPE")
         options = _safe_options(options or {})
+        actor = _safe_actor(actor)
         request_hash = hashlib.sha256(json.dumps({"job_type": normalized, "trade_date": str(trade_date), "options": options}, sort_keys=True).encode()).hexdigest()
         active = self.session.scalar(select(PipelineJob).where(
             PipelineJob.job_type == normalized,
@@ -61,7 +72,7 @@ class WorkflowApplicationService:
             PipelineJob.status.in_(ACTIVE),
         ).order_by(PipelineJob.created_at.desc()))
         if active is not None:
-            return _job_payload(active) | {"duplicate_status": "ACTIVE_JOB_REUSED"}
+            return _job_payload(active) | {"duplicate_status": "ACTIVE_JOB_REUSED", "code": "JOB_ALREADY_RUNNING"}
         completed = self.session.scalar(select(PipelineJob).where(
             PipelineJob.job_type == normalized,
             PipelineJob.trade_date == trade_date,
@@ -69,14 +80,46 @@ class WorkflowApplicationService:
         ).order_by(PipelineJob.created_at.desc()))
         if completed is not None and (completed.checkpoint or {}).get("request_hash") == request_hash and not options.get("force"):
             return _job_payload(completed) | {"duplicate_status": "SUCCESS_CACHE_HIT"}
+        lock_key = f"{normalized}:{trade_date.isoformat()}"
+        existing_lock = self.session.scalar(select(JobExecutionLock).where(JobExecutionLock.lock_key == lock_key))
+        if existing_lock is not None:
+            locked_job = self.session.scalar(select(PipelineJob).where(PipelineJob.job_id == existing_lock.job_id))
+            if locked_job is not None and locked_job.status in ACTIVE and _aware(existing_lock.expires_at) > datetime.now(timezone.utc):
+                return _job_payload(locked_job) | {"duplicate_status": "ACTIVE_JOB_REUSED", "code": "JOB_ALREADY_RUNNING"}
+            self.session.delete(existing_lock)
+            self.session.commit()
         row = PipelineJob(
             job_id=f"desktop-{uuid.uuid4().hex[:20]}", job_type=normalized, trade_date=trade_date,
             status="PENDING", stage="QUEUED", progress_current=0, progress_total=1,
             success_count=0, failure_count=0, token_usage=0, cost_usd=0.0,
-            run_ids={}, checkpoint={"request_hash": request_hash, "options": options, "mode": "REAL_APPLICATION_SERVICE"},
+            run_ids={}, checkpoint={
+                "request_hash": request_hash,
+                "options": options,
+                "mode": "REAL_APPLICATION_SERVICE",
+                "started_by": actor["email"],
+                "started_by_role": actor["role"],
+            },
         )
         self.session.add(row)
-        self.session.commit()
+        self.session.add(JobExecutionLock(
+            lock_key=lock_key,
+            job_id=row.job_id,
+            started_by=actor["email"],
+            current_stage="QUEUED",
+            acquired_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
+        ))
+        try:
+            self.session.commit()
+        except IntegrityError:
+            self.session.rollback()
+            concurrent_lock = self.session.scalar(select(JobExecutionLock).where(JobExecutionLock.lock_key == lock_key))
+            concurrent = self.session.scalar(select(PipelineJob).where(
+                PipelineJob.job_id == concurrent_lock.job_id
+            )) if concurrent_lock else None
+            if concurrent is None:
+                raise
+            return _job_payload(concurrent) | {"duplicate_status": "ACTIVE_JOB_REUSED", "code": "JOB_ALREADY_RUNNING"}
         return _job_payload(row) | {"duplicate_status": "NEW_JOB"}
 
     def cancel(self, job_id: str) -> dict[str, Any]:
@@ -87,12 +130,12 @@ class WorkflowApplicationService:
             self.session.commit()
         return _job_payload(row)
 
-    def resume(self, job_id: str) -> dict[str, Any]:
+    def resume(self, job_id: str, *, actor: dict[str, Any] | None = None) -> dict[str, Any]:
         row = self._job(job_id)
         if row.status not in {"FAILED", "CANCELLED", "PARTIAL_SUCCESS"}:
             raise ValueError("JOB_NOT_RESUMABLE")
         options = dict((row.checkpoint or {}).get("options") or {}) | {"resume_from_job_id": row.job_id, "force": True}
-        return self.start(row.job_type, row.trade_date, options)
+        return self.start(row.job_type, row.trade_date, options, actor=actor)
 
     def _job(self, job_id: str) -> PipelineJob:
         row = self.session.scalar(select(PipelineJob).where(PipelineJob.job_id == job_id))
@@ -108,7 +151,7 @@ def execute_persisted_job(job_id: str) -> None:
         if job is None or job.status not in {"PENDING", "CANCELLATION_REQUESTED"}: return
         if job.status == "CANCELLATION_REQUESTED":
             job.status, job.stage, job.finished_at = "CANCELLED", "CANCELLED", datetime.now(timezone.utc)
-            session.commit(); return
+            _release_job_lock(session, job.job_id); session.commit(); return
         job.status, job.stage, job.started_at = "RUNNING", "STARTING", datetime.now(timezone.utc)
         session.commit()
         options = dict((job.checkpoint or {}).get("options") or {})
@@ -118,13 +161,16 @@ def execute_persisted_job(job_id: str) -> None:
             "FLASH": _run_flash,
             "FINAL": _run_final,
             "EXPORT": _run_export,
+            "MARKET_DAILY_REVIEW": _run_market_review,
         }
         result = handlers[job.job_type](session, job, options)
         _check_cancelled(session, job)
         _mark_job_success(job, result)
+        _release_job_lock(session, job.job_id)
         session.commit()
     except JobCancelled:
         job.status, job.stage, job.finished_at = "CANCELLED", "CANCELLED", datetime.now(timezone.utc)
+        _release_job_lock(session, job.job_id)
         session.commit()
     except Exception as exc:
         job.status, job.stage = "FAILED", "FAILED"
@@ -132,6 +178,7 @@ def execute_persisted_job(job_id: str) -> None:
         job.error_code = type(exc).__name__[:128]
         job.error_message = _safe_error(exc)
         job.finished_at = datetime.now(timezone.utc)
+        _release_job_lock(session, job.job_id)
         session.commit()
     finally:
         session.close()
@@ -191,10 +238,14 @@ def _run_flash(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, 
     _require_secret("DEEPSEEK_API_KEY")
     if not options.get("confirm_budget"):
         raise ValueError("LLM_BUDGET_CONFIRMATION_REQUIRED")
-    quant = session.scalar(select(QuantRun).where(
+    quant_query = select(QuantRun).where(
         QuantRun.base_market_trade_date == job.trade_date,
         QuantRun.status == "COMPLETED", QuantRun.actionable.is_(True), QuantRun.no_llm_call_verified.is_(True),
-    ).order_by(QuantRun.created_at.desc()))
+    )
+    requested_quant_run_id = str(options.get("quant_run_id") or "").strip()
+    if requested_quant_run_id:
+        quant_query = quant_query.where(QuantRun.run_id == requested_quant_run_id)
+    quant = session.scalar(quant_query.order_by(QuantRun.created_at.desc()))
     if quant is None: raise ValueError("ACTIONABLE_QUANT_RUN_REQUIRED")
     manual_rows = list(session.scalars(select(ManualSelectionRecord).where(ManualSelectionRecord.trade_date == job.trade_date)))
     manual = [ManualSelection(row.stock_code, row.reason, row.priority) for row in manual_rows]
@@ -249,7 +300,7 @@ def _run_flash(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, 
                 account_equity=Decimal(str(settings["validation_account_equity"])),
                 available_cash=Decimal(str(settings["validation_available_cash"])),
                 continue_on_stock_error=True, reuse_successful=True,
-                knowledge_mode=LLMKnowledgeMode.LLM_UNVERIFIED_CURRENT,
+                knowledge_mode=LLMKnowledgeMode.STRUCTURED_INPUT_ONLY,
                 model_validation_top_n=int(settings["llm_top_n"]), defer_candidate_generation=True,
                 concurrency=int(settings["flash_concurrency"]), batch_size=int(settings["flash_batch_size"]),
                 checkpoint_callback=checkpoint,
@@ -267,12 +318,8 @@ def _run_flash(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, 
 def _run_final(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, Any]:
     _require_secret("DEEPSEEK_API_KEY")
     if not options.get("confirm_budget"): raise ValueError("LLM_BUDGET_CONFIRMATION_REQUIRED")
-    flashes = list(session.scalars(select(ModelValidationRun).join(QuantRun, QuantRun.run_id == ModelValidationRun.quant_run_id).where(
-        QuantRun.base_market_trade_date == job.trade_date,
-        ModelValidationRun.real_llm.is_(True),
-        ModelValidationRun.status.in_(["COMPLETED", "SUCCESS", "PARTIAL_SUCCESS"]),
-    ).order_by(ModelValidationRun.created_at.desc())))
-    flash = next((row for row in flashes if _flash_usable_for_final(row)), None)
+    requested_flash_run_id = str(options.get("flash_run_id") or "").strip()
+    flash = _select_flash_for_final(session, job.trade_date, requested_flash_run_id)
     if flash is None: raise ValueError("COMPLETED_FLASH_RUN_REQUIRED")
     settings = _workbench_settings(session)
     job.stage = "PRO_V3_LOCAL_RANKING"; session.commit()
@@ -281,7 +328,67 @@ def _run_final(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, 
         account_equity=Decimal(str(settings["validation_account_equity"])),
         available_cash=Decimal(str(settings["validation_available_cash"])),
     )
-    return {"run_ids": {"flash_run_id": flash.run_id, **result}, "candidate_count": result["candidate_count"]}
+    market_review: dict[str, Any] = {"status": "NOT_RUN"}
+    review_service = MarketReviewService(session)
+    if bool(review_service.config.get("auto_run_after_pipeline", True)):
+        try:
+            review = review_service.run(job.trade_date, mode="DATA_ONLY")
+            market_review = {
+                "status": review["run"]["status"],
+                "run_id": review["run"]["run_id"],
+            }
+        except Exception as exc:
+            market_review = {"status": "FAILED", "error_code": type(exc).__name__}
+    return {
+        "run_ids": {"flash_run_id": flash.run_id, **result, "market_review_run_id": market_review.get("run_id")},
+        "candidate_count": result["candidate_count"],
+        "market_review": market_review,
+    }
+
+
+def _select_flash_for_final(
+    session,
+    trade_date: date,
+    requested_flash_run_id: str = "",
+) -> ModelValidationRun | None:
+    flash_query = select(ModelValidationRun).join(
+        QuantRun, QuantRun.run_id == ModelValidationRun.quant_run_id
+    ).where(
+        QuantRun.base_market_trade_date == trade_date,
+        ModelValidationRun.real_llm.is_(True),
+        ModelValidationRun.status.in_(["COMPLETED", "SUCCESS", "PARTIAL_SUCCESS"]),
+    )
+    if requested_flash_run_id:
+        flash_query = flash_query.where(ModelValidationRun.run_id == requested_flash_run_id)
+    flashes = list(session.scalars(flash_query.order_by(ModelValidationRun.created_at.desc())))
+    return next((row for row in flashes if _flash_usable_for_final(row)), None)
+
+
+def _run_market_review(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, Any]:
+    job.stage = "BUILDING_MARKET_SNAPSHOT"
+    job.progress_current, job.progress_total = 1, 8
+    session.commit()
+    result = MarketReviewService(session).run(
+        job.trade_date,
+        mode=str(options.get("mode") or "DATA_ONLY"),
+        force=bool(options.get("force")),
+        allow_real_pro=bool(options.get("allow_real_pro", False)),
+        allow_real_search=bool(options.get("allow_real_search", False)),
+    )
+    job.stage = "PERSISTING_RESULTS"
+    job.progress_current = 7
+    session.commit()
+    run = result["run"]
+    stats = result.get("search", {}).get("stats", {})
+    return {
+        "run_ids": {"market_review_run_id": run["run_id"]},
+        "market_review_status": run["status"],
+        "search_status": run["search_status"],
+        "search_query_count": stats.get("query_count", 0),
+        "search_result_count": stats.get("raw_result_count", 0),
+        "evidence_count": stats.get("valid_evidence_count", 0),
+        "official_evidence_count": stats.get("official_evidence_count", 0),
+    }
 
 
 def _run_export(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, Any]:
@@ -296,7 +403,7 @@ def _run_export(session, job: PipelineJob, options: dict[str, Any]) -> dict[str,
         "run_ids": {"pipeline_run_id": pro.pipeline_run_id, "flash_run_id": pro.flash_validation_run_id, "pro_run_id": pro.run_id},
         "output_path": result["output_path"],
         "sha256": result["sha256"],
-        "sheet_count": 5,
+        "sheet_count": result["sheet_count"],
         "registry_id": bundle.get("registry_id"),
     }
 
@@ -380,9 +487,28 @@ def _require_secret(name: str) -> None:
 
 
 def _safe_options(options: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"force", "confirm_budget", "data_fetch_workers", "resume_from_job_id"}
+    allowed = {
+        "force", "confirm_budget", "data_fetch_workers", "resume_from_job_id",
+        "mode", "allow_real_pro", "allow_real_search", "quant_run_id",
+        "manual_hash", "flash_run_id", "contract_version", "recompute",
+    }
     if set(options) - allowed: raise ValueError("JOB_OPTION_NOT_ALLOWED")
     return {key: options[key] for key in sorted(options)}
+
+
+def _safe_actor(actor: dict[str, Any] | None) -> dict[str, str]:
+    value = actor or {}
+    email = str(value.get("email") or "local_trader").strip().lower()[:320]
+    role = str(value.get("role") or "TRADER").strip().upper()
+    return {"email": email, "role": role if role in {"ADMIN", "TRADER", "VIEWER"} else "TRADER"}
+
+
+def _release_job_lock(session, job_id: str) -> None:
+    session.execute(delete(JobExecutionLock).where(JobExecutionLock.job_id == job_id))
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 def _safe_error(exc: Exception) -> str:
@@ -398,11 +524,15 @@ def _check_cancelled(session, job: PipelineJob) -> None:
 
 
 def _job_payload(row: PipelineJob) -> dict[str, Any]:
-    return {key: getattr(row, key) for key in (
+    payload = {key: getattr(row, key) for key in (
         "job_id", "job_type", "trade_date", "status", "stage", "progress_current", "progress_total",
         "current_stock", "success_count", "failure_count", "token_usage", "cost_usd", "started_at",
         "finished_at", "error_code", "error_message", "run_ids", "output_path", "checkpoint",
     )}
+    checkpoint = row.checkpoint or {}
+    payload["started_by"] = checkpoint.get("started_by")
+    payload["started_by_role"] = checkpoint.get("started_by_role")
+    return payload
 
 
 class JobCancelled(RuntimeError):

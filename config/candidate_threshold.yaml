@@ -1,0 +1,7 @@
+candidate_threshold:
+  enabled: false
+  shadow_only: true
+  minimum_count: 0
+  maximum_count: 20
+  selection_rule: PASS_ONLY
+  never_lower_threshold_to_fill: true

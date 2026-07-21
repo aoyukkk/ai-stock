@@ -14,13 +14,22 @@ from backend.version import APP_VERSION, SCHEMA_VERSION
 
 router = APIRouter(prefix="/api/runtime", tags=["desktop-runtime"])
 version_router = APIRouter(tags=["desktop-runtime"])
-SECRET_ENV = {"tushare": "TUSHARE_TOKEN", "deepseek": "DEEPSEEK_API_KEY", "openai": "OPENAI_API_KEY"}
+SECRET_ENV = {
+    "tushare": "TUSHARE_TOKEN", "deepseek": "DEEPSEEK_API_KEY",
+    "openai": "OPENAI_API_KEY", "tavily": "TAVILY_API_KEY",
+    "ifind_username": "IFIND_USERNAME", "ifind_password": "IFIND_PASSWORD",
+    "ifind_access": "IFIND_ACCESS_TOKEN", "ifind_refresh": "IFIND_REFRESH_TOKEN",
+}
+SecretProvider = Literal[
+    "tushare", "deepseek", "openai", "tavily",
+    "ifind_username", "ifind_password", "ifind_access", "ifind_refresh",
+]
 
 
 class RuntimeSecretRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    provider: Literal["tushare", "deepseek", "openai"]
-    value: str = Field(min_length=8, max_length=512)
+    provider: SecretProvider
+    value: str = Field(min_length=1, max_length=512)
 
 
 @router.get("/version")
@@ -36,8 +45,13 @@ def version(request: Request) -> dict:
 def inject_secret(body: RuntimeSecretRequest, request: Request) -> dict:
     if not _desktop_mode():
         return error_response("DESKTOP_MODE_REQUIRED", "Runtime secret injection is desktop-only.", trace_id=request.state.trace_id)
+    value = body.value.strip()
+    minimum_length = 1 if body.provider == "ifind_username" else 8
+    if len(value) < minimum_length:
+        body.value = ""
+        return error_response("SECRET_UPDATE_INVALID", "Secret value is too short.", trace_id=request.state.trace_id)
     env_name = SECRET_ENV[body.provider]
-    os.environ[env_name] = body.value.strip()
+    os.environ[env_name] = value
     body.value = ""
     return success_response(
         data={"provider": body.provider, "configured": True, "updated_at": datetime.now(timezone.utc).isoformat()},
@@ -46,7 +60,7 @@ def inject_secret(body: RuntimeSecretRequest, request: Request) -> dict:
 
 
 @router.delete("/secrets/{provider}")
-def clear_secret(provider: Literal["tushare", "deepseek", "openai"], request: Request) -> dict:
+def clear_secret(provider: SecretProvider, request: Request) -> dict:
     os.environ.pop(SECRET_ENV[provider], None)
     return success_response(data={"provider": provider, "configured": False}, trace_id=request.state.trace_id)
 

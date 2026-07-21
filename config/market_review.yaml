@@ -1,0 +1,44 @@
+market_review:
+  enabled: true
+  auto_run_after_pipeline: true
+  include_tomorrow_outlook: true
+  auto_update_excel: true
+  allow_data_only_fallback: true
+  cache_enabled: true
+  flat_return_epsilon: 0.0001
+  evidence_min_confidence: 0.55
+  verified_min_confidence: 0.75
+  amount_multiplier: 1000
+  schema_version: market_daily_snapshot_v1
+  regime_version: market_regime_v1
+  outlook_rule_version: market_outlook_rule_v1
+  prompt_version: market_daily_review_prompt_v1
+  contract_version: market_daily_review_wire_v1
+  pro:
+    enabled: false
+    model_alias: controller-high-capability
+    actual_model: deepseek-v4-pro
+    max_tokens: 8000
+    temperature: 0.1
+    thinking: disabled
+  search:
+    enabled: true
+    provider: AUTO
+    allow_external_calls: false
+    max_queries: 12
+    max_results_per_query: 8
+    max_evidence_items: 30
+    official_source_priority: true
+    max_age_hours: 36
+    require_publish_time: true
+    allow_unknown_publish_time: false
+    multi_source_confirmation_count: 2
+  indices:
+    - {index_code: 000001.SH, index_name: 上证综指}
+    - {index_code: 399001.SZ, index_name: 深证成指}
+    - {index_code: 399006.SZ, index_name: 创业板指}
+    - {index_code: 000300.SH, index_name: 沪深300}
+    - {index_code: 000016.SH, index_name: 上证50}
+    - {index_code: 000905.SH, index_name: 中证500}
+    - {index_code: 000688.SH, index_name: 科创50}
+    - {index_code: 899050.BJ, index_name: 北证50}

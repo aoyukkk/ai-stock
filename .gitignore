@@ -41,8 +41,14 @@ outputs/**
 node_modules/
 dist/
 dist-electron/
-build/
+build/*
+!build/pyinstaller/
+build/pyinstaller/*
+!build/pyinstaller/ai_trader_backend.spec
 coverage/
+
+# Session-level render and workbook support files
+tmp/
 
 # OS
 .DS_Store

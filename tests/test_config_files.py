@@ -30,6 +30,7 @@ REQUIRED_CONFIG_FILES = [
     "fundamental_research.yaml",
     "position_sizing.yaml",
     "temporal.yaml",
+    "reporting.yaml",
 ]
 
 
@@ -92,6 +93,7 @@ def test_key_v03_config_skeletons_exist() -> None:
     ui = load_yaml(CONFIG_DIR / "ui.yaml")
     frontend = load_yaml(CONFIG_DIR / "frontend.yaml")
     data_sources = load_yaml(CONFIG_DIR / "data_sources.yaml")
+    reporting = load_yaml(CONFIG_DIR / "reporting.yaml")["reporting"]
 
     assert system["configuration"]["priority"] == [
         "web_ui",
@@ -126,6 +128,10 @@ def test_key_v03_config_skeletons_exist() -> None:
     assert data_sources["data_sources"]["market_backup"][0]["provider"] == "baostock"
     assert data_sources["data_sources"]["tushare"]["token_env"] == "TUSHARE_TOKEN"
     assert data_sources["data_sources"]["akshare"]["enabled"] is False
+    assert reporting["default_workbook_profile"] == "trading_assistant_human_v1"
+    assert reporting["presentation"]["center_table_cells"] is True
+    assert reporting["presentation"]["preserve_stock_code_leading_zero"] is True
+    assert reporting["validation"]["require_table_header_metadata_match"] is True
 
 
 def test_real_trading_defaults_disabled() -> None:

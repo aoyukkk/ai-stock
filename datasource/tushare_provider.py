@@ -330,14 +330,36 @@ class TushareMarketDataProvider(MarketDataProvider):
 
     def get_open_trade_dates(self, start_date: str | None, end_date: str | None) -> list[str]:
         result = self.get_trade_calendar(start_date=start_date, end_date=end_date, is_open="1")
+        if result.status == "available":
+            dates = [
+                str(_pick(row, "cal_date", default=""))
+                for row in result.records
+                if str(_pick(row, "is_open", default="1")) in {"1", "1.0", "True", "true"} and _pick(row, "cal_date")
+            ]
+            if dates:
+                return sorted(set(dates))
+
+        cached_dates = self._cached_trade_dates(start_date, end_date)
+        if cached_dates:
+            return cached_dates
         if result.status not in {"available", "empty"}:
             raise DataSourceError(f"Tushare trade_cal request failed: {result.error_message or result.status}")
-        dates = [
-            str(_pick(row, "cal_date", default=""))
-            for row in result.records
-            if str(_pick(row, "is_open", default="1")) in {"1", "1.0", "True", "true"} and _pick(row, "cal_date")
-        ]
-        return sorted(set(dates))
+        return []
+
+    def _cached_trade_dates(self, start_date: str | None, end_date: str | None) -> list[str]:
+        start = _ts_date(start_date)
+        end = _ts_date(end_date)
+        cache_dir = self.cache_dir / "trade_date" / "daily"
+        if not self.cache_enabled or not cache_dir.is_dir():
+            return []
+        return sorted(
+            path.stem
+            for path in cache_dir.glob("*.json")
+            if path.stem.isdigit()
+            and len(path.stem) == 8
+            and (not start or path.stem >= start)
+            and (not end or path.stem <= end)
+        )
 
     def get_trade_date_records(
         self,

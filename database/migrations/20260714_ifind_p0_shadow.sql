@@ -1,0 +1,8 @@
+-- Documentation migration for the SQLite development database.
+-- Production input is intentionally impossible: these tables are Shadow-only.
+-- The application creates the same tables through SQLAlchemy init_db().
+-- Required unique keys:
+--   index_market_daily(index_code, trade_date, provider)
+--   market_snapshot(stock_code, snapshot_time, provider)
+--   market_minute_bar(stock_code, bar_time, interval, provider)
+-- Usage audit excludes credentials, headers, raw requests and raw responses.

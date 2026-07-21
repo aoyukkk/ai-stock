@@ -24,6 +24,7 @@ thresholds:
 
 selection_performance:
   enabled: true
+  minimum_recommendation_score: 60
   default_lookback_value: 5
   default_lookback_unit: TRADING_DAYS
   max_lookback_value: 120

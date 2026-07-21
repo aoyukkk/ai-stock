@@ -38,11 +38,16 @@ def test_performance_api_contract_uses_database_and_no_external_calls(tmp_path, 
     assert methodology["no_llm_call_verified"] is True
     assert methodology["per_stock_api_call_count"] == 0
 
-    started = client.post("/api/workbench/performance/run", json={"evaluation_end_date": "2026-07-10", "lookback_value": 5})
+    started = client.post("/api/workbench/performance/run", json={
+        "evaluation_end_date": "2026-07-10",
+        "lookback_value": 5,
+        "selection_scope": "KEY_CANDIDATES",
+    })
     assert started.status_code == 200
     run_id = started.json()["data"]["performance_run_id"]
     runs = client.get("/api/workbench/performance/runs").json()["data"]["items"]
     assert runs[0]["run_id"] == run_id
+    assert runs[0]["selection_scope"] == "KEY_CANDIDATES"
     assert runs[0]["status"] == "PARTIAL_SUCCESS"
     assert client.get("/api/workbench/performance/cohorts").json()["data"]["total"] == 0
     assert client.get("/api/workbench/performance/daily").json()["data"]["total"] == 0

@@ -1,4 +1,6 @@
-from scripts.build_human_daily_output import _human_text, _human_warning, _yes_no
+from openpyxl import Workbook, load_workbook
+
+from scripts.build_human_daily_output import _human_issue, _human_text, _human_warning, _polish_workbook, _yes_no
 from scripts.organize_outputs_by_date import _date_from_name
 
 
@@ -32,3 +34,40 @@ def test_human_output_translates_technical_terms_and_removes_provenance():
 def test_output_organizer_extracts_date_from_artifact_name():
     assert _date_from_name("ai_trader_demo_20260709.xlsx") == "2026-07-09"
     assert _date_from_name("flash_v4_checkpoint.json") is None
+
+
+def test_human_output_translates_flash_template_validation_error():
+    result = _human_issue(
+        {
+            "stock_code": "301277",
+            "reason": "$.quant_consistency_score: Flash component scores copied the prompt example.",
+        },
+        {"301277": {"stock_name": "新天地"}},
+        order=False,
+    )
+    assert result["说明"] == "二筛评分结构与模板示例过于一致，结果已标记为待人工确认"
+    assert "$" not in result["说明"]
+    assert "Flash" not in result["说明"]
+
+
+def test_human_output_polish_centers_tables_and_freezes_panes(tmp_path):
+    path = tmp_path / "human.xlsx"
+    workbook = Workbook()
+    workbook.active.title = "今日概览"
+    for name in ("今日推荐", "重点候选", "挂单与仓位", "基本面摘要", "量化前100", "当前问题"):
+        workbook.create_sheet(name)
+    for worksheet in workbook.worksheets:
+        worksheet["A4"] = "表头"
+        worksheet["A5"] = "内容"
+    workbook.save(path)
+
+    _polish_workbook(path)
+
+    result = load_workbook(path)
+    assert [sheet.freeze_panes for sheet in result.worksheets] == ["A9", "D5", "D5", "D5", "D5", "A5", "A5"]
+    assert result.worksheets[1]["A4"].alignment.horizontal == "center"
+    assert result.worksheets[1]["A4"].alignment.vertical == "center"
+    assert result.worksheets[1]["A4"].alignment.wrap_text is True
+    for sheet in result.worksheets:
+        panes = [selection.pane for selection in sheet.sheet_view.selection if selection.pane]
+        assert len(panes) == len(set(panes))

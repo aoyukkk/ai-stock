@@ -27,11 +27,21 @@ from database.session import assert_database_path_consistency, get_database_iden
 from backend.workbench.historical import HistoricalPipelineRunResolver
 from stock_codes import display_stock_code, normalize_ts_code
 from trader_demo.budget import PipelineBudgetConfig
+from market_review.repository import MarketReviewRepository
 
 
 ACTIVE_JOB_STATUSES = {"PENDING", "RUNNING"}
-JOB_TYPES = {"DATA", "QUANT", "FLASH", "FINAL", "EXPORT"}
-SECRET_ENV = {"tushare": "TUSHARE_TOKEN", "deepseek": "DEEPSEEK_API_KEY", "openai": "OPENAI_API_KEY"}
+JOB_TYPES = {"DATA", "QUANT", "FLASH", "FINAL", "EXPORT", "MARKET_DAILY_REVIEW"}
+SECRET_ENV = {
+    "tushare": "TUSHARE_TOKEN",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "tavily": "TAVILY_API_KEY",
+    "ifind_username": "IFIND_USERNAME",
+    "ifind_password": "IFIND_PASSWORD",
+    "ifind_access": "IFIND_ACCESS_TOKEN",
+    "ifind_refresh": "IFIND_REFRESH_TOKEN",
+}
 SETTINGS_DEFAULTS = {
     "quant_top_n": 100,
     "llm_analysis_n": 100,
@@ -39,6 +49,22 @@ SETTINGS_DEFAULTS = {
     "final_display_n": 20,
     "manual_soft_limit": 50,
     "manual_max_limit": 100,
+    "market_review_enabled": True,
+    "market_review_auto_run": True,
+    "market_review_search_enabled": True,
+    "market_review_search_provider": "AUTO",
+    "market_review_max_queries": 12,
+    "market_review_max_results_per_query": 8,
+    "market_review_max_age_hours": 36,
+    "market_review_official_source_priority": True,
+    "market_review_multi_source_count": 2,
+    "market_review_evidence_min_confidence": 0.55,
+    "market_review_include_outlook": True,
+    "market_review_pro_enabled": False,
+    "market_review_pro_model_alias": "controller-high-capability",
+    "market_review_pro_max_tokens": 8000,
+    "market_review_auto_update_excel": True,
+    "market_review_allow_data_only_fallback": True,
 }
 
 
@@ -54,6 +80,7 @@ class WorkbenchService:
         bundle = self.resolver.resolve(trade_date, pipeline_run_id)
         stages = bundle.get("stages") or {}
         empty_stage = {"status": "EMPTY", "run_id": None, "updated_at": None, "count": 0}
+        market_review = MarketReviewRepository(self.session).latest_run(trade_date)
         return bundle | {
             "data": stages.get("data", empty_stage),
             "quant": stages.get("quant", empty_stage),
@@ -61,6 +88,12 @@ class WorkbenchService:
             "manual": stages.get("manual", empty_stage),
             "final": stages.get("final", empty_stage),
             "export": stages.get("export", empty_stage),
+            "market_review": ({
+                "status": market_review.status,
+                "run_id": market_review.run_id,
+                "updated_at": market_review.completed_at,
+                "count": 1,
+            } if market_review else empty_stage),
             "manual_count": int((bundle.get("counts") or {}).get("manual", 0)),
             "token": bundle["token_usage"],
             "flash_budget": self._flash_budget(trade_date),
@@ -168,13 +201,22 @@ class WorkbenchService:
         return self.settings()
 
     def secret_status(self) -> dict[str, Any]:
+        if _server_mode():
+            from backend.core.dpapi_secret_store import WindowsDpapiSecretStore
+
+            status = WindowsDpapiSecretStore().status(list(SECRET_ENV))
+            return {name: status[name] | {"last_test_status": "NOT_TESTED", "last_test_at": None} for name in SECRET_ENV}
         return {name: {"configured": bool(os.getenv(env)), "last_test_status": "NOT_TESTED", "last_test_at": None} for name, env in SECRET_ENV.items()}
 
     def set_secret(self, provider: str, value: str) -> dict[str, Any]:
         env = SECRET_ENV.get(provider)
-        if env is None or len(value.strip()) < 8:
+        minimum_length = 1 if provider == "ifind_username" else 8
+        if env is None or len(value.strip()) < minimum_length:
             raise ValueError("INVALID_SECRET_REQUEST")
-        # Backend-process-only storage: no database, log, history, or API readback.
+        if _server_mode():
+            from backend.core.dpapi_secret_store import WindowsDpapiSecretStore
+
+            WindowsDpapiSecretStore().set(provider, value.strip())
         os.environ[env] = value.strip()
         return {"provider": provider, "configured": True}
 
@@ -182,13 +224,18 @@ class WorkbenchService:
         env = SECRET_ENV.get(provider)
         if env is None:
             raise ValueError("UNKNOWN_SECRET_PROVIDER")
+        if _server_mode():
+            from backend.core.dpapi_secret_store import WindowsDpapiSecretStore
+
+            WindowsDpapiSecretStore().delete(provider)
         os.environ.pop(env, None)
         return {"provider": provider, "configured": False}
 
     def test_secret(self, provider: str) -> dict[str, Any]:
         if provider not in SECRET_ENV:
             raise ValueError("UNKNOWN_SECRET_PROVIDER")
-        return {"provider": provider, "configured": bool(os.getenv(SECRET_ENV[provider])), "status": "READY" if os.getenv(SECRET_ENV[provider]) else "NOT_CONFIGURED"}
+        configured = self.secret_status()[provider]["configured"]
+        return {"provider": provider, "configured": configured, "status": "READY" if configured else "NOT_CONFIGURED"}
 
     def list_quant(self, trade_date: date, *, page: int, page_size: int, keyword: str = "", only_top: bool = False,
                    only_manual: bool = False, only_candidate: bool = False, quant_run_id: str | None = None,
@@ -630,6 +677,10 @@ def _status_label(value: Any) -> str:
     }.get(str(value or "UNKNOWN"), str(value or "信息不足"))
 
 
+def _server_mode() -> bool:
+    return os.getenv("APP_RUNTIME_MODE", "").strip().upper() == "INTERNAL_WEB_SERVER"
+
+
 def _priority(value: str) -> str:
     if value not in {"HIGH", "MEDIUM", "LOW"}:
         raise ValueError("INVALID_MANUAL_PRIORITY")
@@ -637,13 +688,24 @@ def _priority(value: str) -> str:
 
 
 def _validate_settings(values: dict[str, Any]) -> None:
-    integer_keys = set(SETTINGS_DEFAULTS) | {"daily_token_limit", "flash_concurrency", "flash_batch_size", "validation_account_equity", "validation_available_cash"}
+    integer_keys = {
+        "quant_top_n", "llm_analysis_n", "llm_top_n", "final_display_n",
+        "manual_soft_limit", "manual_max_limit", "daily_token_limit",
+        "flash_concurrency", "flash_batch_size", "validation_account_equity",
+        "validation_available_cash", "market_review_max_queries",
+        "market_review_max_results_per_query", "market_review_max_age_hours",
+        "market_review_multi_source_count", "market_review_pro_max_tokens",
+    }
     if any(not isinstance(values[key], int) or values[key] <= 0 for key in integer_keys):
         raise ValueError("WORKBENCH_SETTINGS_REQUIRE_POSITIVE_INTEGERS")
     if values["llm_analysis_n"] > values["quant_top_n"] or values["llm_top_n"] > values["llm_analysis_n"]:
         raise ValueError("WORKBENCH_SELECTION_LIMITS_INVALID")
     if not 0 < float(values["token_warning_ratio"]) <= 1:
         raise ValueError("WORKBENCH_TOKEN_WARNING_RATIO_INVALID")
+    if not 0 <= float(values["market_review_evidence_min_confidence"]) <= 1:
+        raise ValueError("MARKET_REVIEW_CONFIDENCE_INVALID")
+    if values["market_review_search_provider"] not in {"AUTO", "TAVILY", "MOCK", "DISABLED"}:
+        raise ValueError("MARKET_REVIEW_SEARCH_PROVIDER_INVALID")
 
 
 def _job_payload(row: PipelineJob) -> dict[str, Any]:

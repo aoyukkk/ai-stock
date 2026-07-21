@@ -1,0 +1,80 @@
+entry_timing_v2_1:
+  enabled: false
+  shadow_only: true
+  classifier_version: short_strategy_classifier_v1
+  market_emotion_version: market_emotion_gate_v1
+  entry_timing_version: entry_timing_v2_1
+  admission_version: admission_strategy_aware_v2_1
+  minimum_data_quality: 55
+  minimum_strategy_fit_for_pass: 60
+  minimum_strategy_fit_for_review: 40
+  minimum_admission_ranking_for_pass: 68
+  minimum_quant_score: 45
+  minimum_risk_score: 30
+  maximum_candidates: 20
+  weights:
+    price_position: 0.20
+    pullback_quality: 0.15
+    volume_price_structure: 0.20
+    sector_resonance: 0.20
+    strategy_market_fit: 0.20
+    liquidity: 0.05
+  admission_ranking_weights:
+    baseline_quant: 0.45
+    entry_timing_v2: 0.35
+    strategy_fit: 0.20
+  strategies:
+    trend_breakout:
+      require_ma_structure: true
+      minimum_ma20_slope: 0
+      minimum_volume_ratio: 1.20
+      maximum_return_5d_percent: 25
+      maximum_distance_to_20d_high_percent: 5
+      minimum_sector_resonance_score: 55
+    strong_pullback:
+      minimum_trend_score: 60
+      minimum_pullback_percent: 3
+      maximum_pullback_percent: 10
+      maximum_pullback_volume_ratio: 0.85
+      require_above_ma20: true
+      require_recovery_confirmation: false
+    sector_resonance:
+      minimum_sector_score: 65
+      minimum_sector_breadth: 55
+      minimum_stock_relative_strength: 0
+      maximum_stock_sector_rank_percentile: 30
+      require_sector_persistence: false
+    oversold_rebound:
+      maximum_rsi14: 35
+      maximum_return_5d_percent: -7
+      minimum_drawdown_percent: 10
+      require_reversal_confirmation: true
+      allowed_market_regimes:
+        - PANIC_AND_REPAIR
+        - WEAK_REBOUND
+  market_emotion:
+    green_minimum: 65
+    yellow_minimum: 40
+    red_below: 40
+    minimum_component_coverage: 0.50
+  thresholds:
+    TREND_BREAKOUT: {pass: 72, review: 62}
+    STRONG_PULLBACK: {pass: 68, review: 58}
+    SECTOR_RESONANCE: {pass: 70, review: 60}
+    OVERSOLD_REBOUND: {pass: 75, review: 65}
+    UNCLASSIFIED: {pass: null, review: 70}
+  market_gate:
+    yellow_breakout_increment: 5
+    yellow_sector_minimum: 70
+    yellow_pullback_fit_minimum: 65
+    yellow_pullback_quality_minimum: 60
+  safety:
+    advisory_only: true
+    actionable: false
+    scheduler_enabled: false
+    create_orders: false
+    create_virtual_orders: false
+    real_trading_enabled: false
+    external_calls_enabled: false
+    llm_calls_enabled: false
+    parameter_search_enabled: false

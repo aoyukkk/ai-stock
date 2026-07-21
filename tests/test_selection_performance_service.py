@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from database.base import Base
 from database.models.performance import SelectionCohort, SelectionCohortMember, SelectionPerformanceDaily
-from database.models.validation import ModelValidationAllocation, ModelValidationOrderPlan, ModelValidationRun, ModelValidationSample
+from database.models.validation import ModelValidationAllocation, ModelValidationOrderPlan, ModelValidationRun, ModelValidationSample, ProCandidateReview
 from database.session import create_engine_from_url, get_session
 from review.performance_cache import PerformanceCacheManager
 from review.performance_market import MarketDataBatchLoader
@@ -40,7 +40,7 @@ class FixtureMarketLoader(MarketDataBatchLoader):
         return {code: values[code] for code in stock_codes}, self.watermark
 
 
-def _service(tmp_path: Path):
+def _service(tmp_path: Path, pro_scores: tuple[float, float] = (70, 65)):
     engine = create_engine_from_url(f"sqlite:///{(tmp_path / 'performance.db').as_posix()}")
     import database.models  # noqa: F401
     Base.metadata.create_all(engine)
@@ -52,6 +52,13 @@ def _service(tmp_path: Path):
         session.add(ModelValidationSample(validation_run_id="flash-1", quant_run_id="quant-1", run_data_manifest_id="manifest-1", rank=rank, stock_code=code, stock_name=f"样本{rank}", quant_scores={"total_score": 80-rank}, profile_version="v1", selected_at=now, screening_result={"llm_score": 70-rank, "screening_decision": "ADVANCE", "_trader_demo": {"selection_source": source, "trading_candidate": True}}))
         session.add(ModelValidationOrderPlan(validation_run_id="flash-1", quant_run_id="quant-1", run_data_manifest_id="manifest-1", stock_code=code, decision_time=now, base_market_trade_date=date(2026, 7, 3), target_trade_date=date(2026, 7, 6), status="DRAFT", temporal_status="PASS"))
         session.add(ModelValidationAllocation(validation_run_id="flash-1", allocation_run_id="allocation-1", account_snapshot_id="account-1", stock_code=code, relative_allocation_weight=0.5, suggested_position_percent=0.6 if rank == 1 else 0.4, suggested_capital_amount=100000, suggested_quantity=1000, estimated_max_loss=5000))
+        session.add(ProCandidateReview(
+            pro_resume_run_id="pro-1", flash_validation_run_id="flash-1", chunk_id="chunk-1",
+            stock_code=code, pro_score=pro_scores[rank - 1], pro_rank=rank, priority="MEDIUM",
+            final_summary="测试复核", key_strengths=[], key_risks=[], fundamental_quality="VERIFIED",
+            quant_llm_consistency="CONSISTENT", manual_review_priority="MEDIUM", data_conflict=False,
+            prompt_version="test", actual_model="mock", review_status="COMPLETED",
+        ))
     session.commit()
     return session, SelectionPerformanceService(session, cache_manager=PerformanceCacheManager(tmp_path / "cache"), market_loader=FixtureMarketLoader(session))
 
@@ -89,6 +96,58 @@ def test_identical_success_cache_is_reused_and_snapshot_not_duplicated(tmp_path:
     second = service.start(request)
     assert second["duplicate_status"] == "SUCCESS_CACHE_HIT"
     assert len(session.scalars(select(SelectionCohort)).all()) == 1
+    assert len(session.scalars(select(SelectionCohortMember)).all()) == 2
+    session.close()
+
+
+def test_daily_monitor_uses_final_score_threshold_for_model_and_manual_sources(tmp_path: Path) -> None:
+    session, service = _service(tmp_path, pro_scores=(60, 59.99))
+    started = service.start(PerformanceRequest(evaluation_end_date=date(2026, 7, 7)))
+    detail = service.execute(started["performance_run_id"], started["job_id"])
+    members = session.scalars(select(SelectionCohortMember)).all()
+    assert detail["stock_count"] == 1
+    assert [(row.stock_code, row.selection_source, float(row.pro_score)) for row in members] == [
+        ("000001.SZ", "LLM", 60.0),
+        ("000002.SZ", "MANUAL", 59.99),
+    ]
+    cohort = session.scalar(select(SelectionCohort))
+    assert cohort.config_snapshot_json["cohort_policy"]["contains_all_key_candidates"] is True
+    selected = service.cohorts.members(cohort, "FINAL_CANDIDATES", True, True)
+    key_candidates = service.cohorts.members(cohort, "KEY_CANDIDATES", True, True)
+    assert [row.stock_code for row in selected] == ["000001.SZ"]
+    assert [row.stock_code for row in key_candidates] == ["000001.SZ", "000002.SZ"]
+    session.close()
+
+
+def test_final_llm_only_requires_model_source_and_final_score_threshold(tmp_path: Path) -> None:
+    session, service = _service(tmp_path, pro_scores=(60, 80))
+    started = service.start(PerformanceRequest(evaluation_end_date=date(2026, 7, 7)))
+    service.execute(started["performance_run_id"], started["job_id"])
+    cohort = session.scalar(select(SelectionCohort))
+    selected = service.cohorts.members(cohort, "FINAL_LLM_ONLY", True, True)
+    assert [(row.stock_code, row.selection_source, float(row.pro_score)) for row in selected] == [
+        ("000001.SZ", "LLM", 60.0),
+    ]
+    session.close()
+
+
+def test_manual_candidate_at_threshold_is_included_in_today_recommendations(tmp_path: Path) -> None:
+    session, service = _service(tmp_path, pro_scores=(59.99, 60))
+    started = service.start(PerformanceRequest(evaluation_end_date=date(2026, 7, 7)))
+    detail = service.execute(started["performance_run_id"], started["job_id"])
+    assert detail["stock_count"] == 1
+    cohort = session.scalar(select(SelectionCohort))
+    selected = service.cohorts.members(cohort, "FINAL_CANDIDATES", True, True)
+    assert [(row.stock_code, row.selection_source) for row in selected] == [("000002.SZ", "MANUAL")]
+    session.close()
+
+
+def test_daily_monitor_allows_empty_recommendation_cohort(tmp_path: Path) -> None:
+    session, service = _service(tmp_path, pro_scores=(59.99, 10))
+    started = service.start(PerformanceRequest(evaluation_end_date=date(2026, 7, 7)))
+    detail = service.execute(started["performance_run_id"], started["job_id"])
+    assert detail["status"] == "SUCCESS"
+    assert detail["stock_count"] == 0
     assert len(session.scalars(select(SelectionCohortMember)).all()) == 2
     session.close()
 

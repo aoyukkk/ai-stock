@@ -221,6 +221,22 @@ def test_v3_requests_explicitly_disable_thinking_and_use_json_response_mode():
         assert request.max_tokens == max_tokens
 
 
+def test_v3_unsupported_claim_repair_explicitly_removes_unverified_claims():
+    service = ProSingleV3Service(SimpleNamespace(), SimpleNamespace(), SimpleNamespace())
+    request = service._candidate_repair_request(
+        "300628.SZ",
+        json.dumps(_candidate("300628.SZ"), ensure_ascii=False),
+        {"error_category": "UNSUPPORTED_CLAIM", "schema_error_paths": ["$.final_summary"]},
+        1800,
+    )
+    payload = json.loads(request.messages[1].content)
+    rules = " ".join(payload["repair_rules"])
+    assert "market-share" in rules
+    assert "named-customer" in rules
+    assert "current-information" in rules
+    assert payload["error_category"] == "UNSUPPORTED_CLAIM"
+
+
 def test_v3_canary_and_candidate_order_are_deterministic_and_distinct():
     samples = [
         _sample("603019.SH", rank=5, flash_score=90, source="BOTH", manual=True),

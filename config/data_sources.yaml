@@ -28,7 +28,39 @@ data_sources:
 
   ifind:
     enabled: false
-    reason: "iFinD API not approved yet"
+    mode: shadow
+    integration_mode: SHADOW
+    manual_only: true
+    use_for_daily: false
+    use_for_realtime: false
+    use_for_minute: false
+    use_for_order_book: false
+    use_for_auction: false
+    use_for_index: false
+    use_for_industry: false
+    use_for_concept: false
+    use_for_fundamental: false
+    use_for_event: false
+    use_for_macro: false
+    use_for_overseas: false
+    reason: "Verified HTTP index/realtime/minute adapters are available but production routing remains disabled"
+
+  ifind_runtime:
+    enabled: false
+    max_qps: 1
+    min_interval_ms: 1000
+    timeout_seconds: 30
+    sequential_calls: true
+    cache_enabled: true
+    max_batch_codes_realtime: 4
+    max_batch_codes_minute: 1
+    max_minute_range_minutes: 240
+    realtime_cache_ttl_seconds: 15
+    minute_cache_ttl_seconds: 60
+    index_cache_ttl_seconds: 30
+    fallback_provider: tushare
+    quota_guard_enabled: true
+    auto_refresh_enabled: false
 
   tushare:
     enabled: true

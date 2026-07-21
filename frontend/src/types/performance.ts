@@ -5,7 +5,7 @@ export interface PerformanceRequest {
   start_selection_date: string | null;
   end_selection_date: string | null;
   return_basis: "NEXT_OPEN" | "SIGNAL_CLOSE";
-  selection_scope: "FINAL_CANDIDATES" | "LLM_ONLY" | "MANUAL_ONLY" | "BOTH_ONLY" | "NON_ZERO_POSITION" | "ALL_CANDIDATES_INCLUDING_ZERO_POSITION";
+  selection_scope: "FINAL_CANDIDATES" | "KEY_CANDIDATES" | "LLM_ONLY" | "MANUAL_ONLY" | "BOTH_ONLY" | "NON_ZERO_POSITION" | "ALL_CANDIDATES_INCLUDING_ZERO_POSITION";
   weighting_mode: "EQUAL_WEIGHT" | "SUGGESTED_POSITION_WEIGHT";
   include_zero_position_stocks: boolean;
   include_risk_blocked_stocks: boolean;

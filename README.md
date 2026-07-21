@@ -1,102 +1,59 @@
-﻿# AI Trader Assistant
+# AI Trader Assistant
 
-AI Trader Assistant 是面向 A 股短线交易场景的 AI 智能交易辅助系统。V0.3 第一阶段的定位是：AI 提供交易辅助分析、挂单计划建议、风险提醒、虚拟盘验证和每日复盘，交易员人工负责最终实盘交易决策。
+AI Trader Assistant 是面向 A 股的只读决策辅助系统，覆盖全 A 量化、午盘分析、Flash/Pro 复核、规则价格计划、市场复盘和候选绩效跟踪。交易员始终负责最终实盘决策。
 
-## Safety Boundary
+## 安全边界
 
-- 第一阶段禁止 AI 自动实盘下单。
-- `ENABLE_REAL_TRADING` 默认必须为 `false`。
-- AI 只做辅助分析、风险提醒、挂单计划解释与虚拟盘模拟。
-- 人工负责最终实盘交易决策，不绕过人工确认。
-- 挂单价必须由规则模型和行情数据计算，LLM 只能解释、审核和风控。
-- 所有外部数据源必须通过 Adapter / Provider。
-- 所有 LLM 调用必须经过 LLM Gateway。
-- 所有 AI 输出必须可追溯、可复盘、可审计。
+- `.env` 必须保持 `ENABLE_REAL_TRADING=false`。
+- 项目内部 `Scheduler=false`，未配置 Windows 定时任务；所有流程由用户双击 BAT 后手工启动。
+- 全 A Quant 不调用 LLM；Flash/Pro 必须经过 LLM Gateway。
+- 挂单价和仓位建议由确定性规则生成，LLM 不能改价、改仓或绕过风险门禁。
+- 不自动下单、不修改持仓；外部行情调用和工作簿输出均保留审计。
 
-## Configuration Priority
+## 每日入口
 
-运行参数遵守以下优先级：
+每天双击项目根目录的 `双击运行_每日工作流程.bat`，再选择：
 
-1. Web UI Runtime Config
-2. Database Config
-3. Config File YAML
-4. Code Default
+- `1`：11:30 左右运行常规午盘推荐，程序会等待到 11:32 门禁。
+- `2`：17:00 后运行正式盘后全 A 流程，包括 Tushare 时点门禁、Quant、Flash、Pro、正式工作簿、滚动近 7 交易日对比和复盘表。
 
-Phase 0 只提供配置骨架和测试骨架，后续阶段会实现 ConfigService、数据库配置覆盖、前端控制台修改和 `config_history` 审计。
+程序不会自动定时启动。重复运行默认复用当天已经成功的结果，不重复消耗 Provider 或 LLM。完整运行和失败恢复说明见 [每日常态化运行说明](docs/DAILY_OPERATION_RUNBOOK.md)。
 
-## Phase 0 Scope
+## 常用命令
 
-当前阶段只初始化项目基础结构：
+所有 Python 命令固定使用 Conda 环境：
 
-- 项目目录骨架
-- `.env.example`
-- `pyproject.toml`
-- `requirements.txt`
-- 核心 `config/*.yaml` 配置骨架
-- pytest 验收测试
-- 文档占位目录
-
-当前尚未实现后端 API、数据库模型、量化引擎、LLM Gateway、Agent、挂单价计算、虚拟盘或前端。
-
-## Development
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
+```powershell
+conda run -n ai-stock-agent python -m pytest -q
+conda run -n ai-stock-agent python -m compileall . -q
+conda run -n ai-stock-agent python scripts/check_security_config.py
 ```
 
-Run tests:
+双击入口或在终端执行：
 
-```bash
-python -m pytest
+```powershell
+双击运行_每日工作流程.bat
 ```
 
-Optional syntax check:
+## 主要目录
 
-```bash
-python -m compileall .
-```
+- `backend/`、`frontend/`：工作台和应用服务。
+- `datasource/`、`midday/`、`post_close/`、`review/`：行情、午盘、盘后和绩效业务模块。
+- `config/`：版本化配置；运行时优先级为 Web UI > Database > YAML > Code Default。
+- `data/`：数据库和 Provider 缓存，不属于临时文件。
+- `outputs/YYYY-MM-DD/`：正式工作簿、JSON、Markdown 和审计产物。
+- `logs/`：运行日志和历史故障记录。
+- `docs/`：当前说明；旧 V0.3 设计资料归档在 `docs/archive/v0_3_design/`。
+- `build/`、`tmp/`、`__pycache__/`：可重建内容，可按清理说明删除。
 
-## Phase 15 Local Deployment Preparation
+## 内部共享工作台
 
-Phase 15 adds local startup, environment checks, security checks, and packaging skeletons.
+四名项目合伙人可通过 Cloudflare Tunnel 共用内部工作台。源站只监听 `127.0.0.1:8080`，密码不写入仓库或环境文件。部署步骤见 [Cloudflare Tunnel 共享账号部署](docs/CLOUDFLARE_INTERNAL_DEPLOYMENT.md)。共享账号只能审计到共享主体，无法区分具体合伙人；真实交易仍保持关闭。
 
-Quick local setup:
+## 进一步阅读
 
-```bash
-python scripts/init_local_env.py
-python scripts/check_environment.py
-python scripts/check_security_config.py
-python scripts/dev_start_all.py
-```
-
-Packaging preparation:
-
-```bash
-python scripts/package_backend_pyinstaller.py
-python scripts/package_windows_app.py
-```
-
-The packaged and local versions remain Mock Provider + Mock LLM + AI Simulation only. `ENABLE_REAL_TRADING` and `real_trading_enabled` must remain `false`; the first V0.3 release is an advisory system and does not perform automatic real-market order placement.
-
-See `deployment/WINDOWS_LOCAL_DEPLOYMENT.md`, `deployment/PACKAGING_GUIDE.md`, and `deployment/SECURITY_CHECKLIST.md`.
-
-## V0.3 Mock-only Freeze
-
-Phase 16 freezes the V0.3 Mock-only advisory release. Run the final acceptance checks with:
-
-```bash
-python scripts/run_final_smoke.py
-python scripts/run_all_checks.py
-```
-
-Final documentation:
-
-- `docs/API_ENDPOINTS_OVERVIEW.md`
-- `docs/OPERATOR_QUICK_START.md`
-- `docs/FINAL_INTEGRATION_CHECKLIST.md`
-- `docs/V0_3_MOCK_ONLY_RELEASE_NOTES.md`
-- `docs/NEXT_PHASE_ROADMAP.md`
-
-Next phases may introduce real data providers and real model providers only after human review. V0.3 does not implement real broker access or automatic real-market order placement.
+- [文档索引](docs/README.md)
+- [输出目录规范](docs/OUTPUT_LAYOUT.md)
+- [故障排查](docs/TROUBLESHOOTING_V1.md)
+- [本地部署](deployment/WINDOWS_LOCAL_DEPLOYMENT.md)
+- [安全检查](deployment/SECURITY_CHECKLIST.md)

@@ -26,7 +26,7 @@ class PerformanceRunRequest(BaseModel):
     start_selection_date: date | None = None
     end_selection_date: date | None = None
     return_basis: Literal["NEXT_OPEN", "SIGNAL_CLOSE"] = "NEXT_OPEN"
-    selection_scope: Literal["FINAL_CANDIDATES", "LLM_ONLY", "MANUAL_ONLY", "BOTH_ONLY", "NON_ZERO_POSITION", "ALL_CANDIDATES_INCLUDING_ZERO_POSITION"] = "FINAL_CANDIDATES"
+    selection_scope: Literal["FINAL_CANDIDATES", "KEY_CANDIDATES", "LLM_ONLY", "MANUAL_ONLY", "BOTH_ONLY", "NON_ZERO_POSITION", "ALL_CANDIDATES_INCLUDING_ZERO_POSITION"] = "FINAL_CANDIDATES"
     weighting_mode: Literal["EQUAL_WEIGHT", "SUGGESTED_POSITION_WEIGHT"] = "EQUAL_WEIGHT"
     include_zero_position_stocks: bool = True
     include_risk_blocked_stocks: bool = True

@@ -1,5 +1,22 @@
 # API Endpoints Overview
 
+## Selected-Stock Intraday Monitor V1
+
+The `/api/workbench/intraday-monitor` contract is independent from midday run IDs,
+checkpoints, result caches, and business tables. Monitoring is disabled by default,
+SHADOW-only, observation-only, and must be started explicitly by the trader.
+
+- Session: create, start, pause, resume, stop, current, and history endpoints.
+- Pool: preview and explicit confirmation, item update/removal, and current pool.
+- Midday merge: suggestions, preview, and confirmation; no automatic replacement.
+- Rules/results: rule CRUD, selected-stock results, stock detail, and minute bars.
+- Alerts: list, unread counts, acknowledge, mute, resolve, dismiss, and on-demand AI explanation.
+- Recovery/audit: SSE recovery event and provider usage audit.
+
+Normal monitor requests are P2-P4. The midday path reserves P0 through
+`MarketDataRequestBroker`, pauses monitor requests, and preserves pool and alerts.
+No monitor endpoint creates, modifies, cancels, or reprices an order.
+
 Canonical `/api/...` endpoints use the V0.3 response envelope:
 
 ```json
@@ -18,7 +35,14 @@ alias reuses the same handler and returns the same core `data`.
 
 No endpoint below performs real trading. No endpoint requires or returns a real API key.
 
+The iFinD P0 Shadow endpoints under `/api/workbench/realtime/*` are read-only and
+default to `SHADOW` plus disabled. They use the existing provider adapter only;
+the browser never calls iFinD directly. `/api/data-sources/ifind/usage` exposes
+sanitized call counts and status, never credentials or raw responses.
+
 Historical Workbench endpoints include `GET /api/workbench/available-dates`, `GET /api/workbench/runs`, `POST /api/workbench/runs/reconcile`, `POST /api/workbench/runs/load-existing`, and the run-bound result endpoints under `/api/workbench`. Reconciliation writes relationship metadata only and never executes a pipeline stage.
+
+The optional iFinD score overlay and post-close advice endpoints are Shadow/advisory only. `POST /api/workbench/ifind-enhancement/run-shadow` cannot alter the official Quant ranking. `POST /api/workbench/post-close-actions/run-fast` returns `WAITING_FOR_POST_CLOSE_RUN` before the close and never creates an order. Position imports require preview and confirmation.
 
 Server-paginated Workbench responses use `items`, `page`, `page_size`, `total`, and `total_pages`. Page numbering starts at 1; filtering and stable sorting happen before slicing the requested page.
 
@@ -75,6 +99,58 @@ Server-paginated Workbench responses use `items`, `page`, `page_size`, `total`, 
 | Config | POST | `/api/v1/config/bulk` | Persist whitelisted config values | Safe whitelist only | Yes | No |
 | Config | POST | `/api/v1/config/values/{config_key}/reset` | Reset config override | Safe whitelist only | Yes | No |
 | Config | GET | `/api/v1/config/history` | Config change history | Safe whitelist only | No | No |
+| iFinD Enhancement | POST | `/api/workbench/ifind-enhancement/run-shadow` | Calculate and persist Top100 Shadow overlay | Real cached Shadow data or baseline fallback | Yes | No |
+| iFinD Enhancement | GET | `/api/workbench/ifind-enhancement/latest` | Latest Shadow A/B summary | Read-only | No | No |
+| Post-close Actions | POST | `/api/workbench/post-close-actions/run-fast` | Generate rule-only advisory snapshot after close | No LLM | Yes | No |
+| Post-close Actions | POST | `/api/workbench/post-close-actions/run-pro-review` | Queue conservative Gateway review | Optional Gateway | Yes | No |
+| Post-close Actions | GET | `/api/workbench/post-close-actions/status` | Read run status by run or trade date | Read-only | No | No |
+| Post-close Actions | GET | `/api/workbench/post-close-actions/results` | Paginated held/candidate advice | Read-only | No | No |
+| Post-close Actions | GET | `/api/workbench/post-close-actions/history` | Immutable advice versions | Read-only | No | No |
+| Post-close Actions | GET | `/api/workbench/post-close-actions/compare` | Baseline versus iFinD Shadow action comparison | Read-only | No | No |
+| Post-close Actions | POST | `/api/workbench/post-close-actions/export` | Export centered four-sheet workbook | Local output only | No | No |
+| Positions | GET | `/api/workbench/positions/current` | Current confirmed position snapshots | Read-only | No | No |
+| Positions | POST | `/api/workbench/positions/import-preview` | Validate CSV/XLSX position file | Local validation | Yes | No |
+| Positions | POST | `/api/workbench/positions/import-confirm` | Confirm immutable position snapshot | Local database | Yes | No |
+| Positions | GET | `/api/workbench/positions/truth-status` | Read confirmed-position/confirmed-empty gate status | Read-only | No | No |
+| Positions | POST | `/api/workbench/positions/confirm-empty` | Explicitly confirm immutable empty-position facts | Local database | Yes | No |
 # Selection Performance Analytics V1
 
 `/api/workbench/performance/*` 提供不可变选股 Cohort、个股/组合收益、缓存状态、增量刷新、失效、设置和四表 Excel 导出。正式查询只读取数据库；本阶段不调用 LLM、外部行情 API 或交易模块。完整契约见 `docs/SELECTION_PERFORMANCE_ANALYTICS_V1.md`。
+# 午间推荐
+
+午间推荐是独立的只读建议流水线。正式前端只在 `11:32-12:50` 发起，行情特征截止到上午收盘；历史验证必须显式开启，且不会被前端默认发送。所有结果均为 `actionable=false`，不会创建订单。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/workbench/midday/run` | 异步排队正式午间运行 |
+| GET | `/api/workbench/midday/status` | 按运行编号或交易日查询阶段与计数 |
+| GET | `/api/workbench/midday/results` | 分页读取午间评分、建议和规则价格 |
+| GET | `/api/workbench/midday/history` | 查询历史运行 |
+| POST | `/api/workbench/midday/recheck` | `13:01-13:10` 规则复核，不调用 LLM |
+| POST | `/api/workbench/midday/export` | 导出五页居中 Excel |
+| GET | `/api/workbench/midday/methodology` | 查看基线、影子增强和安全边界 |
+
+正式运行复用最近兼容的上一交易日 Tushare Quant Top100，合并人工池、确认持仓与有效计划，最多 120 只。iFinD 仅形成独立午间影子增量，不回写正式 Quant 排名。
+# 买入准入影子分析
+
+- `POST /api/workbench/entry-timing/run-shadow`：显式确认后运行本地影子分析。
+- `GET /api/workbench/entry-timing/latest?trade_date=YYYY-MM-DD`：读取当日最新运行摘要。
+- `GET /api/workbench/entry-timing/results?run_id=...`：分页读取逐股分项得分与准入状态。
+- `GET /api/workbench/entry-timing/methodology`：读取 V1 评分与准入方法说明。
+
+该组接口不调用 LLM 或外部行情 API，不改变正式推荐结果。
+# Entry Timing V2.1 Shadow
+
+- `POST /api/workbench/entry-timing/v2/run-shadow`：显式确认后运行单日 V2.1 本地影子分析。
+- `GET /api/workbench/entry-timing/v2/latest?trade_date=YYYY-MM-DD`：读取指定日期最新 V2.1 摘要。
+- `GET /api/workbench/entry-timing/v2/results`：分页读取逐股结果，支持策略、情绪、市场状态、V1/V2 准入状态和候选池筛选。
+- `GET /api/workbench/entry-timing/v2/methodology`：读取预注册版本、权重、策略阈值和影子安全策略。
+
+### Entry Timing V2.2 Shadow
+
+- `POST /api/workbench/entry-timing/v22/historical-shadow`：显式确认后，以本地数据库和缓存执行 V2.2 历史影子回放并导出 Excel。
+- `GET /api/workbench/entry-timing/v22/latest?trade_date=YYYY-MM-DD`：读取指定日期最新的市场状态、部署、集中度和触发摘要。
+- `GET /api/workbench/entry-timing/v22/results`：分页读取逐股结果，支持市场状态、部署状态、行业拥挤、盘中触发和候选池筛选。
+- `GET /api/workbench/entry-timing/v22/methodology`：读取 V2.2 预注册规则、版本和安全边界。
+
+以上端点不调用 LLM 或外部数据源，不创建订单，也不改变正式推荐。

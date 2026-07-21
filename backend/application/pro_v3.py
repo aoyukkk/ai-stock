@@ -56,10 +56,23 @@ class ProductionProV3ApplicationService:
         if existing is not None:
             return {"pro_run_id": existing.run_id, "pipeline_run_id": existing.pipeline_run_id, "candidate_count": existing.candidate_count, "reused": True}
 
-        resume = self._create_resume(context)
+        resume = self.session.scalar(select(ProResumeRun).where(
+            ProResumeRun.flash_validation_run_id == flash_run_id,
+            ProResumeRun.candidate_set_hash == context.candidate_hash,
+            ProResumeRun.pro_contract_version == SINGLE_CONTRACT_VERSION,
+            ProResumeRun.status.in_(["RUNNING", "PARTIAL_PRO_FAILURE"]),
+        ).order_by(ProResumeRun.id.desc()))
+        resumed = resume is not None
+        if resume is None:
+            resume = self._create_resume(context)
+        else:
+            resume.status = "RUNNING"
+            self.session.commit()
+
         checkpoint = self.output_root / context.quant_run.base_market_trade_date.isoformat() / "checkpoints" / f"{resume.run_id}.json"
         checkpoint.parent.mkdir(parents=True, exist_ok=True)
-        checkpoint.write_text(json.dumps({"stage": "PRO_V3_PENDING", "run_id": resume.run_id}, ensure_ascii=False), encoding="utf-8")
+        if not checkpoint.exists():
+            checkpoint.write_text(json.dumps({"stage": "PRO_V3_PENDING", "run_id": resume.run_id}, ensure_ascii=False), encoding="utf-8")
         ledger = AuthoritativeUsageLedger(self.session.get_bind(), pipeline_run_id=resume.pipeline_run_id)
         with temporary_real_llm_runtime():
             service = ProSingleV3Service(self.session, ledger)
@@ -81,6 +94,7 @@ class ProductionProV3ApplicationService:
             "candidate_count": len(context.candidates),
             "ranking_version": RANKING_VERSION,
             "reused": False,
+            "resumed": resumed,
         }
 
     def _context(self, flash_run_id: str) -> ProContext:
@@ -130,4 +144,3 @@ class ProductionProV3ApplicationService:
 
 def _hash(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-

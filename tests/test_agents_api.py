@@ -2,6 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
+from agents.config import load_ai_committee_config
 from backend.main import create_app
 
 
@@ -48,7 +49,7 @@ def test_committee_config_api() -> None:
     assert_success(payload)
     assert_no_sensitive(payload)
     data = payload["data"]
-    assert data["mock_only"] is True
+    assert data["mock_only"] is load_ai_committee_config().mock_only
     assert data["real_trading_enabled"] is False
     assert "technical_agent" in data["enabled_agents"]
     assert sum(data["weights"].values()) == 1.0

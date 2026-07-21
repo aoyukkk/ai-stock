@@ -8,7 +8,7 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 
 import { backendEnvironment, type DesktopPaths } from "./pathManager.js";
-import type { SecretManager } from "./secretManager.js";
+import type { Provider, SecretManager } from "./secretManager.js";
 
 export interface BackendConnection {
   baseUrl: string;
@@ -85,12 +85,12 @@ export class BackendManager {
     return this.start();
   }
 
-  async saveSecret(provider: "tushare" | "deepseek" | "openai", value: string): Promise<void> {
+  async saveSecret(provider: Provider, value: string): Promise<void> {
     await this.secrets.set(provider, value);
     await this.injectSecret(provider, value);
   }
 
-  async deleteSecret(provider: "tushare" | "deepseek" | "openai"): Promise<void> {
+  async deleteSecret(provider: Provider): Promise<void> {
     await this.secrets.delete(provider);
     const connection = this.currentConnection();
     await fetch(`${connection.baseUrl}/api/runtime/secrets/${provider}`, {
@@ -102,11 +102,11 @@ export class BackendManager {
   private async injectStoredSecrets(): Promise<void> {
     const values = await this.secrets.decrypted();
     for (const [provider, value] of Object.entries(values)) {
-      if (value) await this.injectSecret(provider as "tushare" | "deepseek" | "openai", value);
+      if (value) await this.injectSecret(provider as Provider, value);
     }
   }
 
-  private async injectSecret(provider: "tushare" | "deepseek" | "openai", value: string): Promise<void> {
+  private async injectSecret(provider: Provider, value: string): Promise<void> {
     const connection = this.currentConnection();
     const response = await fetch(`${connection.baseUrl}/api/runtime/secrets`, {
       method: "POST",

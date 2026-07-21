@@ -1,0 +1,3 @@
+-- Acceptance audit tables are created by SQLAlchemy init_db().
+-- No credentials, headers, raw request or raw response fields are allowed.
+-- Acceptance writes are limited to these tables and the existing Shadow tables.

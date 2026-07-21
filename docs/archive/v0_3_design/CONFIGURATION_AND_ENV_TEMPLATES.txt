@@ -24,6 +24,10 @@ QWEN_API_KEY=
 IFIND_USERNAME=
 IFIND_PASSWORD=
 IFIND_API_KEY=
+IFIND_ACCESS_TOKEN=
+IFIND_REFRESH_TOKEN=
+IFIND_HTTP_ENABLED=false
+RUN_REAL_IFIND_PROBE=false
 TUSHARE_TOKEN=
 OKX_API_KEY=
 OKX_SECRET_KEY=
@@ -227,5 +231,17 @@ ConfigService.update(key, value, user, reason):
 4. 写 config_history。
 5. 通知订阅模块。
 6. 前端显示生效。
+
+十二、内部 Web 共享登录
+------------------------------------------------------------
+APP_RUNTIME_MODE=INTERNAL_WEB_SERVER
+AUTH_MODE=LOCAL_SHARED_PASSWORD
+SHARED_LOGIN_USERNAME=partners
+APP_ORIGIN_HOST=127.0.0.1
+APP_ORIGIN_PORT=8080
+
+共享密码不得写入环境文件。必须通过 ai-trader-internal-web.exe 的
+set-shared-password 管理命令交互输入，数据库只保存 Argon2id Hash。
+共享主体固定为 ADMIN；审计记录无法区分四名合伙人中的具体操作者。
 
 END

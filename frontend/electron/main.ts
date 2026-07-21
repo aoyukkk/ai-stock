@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from "electron";
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -92,6 +92,23 @@ function registerIpc(paths: ReturnType<typeof desktopPaths>, secrets: SecretMana
   ipcMain.handle("runtime:status", () => ({ appVersion: app.getVersion(), firstRun, userData: paths.root }));
   ipcMain.handle("runtime:restart-backend", () => backend?.restart());
   ipcMain.handle("runtime:open-logs", () => shell.openPath(paths.logs));
+  ipcMain.handle("monitor:notify", (_event, payload: { title?: string; body?: string; severity?: string; stockCode?: string }) => {
+    if (!Notification.isSupported()) return { shown: false };
+    const notification = new Notification({
+      title: String(payload.title || "实时盯盘提醒").slice(0, 120),
+      body: String(payload.body || "请打开提醒中心人工复核。").slice(0, 300),
+      silent: payload.severity !== "CRITICAL"
+    });
+    notification.on("click", () => {
+      if (!mainWindow) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send("monitor:open-stock", String(payload.stockCode || ""));
+    });
+    notification.show();
+    return { shown: true };
+  });
   ipcMain.handle("secrets:status", () => secrets.status());
   ipcMain.handle("secrets:set", (_event, provider, value) => backend?.saveSecret(provider, value));
   ipcMain.handle("secrets:delete", (_event, provider) => backend?.deleteSecret(provider));

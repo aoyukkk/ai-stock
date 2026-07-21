@@ -8,6 +8,13 @@ from database.models.allocation import AllocationRun, PositionSuggestionRecord
 from database.models.factor import StockFactorDetail, StockFactorScore
 from database.models.finance import StockFinance
 from database.models.market import PreMarketAuction, StockMarketData
+from database.models.market_review import (
+    MarketDailySnapshot,
+    MarketOutlookScenario,
+    MarketReviewDriver,
+    MarketReviewEvidence,
+    MarketReviewRun,
+)
 from database.models.performance import (
     SelectionCohort,
     SelectionCohortMember,
@@ -60,6 +67,45 @@ from database.models.validation import (
     ValidationAccountSnapshot,
 )
 from database.models.workbench import ManualSelectionRecord, PipelineJob, WorkbenchRunRegistry
+from database.models.ifind_shadow import (
+    ExternalProviderUsage,
+    IndexMarketDailyShadow,
+    MarketMinuteBarShadow,
+    MarketSnapshotShadow,
+)
+from database.models.ifind_acceptance import IFindShadowAcceptanceItem, IFindShadowAcceptanceRun
+from database.models.post_close import (
+    IFindEnhancementRun,
+    IFindStockEnhancementScore,
+    PostCloseActionResult,
+    PostCloseActionRun,
+    TraderPositionImportBatch,
+    TraderPositionSnapshot,
+    PositionTruthConfirmation,
+)
+from database.models.midday import MiddayRecommendationRun, MiddayRecommendationResult, MiddayRecheckResult
+from database.models.midday_v22 import MiddayV22AfternoonResult, MiddayV22AfternoonRun, MiddayV22Result, MiddayV22Run
+from database.models.midday_full_a import MiddayFullARadarResult, MiddayFullARadarRun
+from database.models.intraday_monitor import (
+    IntradayMonitorAlert,
+    IntradayMonitorAlertAction,
+    IntradayMonitorItem,
+    IntradayMonitorPoolVersion,
+    IntradayMonitorRefresh,
+    IntradayMonitorRule,
+    IntradayMonitorSession,
+)
+from database.models.internal_auth import (
+    InternalAuditEvent,
+    InternalAuthSession,
+    InternalPasswordCredential,
+    InternalUser,
+    JobExecutionLock,
+)
+from database.models.entry_timing import AdmissionRun, EntryTimingResult
+from database.models.entry_timing_v2 import AdmissionV2Run, EntryTimingV2Result, MarketEmotionSnapshot, StrategyClassificationResult
+from database.models.entry_timing_v22 import DeploymentV22Result, DeploymentV22Run, MarketAdjustedEvaluation, MarketRegimeV2Snapshot
+from database.models.postclose_official import PostCloseOfficialRun
 
 __all__ = [
     "AIAnalysisResult",
@@ -75,6 +121,11 @@ __all__ = [
     "LLMUsage",
     "MemoryLink",
     "MemoryRetrievalLog",
+    "MarketDailySnapshot",
+    "MarketOutlookScenario",
+    "MarketReviewDriver",
+    "MarketReviewEvidence",
+    "MarketReviewRun",
     "ModelValidationAllocation",
     "ModelValidationFailureAudit",
     "ModelValidationLLMAudit",
@@ -121,4 +172,43 @@ __all__ = [
     "ManualSelectionRecord",
     "PipelineJob",
     "WorkbenchRunRegistry",
+    "ExternalProviderUsage",
+    "IndexMarketDailyShadow",
+    "MarketMinuteBarShadow",
+    "MarketSnapshotShadow",
+    "IFindShadowAcceptanceItem",
+    "IFindShadowAcceptanceRun",
+    "IFindEnhancementRun",
+    "IFindStockEnhancementScore",
+    "PostCloseActionResult",
+    "PostCloseActionRun",
+    "TraderPositionImportBatch",
+    "TraderPositionSnapshot",
+    "PositionTruthConfirmation",
+    "MiddayRecommendationRun",
+    "MiddayRecommendationResult",
+    "MiddayRecheckResult",
+    "IntradayMonitorAlert",
+    "IntradayMonitorAlertAction",
+    "IntradayMonitorItem",
+    "IntradayMonitorPoolVersion",
+    "IntradayMonitorRefresh",
+    "IntradayMonitorRule",
+    "IntradayMonitorSession",
+    "InternalAuditEvent",
+    "InternalAuthSession",
+    "InternalPasswordCredential",
+    "InternalUser",
+    "JobExecutionLock",
+    "AdmissionRun",
+    "EntryTimingResult",
+    "AdmissionV2Run",
+    "EntryTimingV2Result",
+    "MarketEmotionSnapshot",
+    "StrategyClassificationResult",
+    "MarketRegimeV2Snapshot",
+    "DeploymentV22Run",
+    "DeploymentV22Result",
+    "MarketAdjustedEvaluation",
+    "PostCloseOfficialRun",
 ]

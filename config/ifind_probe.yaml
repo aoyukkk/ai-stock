@@ -1,0 +1,33 @@
+ifind_probe:
+  enabled: false
+  real_probe_enabled: false
+  transport: AUTO
+  http_enabled: false
+  http_base_url: https://quantapi.51ifind.com/api/v1
+  max_total_calls: 30
+  hard_max_total_calls: 50
+  min_interval_ms: 1000
+  timeout_seconds: 30
+  sample_stock_count: 4
+  sample_index_count: 2
+  daily_history_days: 5
+  minute_history_minutes: 10
+  max_rows_per_probe: 100
+  save_raw_response: false
+  persist_business_data: false
+  sdk_module_candidates:
+    - iFinDPy
+  login_function: THS_iFinDLogin
+  logout_function: THS_iFinDLogout
+  login_arguments:
+    username: IFIND_USERNAME
+    password: IFIND_PASSWORD
+  fallback_samples:
+    stocks:
+      - {canonical_code: 600000.SH, market: SH, board: MAIN}
+      - {canonical_code: 000001.SZ, market: SZ, board: MAIN}
+      - {canonical_code: 300750.SZ, market: SZ, board: CHINEXT}
+      - {canonical_code: 688981.SH, market: SH, board: STAR}
+    indices:
+      - {canonical_code: 000001.SH, market: SH, board: INDEX}
+      - {canonical_code: 399001.SZ, market: SZ, board: INDEX}

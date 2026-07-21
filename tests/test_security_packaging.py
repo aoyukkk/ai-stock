@@ -18,6 +18,7 @@ def test_env_templates_keep_real_trading_disabled() -> None:
 def test_packaging_configs_do_not_reference_runtime_env_file() -> None:
     packaging_files = [
         ROOT / "packaging" / "pyinstaller_backend.spec",
+        ROOT / "packaging" / "pyinstaller_internal_web.spec",
         ROOT / "packaging" / "electron-builder.config.js",
         ROOT / "frontend" / "electron-builder.config.js",
         ROOT / "build" / "pyinstaller" / "ai_trader_backend.spec",
@@ -122,6 +123,7 @@ def _write_minimal_tree(root: Path, enable_real_trading: str) -> None:
     )
     for path in (
         root / "packaging" / "pyinstaller_backend.spec",
+        root / "packaging" / "pyinstaller_internal_web.spec",
         root / "packaging" / "electron-builder.config.js",
         root / "frontend" / "electron-builder.config.js",
     ):

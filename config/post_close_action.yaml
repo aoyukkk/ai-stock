@@ -1,0 +1,94 @@
+scoring_profiles:
+  default: TUSHARE_BASELINE_V1
+  allowed:
+    - TUSHARE_BASELINE_V1
+    - IFIND_SHADOW_V1
+    - IFIND_ENHANCED_V1
+  enhanced_activation:
+    enabled: false
+    minimum_forward_trading_days: 20
+    require_explicit_user_approval: true
+
+ifind_eod_enhancement:
+  enabled: true
+  mode: SHADOW
+  top_n: 100
+  feature_version: ifind_eod_shadow_v2_partial_gate
+  minimum_coverage_ratio: 0.95
+  component_weights:
+    relative_strength: 0.25
+    close_quality: 0.20
+    tail_strength: 0.20
+    intraday_stability: 0.15
+    liquidity_confirmation: 0.10
+    market_regime_fit: 0.10
+  overlay:
+    scale: 0.12
+    minimum: -6.0
+    maximum: 6.0
+    snapshot_only_minimum: -2.0
+    snapshot_only_maximum: 2.0
+  cross_provider_feature_policy:
+    open: {primary_provider: tushare, validation_provider: ifind, scoring_usage: baseline_only, comparison_usage: dual_source, unit: CNY, timestamp_semantics: trade_date_close}
+    high: {primary_provider: tushare, validation_provider: ifind, scoring_usage: baseline_only, comparison_usage: dual_source, unit: CNY, timestamp_semantics: trade_date_close}
+    low: {primary_provider: tushare, validation_provider: ifind, scoring_usage: baseline_only, comparison_usage: dual_source, unit: CNY, timestamp_semantics: trade_date_close}
+    close: {primary_provider: tushare, validation_provider: ifind, scoring_usage: baseline_only, comparison_usage: dual_source, unit: CNY, timestamp_semantics: trade_date_close}
+    pre_close: {primary_provider: tushare, validation_provider: ifind, scoring_usage: baseline_only, comparison_usage: dual_source, unit: CNY, timestamp_semantics: previous_trade_date_close}
+    pct_chg: {primary_provider: tushare, validation_provider: ifind, scoring_usage: baseline_only, comparison_usage: dual_source, unit: percent, timestamp_semantics: trade_date_close}
+    volume: {primary_provider: tushare, validation_provider: ifind, scoring_usage: baseline_only, comparison_usage: dual_source, unit: provider_declared, timestamp_semantics: cumulative_at_provider_time}
+    amount: {primary_provider: tushare, validation_provider: ifind, scoring_usage: baseline_only, comparison_usage: dual_source, unit: provider_declared, timestamp_semantics: cumulative_at_provider_time}
+
+tiered_ifind_coverage:
+  top100_partial_scope: PARTIAL_SNAPSHOT_ONLY
+  action_pool_full_scope: FULL_MINUTE_OVERLAY
+  minimum_top100_partial_coverage: 0.95
+  max_full_minute_stocks: 20
+  max_external_calls: 40
+  realtime_batch_size: 4
+  do_not_mix_ranking_scopes: true
+
+position_truth:
+  required_scopes:
+    - HUMAN_REFERENCE
+  require_ai_simulation_when_enabled: true
+  maximum_snapshot_age_hours: 24
+
+post_close_action:
+  enabled: true
+  default_scoring_profile: TUSHARE_BASELINE_V1
+  action_rule_version: post_close_action_v1_2
+  fast:
+    max_candidates: 100
+    p50_target_seconds: 10
+    p95_target_seconds: 30
+    maximum_external_calls: 40
+    minimum_call_interval_ms: 1000
+    maximum_minute_stocks: 20
+    require_all_held_stocks_minute_data: true
+    allow_partial_candidate_minute_coverage: true
+  thresholds:
+    continue_hold: 75
+    hold_with_tight_stop: 60
+    reduce_position: 45
+    exit_below: 45
+  candidate_thresholds:
+    prepare_entry: 70
+    keep_watch: 50
+    remove_below: 40
+  reduce:
+    mild_percent: 0.25
+    medium_percent: 0.50
+    severe_percent: 0.75
+    lot_size: 100
+  pro_review:
+    enabled: false
+    model_alias: controller-high-capability
+    prompt_version: post_close_action_review_v1
+    max_stocks: 20
+    max_tokens: 8000
+    thinking_mode: disabled
+    timeout_seconds: 180
+  scheduler:
+    enabled: false
+  real_trading:
+    enabled: false

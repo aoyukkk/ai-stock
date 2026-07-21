@@ -72,7 +72,9 @@ async function copyDefaultConfig(configDir: string): Promise<void> {
     "models.yaml", "agents.yaml", "ai_score.yaml", "llm.yaml", "token_cost.yaml", "risk_rules.yaml",
     "risk.yaml", "order_price.yaml", "memory.yaml", "paper_trading.yaml", "virtual_trading.yaml",
     "quant_factor.yaml", "ui.yaml", "frontend.yaml", "fundamental_research.yaml", "position_sizing.yaml",
-    "temporal.yaml", "data_sources.yaml", "review.yaml"
+    "temporal.yaml", "reporting.yaml", "data_sources.yaml", "review.yaml", "market_review.yaml",
+    "ifind_probe.yaml", "ifind_shadow.yaml", "post_close_action.yaml", "midday_recommendation.yaml",
+    "intraday_monitor.yaml"
   ];
   await mkdir(configDir, { recursive: true });
   for (const name of names) {

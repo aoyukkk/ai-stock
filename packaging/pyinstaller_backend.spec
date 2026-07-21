@@ -9,6 +9,8 @@ for package in (
     "backend",
     "database",
     "datasource",
+    "datasource.ifind",
+    "services",
     "quant",
     "screening",
     "agents",
@@ -18,6 +20,8 @@ for package in (
     "recheck",
     "review",
     "memory",
+    "market_review",
+    "intraday_monitor",
     "llm_gateway",
 ):
     hiddenimports += collect_submodules(package)

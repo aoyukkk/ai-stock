@@ -8,6 +8,7 @@ from database.models.validation import (
     ModelValidationRun,
     ModelValidationSample,
 )
+from database.models.quant_run import QuantRun
 from database.session import create_engine_from_url, get_session
 from backend.application.workflow import (
     WorkflowApplicationService,
@@ -15,6 +16,8 @@ from backend.application.workflow import (
     _flash_tokens_for_date,
     _flash_usable_for_final,
     _mark_job_success,
+    _safe_options,
+    _select_flash_for_final,
 )
 from backend.workbench.service import WorkbenchService
 from database.models.workbench import PipelineJob
@@ -23,6 +26,19 @@ from trader_demo.service import TraderDemoService
 
 
 TRADE_DATE = date(2026, 7, 13)
+
+
+def test_checkpoint_options_accept_daily_pipeline_run_identifiers():
+    options = {
+        "confirm_budget": True,
+        "quant_run_id": "quant-current",
+        "manual_hash": "manual-hash",
+        "flash_run_id": "flash-current",
+        "contract_version": "contract-v3",
+        "recompute": True,
+    }
+
+    assert _safe_options(options) == dict(sorted(options.items()))
 
 
 def _session():
@@ -37,7 +53,7 @@ def _run(run_id: str, *, status: str = "RUNNING", snapshot: dict | None = None):
         quant_run_id="quant-test",
         run_data_manifest_id="manifest-test",
         run_mode="POST_MARKET_FINAL",
-        knowledge_mode="LLM_UNVERIFIED_CURRENT",
+        knowledge_mode="STRUCTURED_INPUT_ONLY",
         decision_time=datetime(2026, 7, 13, 7, 30, tzinfo=timezone.utc),
         base_market_trade_date=TRADE_DATE,
         target_trade_date=date(2026, 7, 14),
@@ -108,6 +124,33 @@ def test_only_non_degenerate_complete_flash_is_usable_for_final():
     })
     assert _flash_usable_for_final(good) is True
     assert _flash_usable_for_final(bad) is False
+
+
+def test_final_flash_selection_honors_explicit_run_id():
+    engine, session = _session()
+    try:
+        session.add(QuantRun(
+            run_id="quant-test", request_hash="quant-hash", run_mode="POST_MARKET_FINAL",
+            decision_time=datetime(2026, 7, 13, 7, 30, tzinfo=timezone.utc),
+            base_market_trade_date=TRADE_DATE, target_trade_date=date(2026, 7, 14),
+            config_snapshot={}, data_manifest_id="manifest-test", temporal_status="PASS",
+            actionable=True, status="COMPLETED",
+        ))
+        for run_id in ("flash-current", "flash-stale"):
+            session.add(_run(run_id, status="PARTIAL_SUCCESS", snapshot={
+                "flash_batch_quality": {"degenerate": False, "usable_for_final": True},
+                "reusable_source_only": False,
+            }))
+        session.commit()
+
+        selected = _select_flash_for_final(session, TRADE_DATE, "flash-stale")
+
+        assert selected is not None
+        assert selected.run_id == "flash-stale"
+        assert _select_flash_for_final(session, TRADE_DATE, "flash-missing") is None
+    finally:
+        session.close()
+        engine.dispose()
 
 
 def test_degenerate_flash_source_cannot_reuse_screening_but_can_reuse_fundamental():

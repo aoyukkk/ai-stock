@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
@@ -33,7 +33,15 @@ def get_database_url() -> str:
     database_path = os.getenv("AI_TRADER_DB_PATH", "").strip()
     if database_path:
         return f"sqlite:///{Path(database_path).expanduser().resolve().as_posix()}"
-    return os.getenv("DATABASE_URL") or DEFAULT_SQLITE_URL
+    configured = os.getenv("DATABASE_URL")
+    if configured:
+        return configured
+    if os.getenv("APP_RUNTIME_MODE", "").strip().upper() == "INTERNAL_WEB_SERVER":
+        from backend.core.runtime_paths import server_data_root
+
+        path = (server_data_root() / "data" / "ai_trader_internal.db").resolve()
+        return f"sqlite:///{path.as_posix()}"
+    return DEFAULT_SQLITE_URL
 
 
 def get_database_type(database_url: str | None = None) -> str:
@@ -86,12 +94,18 @@ def create_engine_from_url(database_url: str) -> Engine:
     }
 
     if database_url.startswith("sqlite"):
-        kwargs["connect_args"] = {"check_same_thread": False}
+        kwargs["connect_args"] = {
+            "check_same_thread": False,
+            "timeout": float(os.getenv("SQLITE_BUSY_TIMEOUT_SECONDS", "30")),
+        }
         if database_url != "sqlite:///:memory:":
             _ensure_sqlite_parent_dir(database_url)
 
     try:
-        return create_engine(database_url, **kwargs)
+        engine = create_engine(database_url, **kwargs)
+        if database_url.startswith("sqlite"):
+            _configure_sqlite(engine, database_url)
+        return engine
     except SQLAlchemyError as exc:
         raise DatabaseError("Failed to create database engine") from exc
 
@@ -145,3 +159,20 @@ def _ensure_sqlite_parent_dir(database_url: str) -> None:
         return
 
     Path(database).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+
+def _configure_sqlite(engine: Engine, database_url: str) -> None:
+    busy_timeout_ms = int(float(os.getenv("SQLITE_BUSY_TIMEOUT_SECONDS", "30")) * 1000)
+    persistent = database_url != "sqlite:///:memory:"
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
+            if persistent:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cursor.close()

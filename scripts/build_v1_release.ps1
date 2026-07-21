@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$Version = "1.0.0",
     [ValidateSet("x64")][string]$Architecture = "x64",
     [switch]$SkipSigning,
@@ -55,7 +55,7 @@ if ($SourceDirty -and -not $AllowDirty) {
 
 Invoke-Checked "Python tests" { & $Python -m pytest }
 Invoke-Checked "Security configuration" { & $Python scripts/check_security_config.py }
-Invoke-Checked "Python compileall" { & $Python -m compileall -q backend database datasource quant research fundamentals llm_gateway order_price position_sizing review trader_demo }
+Invoke-Checked "Python compileall" { & $Python -m compileall -q backend database datasource quant research fundamentals llm_gateway market_review intraday_monitor order_price position_sizing review trader_demo }
 Invoke-Checked "Frontend tests" { npm --prefix frontend test }
 Invoke-Checked "Frontend typecheck" { npm --prefix frontend run typecheck }
 Invoke-Checked "Frontend build" { npm --prefix frontend run build }

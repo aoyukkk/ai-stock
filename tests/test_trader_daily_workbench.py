@@ -62,6 +62,8 @@ def test_workbench_api_isolated_readback_and_secret_redaction(tmp_path, monkeypa
 
     monkeypatch.setattr(workbench_api, "_service", get_service)
     monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    monkeypatch.delenv("IFIND_USERNAME", raising=False)
+    monkeypatch.delenv("IFIND_PASSWORD", raising=False)
     client = TestClient(create_app())
 
     status = client.get("/api/workbench/status", params={"trade_date": "2026-07-10"})
@@ -97,6 +99,14 @@ def test_workbench_api_isolated_readback_and_secret_redaction(tmp_path, monkeypa
     assert client.get("/api/workbench/secrets/status").json()["data"]["tushare"]["configured"] is True
     assert client.post("/api/workbench/secrets/tushare/test").json()["data"]["status"] == "READY"
     assert client.delete("/api/workbench/secrets/tushare").status_code == 200
+    username = client.post("/api/workbench/secrets/ifind_username", json={"value": "u"})
+    assert username.status_code == 200
+    assert "u" not in username.json()["data"]
+    password = client.post("/api/workbench/secrets/ifind_password", json={"value": "short"})
+    assert password.json()["error"]["code"] == "SECRET_UPDATE_INVALID"
+    ifind_status = client.get("/api/workbench/secrets/status").json()["data"]
+    assert ifind_status["ifind_username"]["configured"] is True
+    assert ifind_status["ifind_password"]["configured"] is False
     blocked_update = client.post("/api/workbench/data/update", json={"trade_date": "2026-07-10", "mode": "FORCE_REFRESH"})
     assert blocked_update.json()["error"]["code"] == "DATA_PROVIDER_NOT_ENABLED"
 

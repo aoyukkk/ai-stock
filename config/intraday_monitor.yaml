@@ -1,0 +1,50 @@
+intraday_monitor:
+  enabled: false
+  integration_mode: SHADOW
+  observation_only: true
+
+  pool:
+    default_max_stocks: 20
+    hard_max_stocks: 50
+    provider_architecture_max_stocks: 100
+
+  refresh:
+    critical_snapshot_seconds: 20
+    high_snapshot_seconds: 30
+    normal_snapshot_seconds: 60
+    low_snapshot_seconds: 120
+    index_snapshot_seconds: 30
+    minute_refresh_seconds: 60
+    minute_auto_stocks_limit: 5
+    minute_on_trigger: true
+    minute_on_detail_open: true
+
+  alerts:
+    default_cooldown_seconds: 300
+    critical_cooldown_seconds: 60
+    require_consecutive_hits: 2
+    consecutive_hit_interval_seconds: 10
+    hysteresis_percent: 0.2
+    max_same_rule_alerts_per_day: 5
+
+  notifications:
+    in_app_enabled: true
+    windows_enabled: true
+    sound_enabled: false
+    info_windows_notification: false
+    notice_windows_notification: false
+    warning_windows_notification: true
+    critical_windows_notification: true
+
+  midday_protection:
+    stop_new_normal_requests_at: "11:29:30"
+    force_pause_at: "11:30:00"
+    midday_priority_start_at: "11:30:00"
+    midday_latest_start_at: "12:50:00"
+    afternoon_recheck_start_at: "13:00:30"
+    afternoon_monitor_resume_after_recheck: true
+
+  security:
+    allow_order_creation: false
+    allow_auto_action: false
+    allow_llm_in_refresh_loop: false
