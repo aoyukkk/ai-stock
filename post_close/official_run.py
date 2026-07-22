@@ -28,6 +28,7 @@ from database.models.validation import (
 from database.models.workbench import ManualSelectionRecord
 from database.session import get_session, init_db
 from post_close.seven_day_comparison import SevenDayComparisonService
+from post_close.shadow_integration import PostCloseShadowIntegrationService
 from reporting.workbook_standard import validate_trading_assistant_workbook
 from reporting.workbook_style import WorkbookStyleService
 from scripts.prewarm_tushare_trade_date_cache import run_prewarm
@@ -235,6 +236,33 @@ class PostCloseOfficialRunner:
                 "market": market_stage,
             }
             report.update(self._business_readback())
+            stage = "SHADOW"
+            shadow_session = get_session()
+            try:
+                report["shadow"] = PostCloseShadowIntegrationService(shadow_session).run(
+                    trade_date=self.trade_date,
+                    quant_run_id=str((report.get("quant") or {}).get("run_id") or ""),
+                    available_at_ts=datetime.fromisoformat(str(gate["passed_at"])),
+                    baseline_snapshot={
+                        "quant": report.get("quant"),
+                        "flash": report.get("flash"),
+                        "pro": report.get("pro"),
+                        "final_candidate_count": report.get("final_candidate_count"),
+                        "final_candidate_list": report.get("final_candidate_list"),
+                    },
+                )
+            except Exception as shadow_exc:
+                shadow_session.rollback()
+                report["shadow"] = {
+                    "status": "FAILED_CLOSED",
+                    "mode": "PARALLEL_READ_ONLY_SHADOW",
+                    "formal_result_affected": False,
+                    "error_code": type(shadow_exc).__name__,
+                    "error_message": _safe_error(shadow_exc),
+                }
+                report["warnings"].append(f"SHADOW_FAILED_CLOSED:{type(shadow_exc).__name__}")
+            finally:
+                shadow_session.close()
             has_partial_failures = bool(
                 (report.get("flash") or {}).get("failure")
                 or (report.get("pro") or {}).get("failure")

@@ -17,6 +17,7 @@ const routes: RouteRecordRaw[] = [
   { path: "manual-selection", component: () => import("@/views/ManualSelectionView.vue"), meta: { roles: ["ADMIN", "TRADER"] } },
   { path: "final-ranking", component: () => import("@/views/ResultTableView.vue"), props: { kind: "final" } },
   { path: "entry-timing", component: () => import("@/views/EntryTimingView.vue"), meta: { roles: ["ADMIN", "TRADER"] } },
+  { path: "decision-explainability", component: () => import("@/views/DecisionExplainabilityView.vue") },
   { path: "order-position", component: () => import("@/views/ResultTableView.vue"), props: { kind: "orders" } },
   { path: "fundamentals", component: () => import("@/views/ResultTableView.vue"), props: { kind: "fundamentals" } },
   { path: "selection-performance", component: () => import("@/views/SelectionPerformanceView.vue") },

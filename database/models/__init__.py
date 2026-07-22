@@ -106,6 +106,14 @@ from database.models.entry_timing import AdmissionRun, EntryTimingResult
 from database.models.entry_timing_v2 import AdmissionV2Run, EntryTimingV2Result, MarketEmotionSnapshot, StrategyClassificationResult
 from database.models.entry_timing_v22 import DeploymentV22Result, DeploymentV22Run, MarketAdjustedEvaluation, MarketRegimeV2Snapshot
 from database.models.postclose_official import PostCloseOfficialRun
+from database.models.decision_explainability import (
+    AdmissionV3Result,
+    AdmissionV3Run,
+    FactorAttribution,
+    FactorPerformanceHistory,
+    GateEvaluation,
+    StrategyTimingContract,
+)
 
 __all__ = [
     "AIAnalysisResult",
@@ -211,4 +219,10 @@ __all__ = [
     "DeploymentV22Result",
     "MarketAdjustedEvaluation",
     "PostCloseOfficialRun",
+    "StrategyTimingContract",
+    "AdmissionV3Run",
+    "FactorAttribution",
+    "FactorPerformanceHistory",
+    "AdmissionV3Result",
+    "GateEvaluation",
 ]

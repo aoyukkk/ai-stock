@@ -100,6 +100,7 @@ const navGroups = computed(() => [
     ...(auth.canWrite ? [{ path: "/manual-selection", label: "人工选股", icon: User, key: "manual" }] : []),
     { path: "/final-ranking", label: "最终排序", icon: List, key: "final" },
     ...(auth.canWrite ? [{ path: "/entry-timing", label: "买入准入分析", icon: TrendCharts, key: "" }] : []),
+    { path: "/decision-explainability", label: "决策解释", icon: TrendCharts, key: "" },
     { path: "/order-position", label: "挂单与仓位", icon: Wallet, key: "final" },
     { path: "/fundamentals", label: "重点基本面", icon: Document, key: "final" },
   ] },
