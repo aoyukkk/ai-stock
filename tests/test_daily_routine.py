@@ -18,6 +18,7 @@ from scripts.run_daily_routine import (
     _latest_usable_flash,
     _quant_coverage_is_usable,
     _run_close,
+    _recent_trading_days,
 )
 
 
@@ -151,13 +152,40 @@ def test_daily_monitor_defines_two_separate_review_outputs(monkeypatch, tmp_path
     monkeypatch.setattr("scripts.run_daily_routine.SelectionPerformanceService", Service)
     monkeypatch.setattr("scripts.run_daily_routine._checked_command", lambda command: commands.append(command))
     monkeypatch.setattr("scripts.run_daily_routine.ROOT", tmp_path)
+    monkeypatch.setattr(
+        "scripts.run_daily_routine._recent_trading_days",
+        lambda end_date, count: [date(2026, 7, 7 + offset) for offset in range(count - 1)] + [end_date],
+    )
 
     result = _build_monitor(TRADE_DATE)
 
     assert result["today_recommendation_output"].endswith("今日推荐复盘_截至2026-07-15.xlsx")
     assert result["key_candidates_output"].endswith("重点候选复盘_截至2026-07-15.xlsx")
     assert len(commands) == 2
+    assert result["selection_window"] == {"start": "2026-07-07", "end": "2026-07-15"}
     assert {command[command.index("--report-kind") + 1] for command in commands} == {
         "today-recommendation",
         "key-candidates",
     }
+
+
+def test_recent_trading_days_use_cached_open_sessions(monkeypatch, tmp_path):
+    cache = tmp_path / "tushare"
+    cache.mkdir(parents=True)
+    rows = [
+        {"cal_date": value, "is_open": 1}
+        for value in (
+            "20260713", "20260714", "20260715", "20260716",
+            "20260717", "20260720", "20260721",
+        )
+    ]
+    (cache / "trade_cal_fixture.json").write_text(
+        __import__("json").dumps(rows), encoding="utf-8"
+    )
+    monkeypatch.setattr("scripts.run_daily_routine.tushare_cache_root", lambda: cache)
+
+    assert _recent_trading_days(date(2026, 7, 21), count=7) == [
+        date(2026, 7, 13), date(2026, 7, 14), date(2026, 7, 15),
+        date(2026, 7, 16), date(2026, 7, 17), date(2026, 7, 20),
+        date(2026, 7, 21),
+    ]

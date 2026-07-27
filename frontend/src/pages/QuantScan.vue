@@ -4,6 +4,14 @@
     <el-button type="primary" :icon="Refresh" :loading="loading" @click="run">{{ language.t("quant.runQuantScan") }}</el-button>
   </PageHeader>
 
+  <el-alert
+    class="legacy-score-note"
+    title="当前正式 Quant 为 TUSHARE_BASELINE_V1 Legacy 未校准分数。0—100 是因子计算范围，不代表收益概率；请优先结合横截面排名，Shadow 版本不会自动晋级生产。"
+    type="info"
+    show-icon
+    :closable="false"
+  />
+
   <section class="page-section table-wrap">
     <el-table :data="rows" border>
       <el-table-column prop="rank" :label="language.t('common.rank')" width="80" />
@@ -44,3 +52,7 @@ async function run() {
   }
 }
 </script>
+
+<style scoped>
+.legacy-score-note { margin-bottom: 16px; }
+</style>

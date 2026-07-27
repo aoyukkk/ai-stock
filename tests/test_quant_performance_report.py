@@ -9,6 +9,7 @@ def test_quant_report_contains_performance_fields(tmp_path) -> None:
     report = run_real_quant_top500(
         provider="mock",
         history_provider="mock",
+        backup_history_provider=None,
         top_n=5,
         sample_limit=5,
         output=output,

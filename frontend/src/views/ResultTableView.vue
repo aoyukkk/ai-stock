@@ -7,6 +7,14 @@
         <el-button :loading="loading" @click="load">刷新</el-button>
       </div>
     </div>
+    <el-alert
+      v-if="props.kind === 'quant'"
+      title="当前正式 Quant 分数属于 TUSHARE_BASELINE_V1 Legacy 未校准分数，不等同于收益概率；比较时应优先查看排名。研究 Shadow 版本不会自动替换正式结果。"
+      type="info"
+      show-icon
+      :closable="false"
+      class="legacy-score-note"
+    />
     <el-alert v-if="store.status?.source_mode === 'EMPTY'" title="该交易日没有已完成的正式流水线结果。" type="info" show-icon :closable="false" />
     <CenteredDataTable
       v-else
@@ -115,4 +123,5 @@ onBeforeUnmount(() => controller?.abort());
 .page-title h1 { margin: 0; font-size: 22px; }
 .page-title p { margin: 5px 0 0; color: #667085; font-size: 13px; }
 .actions { display: flex; align-items: center; gap: 8px; }
+.legacy-score-note { margin-bottom: 12px; }
 </style>

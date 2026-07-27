@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 import zipfile
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,7 +13,14 @@ from sqlalchemy import select
 
 import database.models  # noqa: F401
 from database.base import Base
-from database.models.validation import ModelValidationFailureAudit
+from database.models.quant_run import QuantRun
+from database.models.validation import (
+    ModelValidationAllocation,
+    ModelValidationFailureAudit,
+    ModelValidationOrderPlan,
+    ModelValidationRun,
+    ModelValidationSample,
+)
 from database.session import create_engine_from_url, get_session
 from research.structured_validation import StructuredOutputValidationError
 from scripts.run_trader_demo_excel import (
@@ -162,6 +171,118 @@ def test_manual_csv_and_pool_deduplication(tmp_path: Path):
     assert [row.stock_code for row in selected] == ["000001"]
     with pytest.raises(ValueError, match="MANUAL_STOCK_NOT_IN_QUANT_RUN"):
         TraderDemoService.evaluation_rows(rows, ranks=None, top_n=1, manual=[ManualSelection("600000")])
+    forced = TraderDemoService.evaluation_rows(
+        rows,
+        ranks=None,
+        top_n=1,
+        manual=[ManualSelection("600730.SH", "人工关注", "HIGH")],
+        allow_manual_outside_quant=True,
+    )
+    assert [row.stock_code for row in forced] == ["000001", "600730.SH"]
+    assert forced[-1].manual_review_only is True
+    assert forced[-1].total_score is None
+
+
+def test_manual_st_review_is_deep_review_candidate_but_order_stays_blocked():
+    engine = create_engine_from_url("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session = get_session(engine)
+    try:
+        service = TraderDemoService(session)
+        run = QuantRun(
+            run_id="quant-st-review",
+            request_hash="quant-st-review-hash",
+            run_mode="POST_MARKET_FINAL",
+            decision_time=datetime(2026, 7, 24, 7, tzinfo=timezone.utc),
+            base_market_trade_date=date(2026, 7, 24),
+            target_trade_date=date(2026, 7, 27),
+            factor_version="TUSHARE_BASELINE_V1",
+            config_snapshot={},
+            data_manifest_id="manifest-st-review",
+            no_llm_call_verified=True,
+            temporal_status="PASS",
+            actionable=True,
+            status="COMPLETED",
+        )
+        validation = ModelValidationRun(
+            run_id="flash-st-review",
+            quant_run_id=run.run_id,
+            run_data_manifest_id=run.data_manifest_id,
+            run_mode=run.run_mode,
+            knowledge_mode="STRUCTURED_INPUT_ONLY",
+            decision_time=run.decision_time,
+            base_market_trade_date=run.base_market_trade_date,
+            target_trade_date=run.target_trade_date,
+            real_llm=True,
+            status="SUCCESS",
+            request_hash="flash-st-review-hash",
+            config_snapshot={},
+            expected_universe_audit={},
+            warnings=[],
+        )
+        sample = ModelValidationSample(
+            validation_run_id=validation.run_id,
+            quant_run_id=run.run_id,
+            run_data_manifest_id=run.data_manifest_id,
+            rank=5313,
+            stock_code="600730.SH",
+            stock_name="*ST高科",
+            quant_scores={
+                "total_score": None,
+                "technical_score": None,
+                "capital_score": None,
+                "emotion_score": None,
+                "momentum_score": None,
+                "risk_score": None,
+            },
+            profile_version="test-st-v1",
+            selected_at=run.decision_time,
+            fundamental_result={},
+            screening_result={
+                "screening_decision": "WATCH_ONLY",
+                "confidence": 0.5,
+                "_trader_demo": {
+                    "execution_status": "SUCCESS",
+                    "selection_source": "MANUAL",
+                    "manual_review_only": True,
+                    "hard_gate_review_only": True,
+                    "hard_gate_reasons": [
+                        "MANUAL_OUTSIDE_ACTIONABLE_QUANT_UNIVERSE",
+                        "ST",
+                    ],
+                    "order_eligible": False,
+                },
+            },
+            field_provenance={},
+            missing_fields=[],
+        )
+        session.add_all([run, validation, sample])
+        session.commit()
+        service.guard._profile = lambda *_args: SimpleNamespace(
+            stock_name="*ST高科"
+        )
+
+        service.generate_candidate_outputs(
+            validation.run_id,
+            account_equity=Decimal("100000"),
+            available_cash=Decimal("100000"),
+        )
+
+        plan = session.scalar(select(ModelValidationOrderPlan))
+        allocation = session.scalar(select(ModelValidationAllocation))
+        assert plan is not None
+        assert plan.status == "BLOCKED"
+        assert plan.recommended_price is None
+        assert any(
+            "MANUAL_REVIEW_ONLY_HARD_GATE" in warning
+            for warning in plan.warnings
+        )
+        assert allocation is not None
+        assert allocation.suggested_position_percent == 0
+        assert allocation.suggested_quantity == 0
+    finally:
+        session.close()
+        engine.dispose()
 
 
 def test_sidecar_contains_compact_audit_without_secret(tmp_path: Path):

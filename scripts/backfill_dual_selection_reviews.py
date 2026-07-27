@@ -30,14 +30,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="为历史交易日补齐今日推荐与重点候选两套复盘表。")
     parser.add_argument("--start-date", type=date.fromisoformat)
     parser.add_argument("--end-date", type=date.fromisoformat)
+    parser.add_argument("--evaluation-date", type=date.fromisoformat)
+    parser.add_argument("--selection-start-date", type=date.fromisoformat)
+    parser.add_argument("--selection-end-date", type=date.fromisoformat)
     parser.add_argument("--force-recalculate", action="store_true")
     args = parser.parse_args()
+    if bool(args.selection_start_date) != bool(args.selection_end_date):
+        parser.error("--selection-start-date and --selection-end-date must be provided together")
+    if args.selection_start_date and not args.evaluation_date:
+        parser.error("--evaluation-date is required with an explicit selection range")
 
     load_dotenv(ROOT / ".env", override=False)
     init_db()
     session = get_session()
     try:
-        trade_dates = _trade_dates(session, args.start_date, args.end_date)
+        trade_dates = (
+            [args.evaluation_date]
+            if args.evaluation_date
+            else _trade_dates(session, args.start_date, args.end_date)
+        )
         outputs = []
         for evaluation_date in trade_dates:
             for scope, label in REPORTS:
@@ -46,6 +57,8 @@ def main() -> int:
                     evaluation_date,
                     scope,
                     force_recalculate=args.force_recalculate,
+                    selection_start_date=args.selection_start_date,
+                    selection_end_date=args.selection_end_date,
                 )
                 output = (
                     ROOT
@@ -91,14 +104,18 @@ def _run_performance(
     selection_scope: str,
     *,
     force_recalculate: bool,
+    selection_start_date: date | None = None,
+    selection_end_date: date | None = None,
 ) -> SelectionPerformanceRun:
     service = SelectionPerformanceService(session)
+    range_start = selection_start_date or evaluation_date - timedelta(days=6)
+    range_end = selection_end_date or evaluation_date
     request = PerformanceRequest(
         evaluation_end_date=evaluation_date,
         lookback_value=7,
         lookback_unit="CUSTOM",
-        start_selection_date=evaluation_date - timedelta(days=6),
-        end_selection_date=evaluation_date,
+        start_selection_date=range_start,
+        end_selection_date=range_end,
         return_basis="SIGNAL_CLOSE",
         selection_scope=selection_scope,
         weighting_mode="EQUAL_WEIGHT",

@@ -35,6 +35,18 @@
       <div><span>累计误杀机会</span><strong>{{ formatReturnValue(totalMissedGain) }}</strong></div>
     </div>
 
+    <section v-if="forwardSummary" class="gate-section">
+      <h2>前向 Shadow 评价</h2>
+      <p>全量D3 {{ forwardSummary.sample_status }} · 公平A/B {{ forwardSummary.fair_ab_sample_status }} · {{ forwardSummary.promotion_recommendation }} · 待成熟 {{ forwardSummary.pending }}</p>
+      <CenteredDataTable :rows="forwardComparison" :columns="forwardComparisonColumns" :loading="loading" :pagination-enabled="false" height="360" />
+    </section>
+
+    <section v-if="forwardPending.length" class="gate-section">
+      <h2>待成熟样本</h2>
+      <p>未成熟收益保持空值；时间合同决定最早合法执行日。</p>
+      <CenteredDataTable :rows="forwardPending" :columns="pendingColumns" :loading="loading" :pagination-enabled="false" height="300" />
+    </section>
+
     <div class="filters">
       <el-select v-model="admissionState" clearable placeholder="全部准入状态" @change="resetAndLoad">
         <el-option v-for="item in admissionStates" :key="item" :label="item" :value="item" />
@@ -63,32 +75,13 @@
     <section v-if="factorPerformance.length" class="gate-section">
       <h2>因子长期表现</h2>
       <p>只使用已成熟的真实持仓日收益，不改变任何评分权重。</p>
-      <el-table :data="factorPerformance" border stripe>
-        <el-table-column prop="factor_family" label="因子族" align="center" min-width="170" />
-        <el-table-column prop="sample_count" label="样本数" align="center" />
-        <el-table-column prop="win_rate" label="胜率" align="center" :formatter="formatPercentCell" />
-        <el-table-column prop="avg_return_d1" label="D1平均收益" align="center" :formatter="formatReturn" />
-        <el-table-column prop="avg_return_d3" label="D3平均收益" align="center" :formatter="formatReturn" />
-        <el-table-column prop="avg_return_d5" label="D5平均收益" align="center" :formatter="formatReturn" />
-        <el-table-column prop="avg_drawdown" label="平均回撤" align="center" :formatter="formatReturn" />
-        <el-table-column prop="positive_contribution_rate" label="正贡献率" align="center" :formatter="formatPercentCell" />
-        <el-table-column prop="negative_contribution_rate" label="负贡献率" align="center" :formatter="formatPercentCell" />
-      </el-table>
+      <CenteredDataTable :rows="factorPerformance" :columns="factorColumns" :loading="loading" :pagination-enabled="false" height="330" />
     </section>
 
     <section v-if="gateRanking.length" class="gate-section">
       <h2>Gate 价值排名</h2>
       <p>同时展示误杀机会、避免亏损和净门禁价值；无成熟收益时保持空值。</p>
-      <el-table :data="gateRanking" border stripe>
-        <el-table-column prop="gate_name" label="Gate" align="center" min-width="180" />
-        <el-table-column prop="trigger_count" label="触发数" align="center" />
-        <el-table-column prop="blocked_count" label="阻止数" align="center" />
-        <el-table-column prop="future_return" label="触发后收益" align="center" :formatter="formatReturn" />
-        <el-table-column prop="avoided_loss" label="避免亏损" align="center" :formatter="formatReturn" />
-        <el-table-column prop="missed_gain" label="误杀机会" align="center" :formatter="formatReturn" />
-        <el-table-column prop="net_gate_value" label="净门禁价值" align="center" :formatter="formatReturn" />
-        <el-table-column prop="false_positive_rate" label="误杀率" align="center" :formatter="formatPercentCell" />
-      </el-table>
+      <CenteredDataTable :rows="gateRanking" :columns="gateColumns" :loading="loading" :pagination-enabled="false" height="330" />
     </section>
 
     <el-drawer v-model="drawerOpen" size="72%" title="逐股决策解释">
@@ -104,22 +97,10 @@
         </el-descriptions>
 
         <h3>Factor Attribution</h3>
-        <el-table :data="detail.factor_attribution" border stripe>
-          <el-table-column prop="factor_family" label="因子族" align="center" min-width="160" />
-          <el-table-column prop="normalized_score" label="标准分" align="center" :formatter="formatNumberCell" />
-          <el-table-column prop="score_contribution" label="评分贡献" align="center" :formatter="formatNumberCell" />
-          <el-table-column prop="gate_contribution" label="门禁贡献" align="center" :formatter="formatNumberCell" />
-          <el-table-column prop="rank_contribution" label="排名贡献" align="center" :formatter="formatNumberCell" />
-          <el-table-column prop="interaction_note" label="交互说明" align="center" min-width="260" />
-        </el-table>
+        <CenteredDataTable :rows="detail.factor_attribution" :columns="attributionColumns" :pagination-enabled="false" height="300" />
 
         <h3>取消门禁后的变化</h3>
-        <el-table :data="counterfactualRows" border stripe>
-          <el-table-column prop="gate" label="取消门禁" align="center" min-width="180" />
-          <el-table-column prop="admission_state" label="新状态" align="center" />
-          <el-table-column prop="score_delta" label="分数变化" align="center" :formatter="formatNumberCell" />
-          <el-table-column prop="position_multiplier" label="仓位系数" align="center" :formatter="formatNumberCell" />
-        </el-table>
+        <CenteredDataTable :rows="counterfactualRows" :columns="counterfactualColumns" :pagination-enabled="false" height="300" />
       </template>
     </el-drawer>
   </section>
@@ -127,6 +108,7 @@
 
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
+import dayjs from "dayjs";
 import { computed, onMounted, ref, watch } from "vue";
 
 import {
@@ -136,6 +118,7 @@ import {
   getLatestFactorPerformance,
   getLatestDecisionExplainability,
 } from "@/api/decisionExplainability";
+import { getForwardModelComparison, getForwardPending, getForwardShadowSummary } from "@/api/forwardShadow";
 import CenteredDataTable from "@/components/common/CenteredDataTable.vue";
 import { useWorkbenchStore } from "@/stores/workbench";
 import type {
@@ -145,12 +128,17 @@ import type {
   FactorPerformanceRow,
   GateValueRow,
 } from "@/types/decisionExplainability";
+import type { ForwardShadowRow, ForwardShadowSummary } from "@/types/forwardShadow";
 
 const store = useWorkbenchStore();
+const forwardAsOfDate = dayjs().format("YYYY-MM-DD");
 const summary = ref<DecisionExplainabilitySummary | null>(null);
 const rows = ref<DecisionExplainabilityRow[]>([]);
 const factorPerformance = ref<FactorPerformanceRow[]>([]);
 const gateRanking = ref<GateValueRow[]>([]);
+const forwardSummary = ref<ForwardShadowSummary | null>(null);
+const forwardComparison = ref<ForwardShadowRow[]>([]);
+const forwardPending = ref<ForwardShadowRow[]>([]);
 const detail = ref<DecisionExplainabilityDetail | null>(null);
 const loading = ref(false);
 const drawerOpen = ref(false);
@@ -210,6 +198,39 @@ const columns = [
   { key: "why_selected", label: "选中 / 拒绝原因", formatter: reason, minWidth: 300 },
   { key: "counterfactuals", label: "取消门禁后的变化", formatter: counterfactual, minWidth: 320 },
 ];
+const forwardComparisonColumns = [
+  { key: "model_route", label: "路线", minWidth: 190 }, { key: "segment", label: "分层", minWidth: 180 },
+  { key: "horizon", label: "周期" }, { key: "fill_count", label: "成熟成交" },
+  { key: "positive_rate", label: "正收益率", formatter: percent }, { key: "average_return", label: "平均收益", formatter: percent },
+  { key: "profit_factor", label: "Profit Factor", formatter: score }, { key: "sample_status", label: "样本状态", minWidth: 180 },
+  { key: "fair_sample", label: "公平样本" },
+];
+const pendingColumns = [
+  { key: "source_run_id", label: "来源运行", minWidth: 280 }, { key: "stock_code", label: "股票代码" },
+  { key: "entry_trade_date", label: "合法入场日" }, { key: "pending_horizons", label: "待成熟周期", minWidth: 220 },
+];
+const factorColumns = [
+  { key: "factor_family", label: "因子族", minWidth: 170 }, { key: "sample_count", label: "样本数" },
+  { key: "win_rate", label: "胜率", formatter: percent }, { key: "avg_return_d1", label: "D1平均收益", formatter: percent },
+  { key: "avg_return_d3", label: "D3平均收益", formatter: percent }, { key: "avg_return_d5", label: "D5平均收益", formatter: percent },
+  { key: "avg_drawdown", label: "平均回撤", formatter: percent }, { key: "positive_contribution_rate", label: "正贡献率", formatter: percent },
+  { key: "negative_contribution_rate", label: "负贡献率", formatter: percent },
+];
+const gateColumns = [
+  { key: "gate_name", label: "Gate", minWidth: 180 }, { key: "trigger_count", label: "触发数" },
+  { key: "blocked_count", label: "阻止数" }, { key: "future_return", label: "触发后收益", formatter: percent },
+  { key: "avoided_loss", label: "避免亏损", formatter: percent }, { key: "missed_gain", label: "误杀机会", formatter: percent },
+  { key: "net_gate_value", label: "净门禁价值", formatter: percent }, { key: "false_positive_rate", label: "误杀率", formatter: percent },
+];
+const attributionColumns = [
+  { key: "factor_family", label: "因子族", minWidth: 160 }, { key: "normalized_score", label: "标准分", formatter: score },
+  { key: "score_contribution", label: "评分贡献", formatter: score }, { key: "gate_contribution", label: "门禁贡献", formatter: score },
+  { key: "rank_contribution", label: "排名贡献", formatter: score }, { key: "interaction_note", label: "交互说明", minWidth: 260 },
+];
+const counterfactualColumns = [
+  { key: "gate", label: "取消门禁", minWidth: 180 }, { key: "admission_state", label: "新状态" },
+  { key: "score_delta", label: "分数变化", formatter: score }, { key: "position_multiplier", label: "仓位系数", formatter: score },
+];
 
 async function loadRows() {
   const [factorResponse, gateResponse] = await Promise.all([
@@ -233,7 +254,14 @@ async function loadRows() {
 async function refresh() {
   loading.value = true;
   try {
-    summary.value = (await getLatestDecisionExplainability(store.tradeDate)).data;
+    const [decisionResponse, forwardSummaryResponse, comparisonResponse, pendingResponse] = await Promise.all([
+      getLatestDecisionExplainability(store.tradeDate), getForwardShadowSummary(forwardAsOfDate),
+      getForwardModelComparison(forwardAsOfDate), getForwardPending(forwardAsOfDate),
+    ]);
+    summary.value = decisionResponse.data;
+    forwardSummary.value = forwardSummaryResponse.data;
+    forwardComparison.value = comparisonResponse.data;
+    forwardPending.value = pendingResponse.data;
     await loadRows();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "读取解释结果失败");

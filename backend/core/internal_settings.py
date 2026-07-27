@@ -24,7 +24,9 @@ class InternalWebSettings:
     local_bypass: bool
     max_request_bytes: int
     shared_login_username: str = "partners"
-    shared_identity_email: str = "shared-partners@local.invalid"
+    shared_identity_email: str = "shared-internal-user@local.invalid"
+    force_password_change_on_first_login: bool = False
+    shared_identity_role: str = "TRADER"
 
     @property
     def enabled(self) -> bool:
@@ -63,7 +65,7 @@ class InternalWebSettings:
                 errors.append("EXACTLY_FOUR_INTERNAL_USERS_REQUIRED")
         if self.shared_password_enabled and not re.fullmatch(r"[A-Za-z0-9_.-]{3,64}", self.shared_login_username):
             errors.append("SHARED_LOGIN_USERNAME_INVALID")
-        if "ADMIN" not in self.allowed_users.values():
+        if self.cloudflare_access_enabled and "ADMIN" not in self.allowed_users.values():
             errors.append("AT_LEAST_ONE_ADMIN_REQUIRED")
         if self.local_bypass and self.app_env != "development":
             errors.append("LOCAL_AUTH_BYPASS_FORBIDDEN_IN_SERVER_MODE")
@@ -75,12 +77,15 @@ def load_internal_web_settings() -> InternalWebSettings:
     runtime_mode = os.getenv("APP_RUNTIME_MODE", "DESKTOP").strip().upper()
     app_env = os.getenv("APP_ENV", "development").strip().lower()
     roles = _role_mapping(os.getenv("INTERNAL_USER_ROLES", ""), os.getenv("ALLOWED_USER_EMAILS", ""))
-    auth_mode = os.getenv("AUTH_MODE", "CLOUDFLARE_ACCESS").strip().upper()
+    auth_mode = os.getenv("INTERNAL_WEB_AUTH_MODE", os.getenv("AUTH_MODE", "LOCAL_SHARED_PASSWORD")).strip().upper()
     if _flag("ENABLE_LOCAL_PASSWORD_AUTH"):
         auth_mode = "CLOUDFLARE_ACCESS_PLUS_LOCAL_PASSWORD"
-    shared_identity_email = "shared-partners@local.invalid"
+    shared_identity_email = "shared-internal-user@local.invalid"
     if auth_mode == "LOCAL_SHARED_PASSWORD":
-        roles = {shared_identity_email: "ADMIN"}
+        shared_role = os.getenv("INTERNAL_WEB_SHARED_ROLE", "TRADER").strip().upper()
+        if shared_role not in ROLES:
+            raise RuntimeError("INVALID_INTERNAL_WEB_SHARED_ROLE")
+        roles = {shared_identity_email: shared_role}
     settings = InternalWebSettings(
         runtime_mode=runtime_mode,
         app_env=app_env,
@@ -91,11 +96,13 @@ def load_internal_web_settings() -> InternalWebSettings:
         access_aud=os.getenv("CLOUDFLARE_ACCESS_AUD", "").strip(),
         auth_mode=auth_mode,
         allowed_users=roles,
-        session_hours=max(1, min(24, int(os.getenv("CLOUDFLARE_ACCESS_SESSION_HOURS", "12")))),
+        session_hours=max(1, min(24, int(os.getenv("INTERNAL_WEB_SESSION_HOURS", os.getenv("CLOUDFLARE_ACCESS_SESSION_HOURS", "12"))))),
         local_bypass=_flag("ALLOW_LOCAL_AUTH_BYPASS"),
         max_request_bytes=max(1024, int(os.getenv("MAX_REQUEST_BODY_BYTES", str(10 * 1024 * 1024)))),
         shared_login_username=os.getenv("SHARED_LOGIN_USERNAME", "partners").strip(),
         shared_identity_email=shared_identity_email,
+        force_password_change_on_first_login=_flag("FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN"),
+        shared_identity_role=roles.get(shared_identity_email, "TRADER"),
     )
     if settings.local_bypass and app_env != "development":
         raise RuntimeError("LOCAL_AUTH_BYPASS_REQUIRES_DEVELOPMENT")

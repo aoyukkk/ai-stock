@@ -9,8 +9,9 @@ internal_web:
     mode: LOCAL_SHARED_PASSWORD
     session_hours: 12
     shared_username: partners
-    shared_identity_role: ADMIN
+    shared_identity_role: TRADER
     local_password_enabled: true
+    force_password_change_on_first_login: false
     local_bypass_enabled: false
   request_security:
     max_body_bytes: 10485760

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import date
+import json
 
 import pytest
 
@@ -8,6 +10,7 @@ from midday.full_a_radar import (
     full_a_breadth, industry_state, percentile_scores, score_full_a,
     stable_hash, validate_radar_config, weighted_available,
 )
+from midday.full_a_service import _previous_open_trade_date_from_cache
 
 
 CONFIG={
@@ -81,3 +84,19 @@ def test_stock_code_never_enters_score_formula():
     left=score_full_a([row("000001",.01)],CONFIG)[0][0]["midday_radar_score"];right=score_full_a([row("999999",.01)],CONFIG)[0][0]["midday_radar_score"]
     assert left==right
 def test_hash_is_order_stable_for_mappings():assert stable_hash({"a":1,"b":2})==stable_hash({"b":2,"a":1})
+
+
+def test_previous_open_trade_date_is_dynamic(tmp_path):
+    rows=[
+        {"exchange":"SSE","cal_date":"20260717","is_open":1},
+        {"exchange":"SSE","cal_date":"20260718","is_open":0},
+        {"exchange":"SSE","cal_date":"20260720","is_open":1},
+    ]
+    (tmp_path/"trade_cal_test.json").write_text(json.dumps(rows),encoding="utf-8")
+    assert _previous_open_trade_date_from_cache(date(2026,7,20),tmp_path)==date(2026,7,17)
+    assert _previous_open_trade_date_from_cache(date(2026,7,21),tmp_path)==date(2026,7,20)
+
+
+def test_previous_open_trade_date_rejects_missing_calendar(tmp_path):
+    with pytest.raises(ValueError,match="PREVIOUS_OPEN_TRADE_DATE_UNAVAILABLE"):
+        _previous_open_trade_date_from_cache(date(2026,7,21),tmp_path)

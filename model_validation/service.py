@@ -264,6 +264,9 @@ class GuardedValidationService:
 
     @staticmethod
     def _structured_context(run, manifest, rank_row, profile) -> dict[str, Any]:
+        manual_review_only = bool(
+            getattr(rank_row, "manual_review_only", False)
+        )
         return {
             "stock_code": rank_row.stock_code, "stock_name": profile.stock_name,
             "company_profile": profile.company_profile, "main_business": profile.main_business,
@@ -273,7 +276,21 @@ class GuardedValidationService:
             "concept_mapping_audit": profile.concept_mapping_audit,
             "financial_summary": profile.financial_summary, "financial_status": profile.financial_status,
             "missing_fields": profile.missing_fields,
-            "quant": {"rank": rank_row.rank, **_quant_scores(rank_row)},
+            "quant": {
+                "rank": None if manual_review_only else rank_row.rank,
+                **_quant_scores(rank_row),
+                "quant_available": not manual_review_only,
+                "manual_review_only": manual_review_only,
+            },
+            "review_constraints": {
+                "llm_review_required": manual_review_only,
+                "order_eligible": not manual_review_only,
+                "hard_gate_reasons": (
+                    ["MANUAL_OUTSIDE_ACTIONABLE_QUANT_UNIVERSE"]
+                    if manual_review_only
+                    else []
+                ),
+            },
             "provenance": {key: value.model_dump(mode="json") for key, value in profile.field_provenance_map.items()},
             "manifest": {"id": manifest.manifest_id, "decision_time": str(manifest.decision_time), "base_trade_date": str(manifest.base_market_trade_date), "target_trade_date": str(manifest.target_trade_date)},
         }
@@ -434,7 +451,18 @@ def _estimated_limits(code: str, name: str, basic: dict[str, Any], previous_clos
 
 
 def _quant_scores(row) -> dict[str, Any]:
-    return {key: str(getattr(row, key)) for key in ("total_score", "technical_score", "capital_score", "emotion_score", "momentum_score", "risk_score")}
+    result = {}
+    for key in (
+        "total_score",
+        "technical_score",
+        "capital_score",
+        "emotion_score",
+        "momentum_score",
+        "risk_score",
+    ):
+        value = getattr(row, key)
+        result[key] = None if value is None else str(value)
+    return result
 
 
 def _read_records(path: Path) -> list[dict[str, Any]]:

@@ -251,6 +251,43 @@ def test_v3_canary_and_candidate_order_are_deterministic_and_distinct():
     ]
 
 
+def test_v3_input_preserves_manual_st_hard_gate_review_only() -> None:
+    sample = _sample(
+        "600730.SH", rank=5313, flash_score=40, source="MANUAL", manual=True
+    )
+    sample.stock_name = "*ST高科"
+    sample.quant_scores = {
+        "total_score": None,
+        "technical_score": None,
+        "capital_score": None,
+        "emotion_score": None,
+        "momentum_score": None,
+        "risk_score": None,
+    }
+    sample.screening_result["_trader_demo"].update(
+        {
+            "manual_review_only": True,
+            "hard_gate_review_only": True,
+            "hard_gate_reasons": [
+                "MANUAL_OUTSIDE_ACTIONABLE_QUANT_UNIVERSE",
+                "ST",
+            ],
+            "order_eligible": False,
+        }
+    )
+
+    compact, _ = _single_input(sample, {"600730.SH": "MANUAL"})
+
+    assert compact["quant_rank"] is None
+    assert compact["quant_score"] is None
+    assert compact["manual_review_only"] is True
+    assert compact["order_eligible"] is False
+    assert compact["hard_gate_reasons"] == [
+        "MANUAL_OUTSIDE_ACTIONABLE_QUANT_UNIVERSE",
+        "ST",
+    ]
+
+
 def test_v3_local_ranking_uses_all_tie_breaks_without_mutation():
     samples = {
         "000001.SZ": _sample("000001.SZ", rank=2, flash_score=90),
@@ -282,6 +319,26 @@ def test_v3_portfolio_rejects_extra_stock_price_and_truncation():
         _response('{"schema_version":', finish_reason="length"), {"603019.SH"}
     )
     assert truncated.diagnostics["error_category"] == "JSON_TRUNCATED"
+
+
+def test_v3_portfolio_normalizes_overlong_summary_without_changing_ranking_fields():
+    payload = _portfolio(["603019.SH"])
+    payload["overall_summary"] = "组合说明" * 200
+
+    checked = _validate_portfolio(
+        _response(payload),
+        {"603019.SH"},
+    )
+
+    assert checked.value is not None
+    assert len(checked.value.overall_summary) == 600
+    assert checked.value.top_priority_stock_codes == ["603019.SH"]
+    assert checked.diagnostics["deterministic_text_normalization"] == {
+        "field": "$.overall_summary",
+        "original_length": 800,
+        "normalized_length": 600,
+        "ranking_fields_changed": False,
+    }
 
 
 def test_v3_usage_is_saved_before_schema_repair_and_reasoning_is_not_stored():

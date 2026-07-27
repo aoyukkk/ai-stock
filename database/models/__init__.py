@@ -114,6 +114,27 @@ from database.models.decision_explainability import (
     GateEvaluation,
     StrategyTimingContract,
 )
+from database.models.forward_shadow import (
+    ForwardOutcome,
+    GateCounterfactualRun,
+    GateValueEvaluation,
+    ModelVersionComparison,
+)
+from database.models.weekly_review import (
+    WeeklyRecommendationReviewDetail,
+    WeeklyRecommendationReviewRun,
+    WeeklyRecommendationReviewSupersession,
+)
+from database.models.ranking_evaluation import (
+    RankingEvaluationArtifact,
+    RankingEvaluationDailyMetric,
+    RankingEvaluationDataIssue,
+    RankingEvaluationForwardOutcome,
+    RankingEvaluationSnapshot,
+    RankingEvaluationSnapshotItem,
+    RankingEvaluationState,
+    RankingEvaluationWeeklyRun,
+)
 
 __all__ = [
     "AIAnalysisResult",
@@ -225,4 +246,19 @@ __all__ = [
     "FactorPerformanceHistory",
     "AdmissionV3Result",
     "GateEvaluation",
+    "ForwardOutcome",
+    "GateCounterfactualRun",
+    "GateValueEvaluation",
+    "ModelVersionComparison",
+    "WeeklyRecommendationReviewDetail",
+    "WeeklyRecommendationReviewRun",
+    "WeeklyRecommendationReviewSupersession",
+    "RankingEvaluationArtifact",
+    "RankingEvaluationDailyMetric",
+    "RankingEvaluationDataIssue",
+    "RankingEvaluationForwardOutcome",
+    "RankingEvaluationSnapshot",
+    "RankingEvaluationSnapshotItem",
+    "RankingEvaluationState",
+    "RankingEvaluationWeeklyRun",
 ]

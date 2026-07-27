@@ -4,6 +4,7 @@ from pathlib import Path
 from openpyxl import Workbook,load_workbook
 from openpyxl.styles import Alignment,Font,PatternFill
 from openpyxl.utils import get_column_letter
+from reporting.source_row_style import apply_selection_source_rows
 
 CENTER=Alignment(horizontal="center",vertical="center",wrap_text=True)
 SHEETS=("01_午盘结论","02_重点候选","03_下午观察池","04_被阻断候选","05_人工挑战池","06_市场状态","07_数据质量","08_调用审计")
@@ -40,6 +41,7 @@ def _sheet(wb,title,rows):
         if "股票代码" in str(h) or str(h) in {"代码","stock_code"}:
             for cell in ws[get_column_letter(i)]:cell.number_format="@"
         ws.column_dimensions[get_column_letter(i)].width=min(34,max(12,max(len(str(ws.cell(r,i).value or "")) for r in range(1,min(ws.max_row,120)+1))*1.4+2))
+    apply_selection_source_rows(ws,header_row=1,first_data_row=2)
 def _cell(v):return json.dumps(v,ensure_ascii=False,sort_keys=True,default=str) if isinstance(v,(dict,list)) else v
 def _verify(path):
     wb=load_workbook(path,data_only=False)

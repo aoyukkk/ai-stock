@@ -43,9 +43,18 @@ MIDDAY_SHEETS = (
 FORMULA_ERRORS = ("#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#N/A")
 FORBIDDEN_MACHINE_TEXT = (
     "MODEL_VALIDATION",
+    "MODEL_UNVERIFIED",
+    "LLM_UNVERIFIED",
+    "DEEPSEEK_UNVERIFIED",
     "NON_ACTIONABLE",
     "WATCH_ONLY",
     "ADVANCE",
+    "HEALTHY",
+    "UNCLEAR",
+    "receivable_risk",
+    "inventory_risk",
+    "goodwill_risk",
+    "shareholder_action_risk",
     "request_hash",
     "reasoning_content",
 )
@@ -124,11 +133,38 @@ def _validate_table(worksheet, table) -> None:
             cell = worksheet.cell(row_number, index)
             if cell.value in (None, ""):
                 continue
-            code = str(cell.value)
+            code = str(cell.value).strip()
             if code == "无待处理事项":
                 continue
-            if not re.fullmatch(r"\d{6}", code) or cell.number_format != "@":
+            text_code = re.fullmatch(r"\d{6}", code) and cell.number_format == "@"
+            numeric_code = (
+                isinstance(cell.value, int)
+                and 0 <= cell.value <= 999999
+                and cell.number_format == "000000"
+            )
+            if not (text_code or numeric_code):
                 raise ValueError(f"WORKBOOK_STOCK_CODE_FORMAT_ERROR:{worksheet.title}:{cell.coordinate}")
+
+    if worksheet.title == "基本面摘要":
+        header_map = {str(value): index for index, value in enumerate(headers, start=min_col)}
+        concept_col = header_map.get("概念标签")
+        review_col = header_map.get("人工复核")
+        source_col = header_map.get("核验来源")
+        for row_number in range(min_row + 1, max_row + 1):
+            if concept_col:
+                value = str(worksheet.cell(row_number, concept_col).value or "")
+                concepts = [item for item in re.split(r"[；;]", value) if item.strip()]
+                if len(concepts) > 8:
+                    raise ValueError(
+                        f"WORKBOOK_CONCEPT_TAG_OVERFLOW:{worksheet.title}:{row_number}"
+                    )
+            if review_col and source_col:
+                review = str(worksheet.cell(row_number, review_col).value or "")
+                source = str(worksheet.cell(row_number, source_col).value or "")
+                if review == "已联网核验" and not re.search(r"https?://", source):
+                    raise ValueError(
+                        f"WORKBOOK_VERIFICATION_SOURCE_MISSING:{worksheet.title}:{row_number}"
+                    )
 
 
 def _validate_cells(worksheet) -> None:

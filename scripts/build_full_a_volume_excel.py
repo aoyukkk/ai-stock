@@ -162,8 +162,7 @@ def _build_detail(sheet, codes, first, second, masters, first_date: str, second_
             cell.alignment = styles["center"]
             cell.border = styles["border"]
             cell.font = styles["body_font"]
-            if row_number % 2 == 0:
-                cell.fill = PatternFill("solid", fgColor="DCEAF5")
+            cell.fill = PatternFill("solid", fgColor="FFFFFF")
         sheet.cell(row_number, 2).number_format = "@"
         for column in (6, 8, 11, 13, 16, 19):
             sheet.cell(row_number, column).number_format = "#,##0.00"
@@ -230,8 +229,8 @@ def _build_summary(sheet, detail_count: int, first_date: str, second_date: str) 
             cell.border = styles["border"]
             if cell.row >= 3:
                 cell.font = styles["body_font"]
-            if cell.row >= 3 and cell.row % 2 == 1:
-                cell.fill = PatternFill("solid", fgColor="DCEAF5")
+            if cell.row >= 3:
+                cell.fill = PatternFill("solid", fgColor="FFFFFF")
     for row in (6, 7, 8, 9):
         for column in range(2, 6):
             sheet.cell(row, column).number_format = "0.0000%"
@@ -272,8 +271,8 @@ def _build_notes(sheet, first_date: str, second_date: str, count: int) -> None:
             cell.alignment = styles["center"]
             cell.border = styles["border"]
             cell.font = styles["body_font"]
-            if row_number > 1 and row_number % 2 == 0:
-                cell.fill = PatternFill("solid", fgColor="DCEAF5")
+            if row_number > 1:
+                cell.fill = PatternFill("solid", fgColor="FFFFFF")
     for cell in sheet[1]:
         _style_header(cell, styles)
     sheet.column_dimensions["A"].width = 24

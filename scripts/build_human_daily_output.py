@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -27,6 +26,7 @@ if str(ROOT) not in sys.path:
 load_dotenv(ROOT / ".env", override=False)
 
 from database.session import get_session, init_db
+from database.models.quant_run import QuantRun
 from database.models.validation import ProResumeRun
 from backend.core.config_manager import ConfigManager
 from scripts.run_guarded_llm_excel_validation import _secret_scan
@@ -34,6 +34,11 @@ from scripts.run_trader_demo_excel import _serialize_readback
 from trader_demo.service import TraderDemoService
 from reporting.workbook_standard import validate_trading_assistant_workbook
 from reporting.workbook_style import WorkbookStyleService
+from reporting.immutable_workbook import (
+    safe_artifact_token,
+    versioned_workbook_path,
+    workbook_content_style_hashes,
+)
 
 
 DECISIONS = {
@@ -45,7 +50,15 @@ DECISIONS = {
 }
 SOURCES = {"LLM_TOP20": "模型筛选", "MANUAL": "人工关注", "BOTH": "共同入选"}
 PRIORITIES = {"HIGH": "高", "MEDIUM": "中", "LOW": "低", "REVIEW_ONLY": "仅复核"}
-FINANCIAL = {"STABLE": "稳定", "PRESSURED": "承压", "NORMAL": "正常", "UNKNOWN": "信息不足"}
+FINANCIAL = {
+    "HEALTHY": "稳健",
+    "STABLE": "稳定",
+    "PRESSURED": "承压",
+    "HIGH_RISK": "高风险",
+    "BLOCKED": "高风险",
+    "NORMAL": "正常",
+    "UNKNOWN": "信息不足",
+}
 CHAIN_POSITIONS = {
     "UPSTREAM": "上游", "MIDSTREAM": "中游", "DOWNSTREAM": "下游",
     "SERVICE_PLATFORM": "服务平台", "MULTI_SEGMENT": "多环节", "UNKNOWN": "信息不足",
@@ -60,7 +73,14 @@ def main() -> int:
     parser.add_argument("--validation-run", default="")
     parser.add_argument("--use-existing", action="store_true")
     parser.add_argument("--replace-existing", action="store_true")
+    parser.add_argument(
+        "--repair-existing",
+        action="store_true",
+        help="Archive and atomically replace the same run artifact after an audited correction.",
+    )
     args = parser.parse_args()
+    if args.use_existing and args.repair_existing:
+        raise ValueError("USE_EXISTING_AND_REPAIR_EXISTING_CONFLICT")
     trade_date = date.fromisoformat(args.date).isoformat()
     _assert_safe_runtime()
 
@@ -89,9 +109,16 @@ def main() -> int:
             )
             .order_by(ProResumeRun.created_at.desc())
         )
+        quant_run = (
+            session.scalar(
+                select(QuantRun).where(QuantRun.run_id == pro_run.quant_run_id)
+            )
+            if pro_run
+            else None
+        )
     finally:
         session.close()
-    verifications = _load_verification_overlays(trade_date)
+    verifications = _load_verification_overlays(trade_date, validation_run_id)
     payload = build_human_payload(
         raw,
         trade_date,
@@ -106,13 +133,50 @@ def main() -> int:
     if output_root not in daily_root.parents:
         raise ValueError("DAILY_OUTPUT_PATH_OUTSIDE_OUTPUTS")
     daily_root.mkdir(parents=True, exist_ok=True)
-    output_path = daily_root / f"智能交易助手_{trade_date}.xlsx"
-    if output_path.exists() and not args.use_existing and not args.replace_existing:
-        raise FileExistsError(f"OUTPUT_EXISTS:{output_path.name}")
-    preview_dir = daily_root / "预览"
-    if args.use_existing:
-        if not output_path.exists():
-            raise FileNotFoundError(f"OUTPUT_NOT_FOUND:{output_path.name}")
+    artifact_run_id = (
+        str(pro_run.pipeline_run_id)
+        if pro_run and pro_run.pipeline_run_id
+        else validation_run_id
+    )
+    factor_version = (
+        str(quant_run.factor_version or "LEGACY_UNCALIBRATED")
+        if quant_run
+        else "LEGACY_UNCALIBRATED"
+    )
+    output_path = versioned_workbook_path(
+        daily_root,
+        stem="智能交易助手",
+        trade_date=trade_date,
+        run_id=artifact_run_id,
+        factor_version=factor_version,
+    )
+    if args.replace_existing:
+        raise ValueError("IMMUTABLE_WORKBOOK_REPLACEMENT_FORBIDDEN")
+    preview_dir = daily_root / "预览" / safe_artifact_token(artifact_run_id)
+    reused_existing = output_path.exists()
+    if args.use_existing and not reused_existing:
+        raise FileNotFoundError(f"OUTPUT_NOT_FOUND:{output_path.name}")
+    repaired_existing = bool(reused_existing and args.repair_existing)
+    backup_path: Path | None = None
+    if repaired_existing:
+        history = daily_root / "历史版本"
+        history.mkdir(parents=True, exist_ok=True)
+        old_hash = workbook_content_style_hashes(output_path)["file_sha256"][:8]
+        backup_path = history / f"{output_path.stem}_修复前_{old_hash}.xlsx"
+        if not backup_path.exists():
+            shutil.copy2(output_path, backup_path)
+        candidate = output_path.with_name(
+            f".{output_path.stem}_{uuid.uuid4().hex[:8]}_repair.xlsx"
+        )
+        try:
+            _build_workbook(payload, candidate, preview_dir)
+            _polish_workbook(candidate)
+            validation = _validate_workbook(candidate)
+            os.replace(candidate, output_path)
+        finally:
+            candidate.unlink(missing_ok=True)
+            Path(f"{candidate}.inspect.ndjson").unlink(missing_ok=True)
+    elif reused_existing:
         validation = _validate_workbook(output_path)
     else:
         candidate = output_path.with_name(f".{output_path.stem}_{uuid.uuid4().hex[:8]}_candidate.xlsx")
@@ -120,20 +184,26 @@ def main() -> int:
             _build_workbook(payload, candidate, preview_dir)
             _polish_workbook(candidate)
             validation = _validate_workbook(candidate)
-            if output_path.exists():
-                history_dir = daily_root / "历史版本"
-                history_dir.mkdir(parents=True, exist_ok=True)
-                old_hash = hashlib.sha256(output_path.read_bytes()).hexdigest()[:8]
-                output_path.replace(history_dir / f"{output_path.stem}_修订前_{old_hash}.xlsx")
             candidate.replace(output_path)
         finally:
             candidate.unlink(missing_ok=True)
             Path(f"{candidate}.inspect.ndjson").unlink(missing_ok=True)
-    workbook_hash = hashlib.sha256(output_path.read_bytes()).hexdigest()
+    workbook_hashes = workbook_content_style_hashes(output_path)
+    workbook_hash = workbook_hashes["file_sha256"]
 
     audit_dir = daily_root / "审计"
     audit_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
+        "run_id": artifact_run_id,
+        "factor_version": factor_version,
+        "input_hash": quant_run.request_hash if quant_run else None,
+        "output_path": str(output_path),
+        "content_hash": workbook_hashes["content_hash"],
+        "style_hash": workbook_hashes["style_hash"],
+        "file_sha256": workbook_hash,
+        "reused_existing": reused_existing,
+        "repaired_existing": repaired_existing,
+        "repair_backup": str(backup_path) if backup_path else None,
         "交易日": trade_date,
         "生成状态": "完成",
         "数据来源运行": validation_run_id,
@@ -151,7 +221,10 @@ def main() -> int:
         "外部模型调用": 0,
         "外部行情调用": 0,
     }
-    manifest_path = audit_dir / "人工阅读版_生成记录.json"
+    manifest_path = (
+        audit_dir
+        / f"人工阅读版_生成记录_{safe_artifact_token(artifact_run_id)}.json"
+    )
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     return 0
@@ -197,8 +270,10 @@ def build_human_payload(
             "止损价": order["stop_loss_price"],
             "第二目标价": order["take_profit_2"],
             "风险收益比": order["active_risk_reward"],
-            "核心逻辑": _human_text(fundamental.get("investment_logic")),
-            "主要风险": _human_text(llm.get("risk_note")),
+            "核心逻辑": _human_text(
+                fundamental.get("pro_summary") or fundamental.get("investment_logic")
+            ),
+            "主要风险": _human_risk_summary(fundamental, llm),
             "当前状态": ORDER_STATUS.get(order["order_status"], _human_text(order["order_status"])),
         })
         orders.append({
@@ -223,7 +298,7 @@ def build_human_payload(
             "链条位置": CHAIN_POSITIONS.get(fundamental.get("chain_position"), _human_text(fundamental.get("chain_position"))),
             "主营业务": _human_text(fundamental.get("main_business")),
             "核心产品": _human_text(fundamental.get("core_products")),
-            "概念标签": _human_text(fundamental.get("concept_tags")),
+            "概念标签": _compact_concept_tags(fundamental.get("concept_tags")),
             "结构性方向": _human_text(fundamental.get("structural_theme_fit")),
             "潜在优势": _human_text(fundamental.get("competitive_advantage")),
             "行业趋势": _human_text(fundamental.get("industry_trend")),
@@ -231,7 +306,8 @@ def build_human_payload(
             "失效条件": _human_text(fundamental.get("logic_invalidation")),
             "财务状态": FINANCIAL.get(fundamental.get("financial_status"), _human_text(fundamental.get("financial_status"))),
             "财务说明": _human_text(fundamental.get("financial_status_reason")),
-            "人工复核": _yes_no(fundamental.get("manual_review")),
+            "人工复核": _review_status(fundamental.get("manual_review")),
+            "核验来源": "",
         })
         verification = verifications.get(str(code)[:6])
         if verification:
@@ -263,6 +339,10 @@ def build_human_payload(
         for row in raw.get("warnings") or []
         if _is_reportable_order_warning(row, verified_codes)
     )
+    resolved_current_issues = sum(
+        str(row.get("stock_code") or "")[:6] in verified_codes
+        for row in raw.get("errors") or []
+    )
     run = raw["run"]
     return {
         "title": f"{trade_date} A股短线观察清单",
@@ -274,9 +354,10 @@ def build_human_payload(
             "重点候选数": len(candidates), "非零仓位数": sum(int(row["建议股数"] or 0) > 0 for row in orders),
             "今日推荐数": len(recommendations),
             "当前问题数": len(issues),
-            "历史已解决问题数": sum(
+            "历史已解决问题数": resolved_current_issues + sum(
                 row.get("schema_status") == "RESOLVED_HISTORY" for row in raw.get("audits") or []
             ),
+            "本次人工已解决问题数": resolved_current_issues,
         },
         "minimum_recommendation_score": float(minimum_recommendation_score),
         "recommendations": recommendations,
@@ -285,24 +366,39 @@ def build_human_payload(
     }
 
 
-def _load_verification_overlays(trade_date: str) -> dict[str, dict[str, Any]]:
+def _load_verification_overlays(
+    trade_date: str, validation_run_id: str
+) -> dict[str, dict[str, Any]]:
     overlays: dict[str, dict[str, Any]] = {}
     outputs = ROOT / "outputs"
     if not outputs.is_dir():
         return overlays
     for path in sorted(outputs.glob("*/**/*.json")):
-        parent_date = next((part for part in path.parts if re.fullmatch(r"\d{4}-\d{2}-\d{2}", part)), "")
-        if not parent_date or parent_date > trade_date:
+        parent_date = next(
+            (part for part in path.parts if re.fullmatch(r"\d{4}-\d{2}-\d{2}", part)),
+            "",
+        )
+        if parent_date != trade_date:
             continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
         items = payload.get("items") if isinstance(payload, dict) else None
-        if not isinstance(items, list) or not payload.get("reviewed_at"):
+        if (
+            not isinstance(items, list)
+            or payload.get("artifact_type") != "HUMAN_VERIFICATION_OVERLAY_V1"
+            or payload.get("trade_date") != trade_date
+            or payload.get("validation_run_id") != validation_run_id
+            or not payload.get("reviewed_at")
+        ):
             continue
         for item in items:
-            if not isinstance(item, dict) or not str(item.get("status") or "").startswith("已"):
+            if (
+                not isinstance(item, dict)
+                or not str(item.get("status") or "").startswith("已")
+                or not str(item.get("source_url") or "").startswith(("http://", "https://"))
+            ):
                 continue
             code = re.sub(r"\D", "", str(item.get("stock_code") or ""))[:6]
             if len(code) == 6:
@@ -342,7 +438,12 @@ def _apply_verification_overlay(
     if risks:
         candidate["主要风险"] = risks
         fundamental["失效条件"] = risks
-    fundamental["人工复核"] = ""
+    sources = [
+        str(verification.get(key) or "").strip()
+        for key in ("source_url", "secondary_source_url")
+    ]
+    fundamental["人工复核"] = "已联网核验"
+    fundamental["核验来源"] = "；".join(value for value in sources if value)
 
 
 def _is_reportable_order_warning(row: dict[str, Any], verified_codes: set[str]) -> bool:
@@ -364,6 +465,10 @@ def _human_issue(row: dict[str, Any], llm_by_code: dict[str, dict], *, order: bo
         reason = "内容包含未核验的客户信息，需要人工确认"
     elif "no_unsupported_leadership_claim" in reason:
         reason = "内容包含缺少依据的行业领先表述，需要人工确认"
+    elif "$.inferred_concept_tags" in reason and "too_long" in reason:
+        reason = "模型返回的推断概念标签超过结构化上限，结果已阻断并等待自动压缩修复"
+    elif "$.evidence_fields" in reason and "too_long" in reason:
+        reason = "模型返回的证据字段超过结构化上限，结果已阻断并等待自动压缩修复"
     elif order:
         reason = (
             "基本面已完成外部资料核验；原挂单与仓位结果保持阻断，等待下游重新评估"
@@ -396,12 +501,86 @@ def _human_warning(*values: Any) -> str:
     return "；".join(dict.fromkeys(parts))
 
 
+_CONCEPT_NOISE = re.compile(
+    r"(?:同花顺|全A|沪深|上证指数|成份股|样本股|主板|股通|陆股通|"
+    r"融资融券|QFII|机构重仓|重仓股|减持新规|回购增持|昨日|"
+    r"高市盈率|低市盈率|高市净率|低市净率|高股息|破净股|"
+    r"\(A股\)|（A股）)",
+    re.I,
+)
+
+
+def _compact_concept_tags(value: Any, *, limit: int = 8) -> str:
+    text = _human_text(value)
+    selected: list[str] = []
+    seen: set[str] = set()
+    for raw in re.split(r"[；;,\n]+", text):
+        item = raw.strip()
+        if not item or _CONCEPT_NOISE.search(item):
+            continue
+        key = item.rstrip("*").strip().casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        selected.append(item)
+        if len(selected) >= limit:
+            break
+    return "；".join(selected) or "信息不足"
+
+
+def _human_risk_summary(
+    fundamental: dict[str, Any], llm: dict[str, Any]
+) -> str:
+    pro_risks = _human_text(fundamental.get("pro_risks"))
+    if pro_risks and pro_risks not in {"信息不足", "信息不足*"}:
+        return pro_risks
+    text = _human_text(llm.get("risk_note"))
+    replacements = {
+        "receivable_risk": "应收账款风险",
+        "inventory_risk": "存货风险",
+        "goodwill_risk": "商誉风险",
+        "shareholder_action_risk": "股东行为风险",
+        "operating cash flow": "经营现金流",
+        "Financial status": "财务状态",
+        "fundamental inference": "基本面推断",
+        "Missing data": "缺失数据",
+        "unknown": "尚未核验",
+        "low confidence": "置信度较低",
+        "requires manual review": "需要人工复核",
+        "require manual review": "需要人工复核",
+        " and ": "；",
+    }
+    for source, target in replacements.items():
+        text = re.sub(re.escape(source), target, text, flags=re.I)
+    if re.search(r"[A-Za-z]{4,}", text):
+        return "基本面与风险字段仍含未核验信息，需要结合公告原文复核。"
+    return text or "未发现结构化硬风险，但仍需结合公告原文复核。"
+
+
+def _review_status(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.startswith("已"):
+        return text
+    if value in {True, "是", "true", "TRUE", 1}:
+        return "需要"
+    if value in {False, None, "", "否", "false", "FALSE", 0}:
+        return "不需要"
+    return "需要"
+
+
 def _human_text(value: Any) -> str:
     if value is None:
         return ""
     text = str(value).strip()
     replacements = {
-        "UNKNOWN": "信息不足", "INSUFFICIENT_DATA": "信息不足", "STABLE": "稳定",
+        "LLM_UNVERIFIED": "模型未核验",
+        "MODEL_UNVERIFIED": "模型未核验",
+        "DEEPSEEK_UNVERIFIED": "模型未核验",
+        "NEGATIVE_OPERATING_CASH_FLOW": "经营现金流为负",
+        "EXCESSIVE_LEVERAGE": "杠杆偏高",
+        "HEALTHY": "稳健", "HIGH_RISK": "高风险",
+        "UNKNOWN": "信息不足", "UNCLEAR": "尚不清晰",
+        "INSUFFICIENT_DATA": "信息不足", "STABLE": "稳定",
         "PRESSURED": "承压", "NORMAL_WATCH": "普通观察", "KEY_WATCH": "重点观察",
         "WATCH_ONLY": "普通观察", "ADVANCE": "优先复核", "HOLD": "继续观察",
         "REJECT": "暂不考虑", "BLOCK": "规则阻断",
@@ -461,7 +640,12 @@ def _build_workbook(payload: dict[str, Any], output_path: Path, preview_dir: Pat
             raise RuntimeError("ARTIFACT_TOOL_JUNCTION_FAILED")
         completed = subprocess.run(
             ["node", str(builder), str(payload_path), str(output_path), str(preview_dir)],
-            cwd=build_dir, check=False,
+            cwd=build_dir,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if completed.returncode != 0 and not output_path.exists():
             raise RuntimeError(f"HUMAN_WORKBOOK_EXPORT_FAILED:{completed.returncode}")

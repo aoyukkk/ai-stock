@@ -31,7 +31,7 @@ from backend.core.internal_settings import InternalWebSettings, load_internal_we
 from backend.core.process_lock import ProcessFileLock
 from backend.core.runtime_paths import server_data_root
 from backend.main import create_app
-from database.session import get_session, init_db
+from database.session import get_auth_session, init_auth_db
 from backend.api.runtime import SECRET_ENV
 
 
@@ -59,9 +59,9 @@ def create_internal_web_app(
         _prepare_server_directories()
         lock.acquire()
         try:
-            init_db()
+            init_auth_db()
             WindowsDpapiSecretStore().load_into_environment(SECRET_ENV)
-            session = get_session()
+            session = get_auth_session()
             try:
                 sync_internal_users(session, settings)
             finally:

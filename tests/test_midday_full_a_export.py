@@ -27,3 +27,32 @@ def test_excel_stock_code_is_text(tmp_path):
 def test_excel_has_zero_formula_errors(tmp_path):
     paths=export_full_a_midday(tmp_path,SimpleNamespace(run_id="midday-full-a-test1234"),report());wb=load_workbook(paths["excel"],data_only=False)
     assert not [cell.value for ws in wb for row in ws.iter_rows() for cell in row if isinstance(cell.value,str) and cell.value.startswith("#")]
+
+
+def test_excel_candidate_rows_use_source_colors_without_alternating_stripes(tmp_path):
+    payload = report()
+    payload["results"] = [
+        {
+            "stock_code": "000001.SZ",
+            "stock_name": "模型股",
+            "pool_type": "BASE_TOP100",
+            "result_layer": "AFTERNOON_WATCH",
+            "admission_status_v2": "REVIEW",
+        },
+        {
+            "stock_code": "000002.SZ",
+            "stock_name": "人工股",
+            "pool_type": "MANUAL_CHALLENGE_POOL",
+            "result_layer": "AFTERNOON_WATCH",
+            "admission_status_v2": "REVIEW",
+        },
+    ]
+    paths = export_full_a_midday(
+        tmp_path,
+        SimpleNamespace(run_id="midday-full-a-test1234"),
+        payload,
+    )
+    sheet = load_workbook(paths["excel"])["05_下午观察池"]
+
+    assert sheet["A4"].fill.fgColor.rgb == "00DCEAF5"
+    assert sheet["A5"].fill.fgColor.rgb == "00FFF2CC"

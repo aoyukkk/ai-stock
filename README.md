@@ -52,8 +52,11 @@ conda run -n ai-stock-agent python scripts/check_security_config.py
 
 ## 进一步阅读
 
+- [当前项目规划与实施状态](docs/PROJECT_ROADMAP.md)
 - [文档索引](docs/README.md)
 - [输出目录规范](docs/OUTPUT_LAYOUT.md)
 - [故障排查](docs/TROUBLESHOOTING_V1.md)
 - [本地部署](deployment/WINDOWS_LOCAL_DEPLOYMENT.md)
 - [安全检查](deployment/SECURITY_CHECKLIST.md)
+Quant 原始 Top100 前向效度 Shadow 模块的运行方法和口径见
+[`docs/RANKING_FORWARD_EFFECTIVENESS_V1.md`](docs/RANKING_FORWARD_EFFECTIVENESS_V1.md)。

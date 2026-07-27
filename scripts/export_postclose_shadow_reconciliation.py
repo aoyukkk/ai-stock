@@ -504,8 +504,7 @@ def _write_table(ws, title: str, notice: str, headers: list[str], rows: Iterable
     for row_index, values in enumerate(rows, 5):
         for col, value in enumerate(values, 1):
             cell = ws.cell(row_index, col, value)
-            if row_index % 2:
-                cell.fill = PatternFill("solid", fgColor=PALE_BLUE)
+            cell.fill = PatternFill("solid", fgColor="FFFFFF")
             if "股票代码" in headers[col - 1]:
                 cell.value = _six(value)
                 cell.number_format = "@"

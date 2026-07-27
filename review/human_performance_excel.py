@@ -10,6 +10,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from reporting.source_row_style import apply_selection_source_rows
 
 
 NAVY = "17365D"
@@ -221,7 +222,13 @@ def _build_summary_sheet(
     label = _lookback_label(lookback_value)
     sheet = workbook.create_sheet(f"近{label}日汇总")
     evaluation_dates = sorted({_day(row["evaluation_trade_date"]) for row in portfolio_rows})
-    headers = ["选股日", "观测起始", "观测交易日", *[f"{_month_day(day)}组合涨跌" for day in evaluation_dates], f"截至{_month_day(evaluation_end)}组合总涨跌", "上涨家数", "下跌家数", "数据覆盖率"]
+    headers = [
+        "选股日", "观测起始", "观测交易日",
+        *[f"{_month_day(day)}组合涨跌" for day in evaluation_dates],
+        f"截至{_month_day(evaluation_end)}组合总涨跌",
+        f"截至{_month_day(evaluation_end)}组合最高累计涨跌",
+        "上涨家数", "下跌家数", "数据覆盖率",
+    ]
     _title(sheet, f"近{label}日{report_label}", f"逐日展示此前{report_label.removesuffix('复盘')}股票的价格表现，累计涨跌按每日收益复合计算，统计截止 {evaluation_end.isoformat()}。", len(headers))
     _write_headers(sheet, 3, headers)
     portfolio_map = {
@@ -244,27 +251,33 @@ def _build_summary_sheet(
             sheet.cell(row_number, column, value)
         total_column = 4 + len(evaluation_dates)
         latest = portfolio_map.get((selection_day, applicable_dates[-1])) if applicable_dates else None
-        sheet.cell(row_number, total_column, _number((latest or {}).get("cumulative_return")))
+        peak_values = [
+            _number(portfolio_map[(selection_day, day)].get("cumulative_return"))
+            for day in applicable_dates
+            if portfolio_map[(selection_day, day)].get("cumulative_return") is not None
+        ]
+        sheet.cell(row_number, total_column, _number((latest or {}).get("cumulative_return")) if latest else "待观测")
+        sheet.cell(row_number, total_column + 1, max(peak_values) if peak_values else "待观测")
         detail = details[selection_day]
-        sheet.cell(row_number, total_column + 1, detail["positive_count"])
-        sheet.cell(row_number, total_column + 2, detail["negative_count"])
-        sheet.cell(row_number, total_column + 3, _number(cohort.get("coverage_ratio")))
+        sheet.cell(row_number, total_column + 2, detail["positive_count"])
+        sheet.cell(row_number, total_column + 3, detail["negative_count"])
+        sheet.cell(row_number, total_column + 4, _number(cohort.get("coverage_ratio")))
         for cell in sheet[row_number]:
             cell.alignment = CENTER
             cell.border = BODY_BORDER
             cell.font = Font(name="Microsoft YaHei", size=10)
         sheet.cell(row_number, 1).number_format = "yyyy-mm-dd"
         sheet.cell(row_number, 2).number_format = "yyyy-mm-dd"
-        for column in range(4, total_column + 1):
+        for column in range(4, total_column + 2):
             sheet.cell(row_number, column).number_format = RETURN_FORMAT
-        sheet.cell(row_number, total_column + 3).number_format = "0.00%"
+        sheet.cell(row_number, total_column + 4).number_format = "0.00%"
         sheet.row_dimensions[row_number].height = 24
 
     last_row = 3 + len(cohorts)
     sheet.auto_filter.ref = f"A3:{get_column_letter(len(headers))}{last_row}"
     sheet.freeze_panes = "D4"
     _signed_format(sheet, 4, 4 + len(evaluation_dates), 4, last_row)
-    widths = [14, 14, 12, *([18] * len(evaluation_dates)), 22, 12, 12, 14]
+    widths = [14, 14, 12, *([18] * len(evaluation_dates)), 22, 25, 12, 12, 14]
     _finish_sheet(sheet, widths)
     return sheet
 
@@ -281,11 +294,16 @@ def _build_detail_sheet(
     sheet_name = f"{selection_day.month}月{selection_day.day}日选股复盘"
     sheet = workbook.create_sheet(sheet_name)
     evaluation_dates = sorted({_day(row["evaluation_trade_date"]) for row in stock_rows})
-    headers = ["原排名", "股票代码", "股票名称", "来源", *[f"{_month_day(day)}当日涨跌" for day in evaluation_dates], f"截至{_month_day(evaluation_end)}总涨跌"]
+    headers = [
+        "选入日期", "原排名", "股票代码", "股票名称", "来源",
+        *[f"{_month_day(day)}当日涨跌" for day in evaluation_dates],
+        f"截至{_month_day(evaluation_end)}最终涨跌",
+        f"截至{_month_day(evaluation_end)}最高点涨跌",
+    ]
     _title(
         sheet,
         f"{selection_day.month}月{selection_day.day}日{report_label}",
-        f"选股日：{selection_day.isoformat()}    观测截止：{evaluation_end.isoformat()}    当前观测：{len(evaluation_dates)}个交易日",
+        f"选股日：{selection_day.isoformat()}    观测截止：{evaluation_end.isoformat()}    当前观测：{len(evaluation_dates)}个交易日；最高点按观测期每日最高价相对选股日收盘价计算。",
         len(headers),
     )
     stock_map: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -297,11 +315,12 @@ def _build_detail_sheet(
         (rows[0] for rows in stock_map.values()),
         key=lambda row: (_display_rank(row) is None, _display_rank(row) or 999999, row["stock_code"]),
     )
-    total_column = len(headers)
+    total_column = len(headers) - 1
+    peak_column = len(headers)
     last_row = 4 + max(1, len(members))
 
     sheet.cell(3, 1, "选股数量")
-    sheet.cell(3, 2, f"=COUNTA(B5:B{last_row})")
+    sheet.cell(3, 2, f"=COUNTA(C5:C{last_row})")
     sheet.cell(3, 3, "截至今日平均")
     latest_returns = []
     for rows in stock_map.values():
@@ -339,6 +358,7 @@ def _build_detail_sheet(
             if row.get("evaluation_trade_date")
         }
         base_values = [
+            selection_day,
             _display_rank(member),
             code,
             member.get("stock_name") or code,
@@ -346,27 +366,36 @@ def _build_detail_sheet(
         ]
         for column, value in enumerate(base_values, 1):
             sheet.cell(row_number, column, value)
-        for offset, day in enumerate(evaluation_dates, 5):
+        for offset, day in enumerate(evaluation_dates, 6):
             sheet.cell(row_number, offset, _number(daily_map.get(day, {}).get("daily_return")))
             sheet.cell(row_number, offset).number_format = RETURN_FORMAT
         latest_row = max(daily_map.values(), key=lambda row: _day(row["evaluation_trade_date"]), default=None)
-        sheet.cell(row_number, total_column, _number((latest_row or {}).get("cumulative_return")))
+        observed_rows = list(daily_map.values())
+        sheet.cell(
+            row_number,
+            total_column,
+            _number((latest_row or {}).get("cumulative_return")) if latest_row else "待观测",
+        )
+        sheet.cell(row_number, peak_column, _peak_high_return(observed_rows) if observed_rows else "待观测")
         sheet.cell(row_number, total_column).number_format = RETURN_FORMAT
+        sheet.cell(row_number, peak_column).number_format = RETURN_FORMAT
         for cell in sheet[row_number]:
             cell.alignment = CENTER
             cell.border = BODY_BORDER
             cell.font = Font(name="Microsoft YaHei", size=10)
-        sheet.cell(row_number, 2).number_format = "@"
+        sheet.cell(row_number, 1).number_format = "yyyy-mm-dd"
+        sheet.cell(row_number, 3).number_format = "@"
         sheet.row_dimensions[row_number].height = 24
 
-    sheet.auto_filter.ref = f"A4:{get_column_letter(total_column)}{last_row}"
-    sheet.freeze_panes = "E5"
-    _signed_format(sheet, 5, total_column, 5, last_row)
-    widths = [10, 16, 16, 14, *([19] * len(evaluation_dates)), 22]
+    sheet.auto_filter.ref = f"A4:{get_column_letter(peak_column)}{last_row}"
+    sheet.freeze_panes = "F5"
+    _signed_format(sheet, 6, peak_column, 5, last_row)
+    widths = [14, 10, 16, 16, 14, *([19] * len(evaluation_dates)), 22, 22]
     _finish_sheet(sheet, widths)
     return {
         "sheet_name": sheet_name,
         "total_column": total_column,
+        "peak_column": peak_column,
         "last_row": last_row,
         "evaluation_dates": evaluation_dates,
         "positive_count": sum(value > 0 for value in latest_returns),
@@ -452,6 +481,7 @@ def _signed_format(sheet, first_column: int, last_column: int, first_row: int, l
 
 
 def _finish_sheet(sheet, widths: list[int]) -> None:
+    apply_selection_source_rows(sheet)
     sheet.sheet_view.showGridLines = False
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
     sheet.page_setup.orientation = "landscape"
@@ -504,6 +534,23 @@ def _day(value: Any) -> date:
 
 def _number(value: Any) -> float | None:
     return float(value) if value is not None else None
+
+
+def _peak_high_return(rows: list[dict[str, Any]]) -> float | None:
+    values = []
+    for row in rows:
+        baseline = _number(row.get("baseline_price"))
+        high = _number(row.get("high_price"))
+        if baseline not in (None, 0) and high is not None:
+            values.append(high / baseline - 1)
+    if values:
+        return max(values)
+    peaks = [
+        _number(row.get("peak_cumulative_return"))
+        for row in rows
+        if row.get("peak_cumulative_return") is not None
+    ]
+    return max(peaks) if peaks else None
 
 
 def _display_code(value: Any) -> str:

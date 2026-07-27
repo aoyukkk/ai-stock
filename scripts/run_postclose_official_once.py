@@ -20,6 +20,7 @@ from database.models.postclose_official import PostCloseOfficialRun
 from database.session import get_session, init_db
 from datasource.tushare_provider import TushareMarketDataProvider
 from post_close.official_run import OFFICIAL_SUCCESS, PostCloseOfficialRunner
+from reporting.web_result_publish import publish_internal_web_snapshot
 from reporting.workbook_style import WorkbookStyleService
 from scripts.prewarm_tushare_trade_date_cache import _load_local_tushare_token
 from scripts.run_daily_routine import _assert_advisory_only
@@ -65,9 +66,10 @@ def main() -> int:
                 "virtual_orders": int(existing.virtual_orders or 0),
                 "scheduler": False,
             }
+            result["web_sync"] = _publish_internal_web_snapshot()
             _write_automation_audit(target_date, result)
             print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-            return 0
+            return 0 if result["web_sync"].get("status") != "FAILED" else 2
 
     calendar_status = _local_trade_day_status(target_date)
     calendar_refresh: dict[str, Any] = {"attempted": False, "reason": "LOCAL_CALENDAR_READY"}
@@ -103,9 +105,14 @@ def main() -> int:
     reference = _reference_workbook(target_date)
     result = PostCloseOfficialRunner(ROOT, target_date, reference).run()
     result["calendar_refresh"] = calendar_refresh
+    result["web_sync"] = _publish_internal_web_snapshot()
     _write_automation_audit(target_date, result)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-    return 0 if result.get("final_status") in OFFICIAL_SUCCESS else 2
+    return 0 if result.get("final_status") in OFFICIAL_SUCCESS and result["web_sync"].get("status") != "FAILED" else 2
+
+
+def _publish_internal_web_snapshot() -> dict[str, Any]:
+    return publish_internal_web_snapshot()
 
 
 def _reference_workbook(target_date: date) -> Path:

@@ -106,16 +106,8 @@ function normalizeError(error: unknown): FrontendApiError {
   const axiosError = error as AxiosError<ApiEnvelope>;
   const envelope = axiosError.response?.data;
   const errorCode = envelope?.error?.code || envelope?.code;
-  if (
-    (axiosError.response?.status === 401 && errorCode === "LOCAL_SESSION_REQUIRED") ||
-    (axiosError.response?.status === 403 && errorCode === "PASSWORD_CHANGE_REQUIRED")
-  ) {
-    if (window.location.pathname !== "/local-login") window.location.assign("/local-login");
-  } else if (axiosError.response?.status === 401 && window.location.pathname !== "/local-login") {
-    window.location.assign("/unauthorized");
-  } else if (axiosError.response?.status === 403 && window.location.pathname !== "/forbidden") {
-    window.location.assign("/forbidden");
-  }
+  const redirectPath = authRedirectPath(axiosError.response?.status, errorCode, window.location.pathname);
+  if (redirectPath) window.location.assign(redirectPath);
   if (envelope) {
     return {
       success: false,
@@ -132,6 +124,11 @@ function normalizeError(error: unknown): FrontendApiError {
     message: axiosError.message || "Network request failed",
     status: axiosError.response?.status
   };
+}
+
+export function authRedirectPath(status: number | undefined, errorCode: string | undefined, pathname: string): string | null {
+  if (status !== 401 || pathname === "/local-login") return null;
+  return errorCode === "LOCAL_SESSION_REQUIRED" ? "/local-login" : "/unauthorized";
 }
 
 function contractError(envelope: ApiEnvelope, status?: number): FrontendApiError {

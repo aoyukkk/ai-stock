@@ -529,7 +529,7 @@ def _write_sheet(workbook, name: str, rows: Iterable[dict[str, Any]], title: str
             elif isinstance(value, (int, float, Decimal)):
                 worksheet.cell(row_index, column).number_format = "#,##0.00"
     table = Table(displayName=f"SevenDayTable{index:02d}", ref=f"A4:{_column_letter(len(headers))}{4 + len(values)}")
-    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True, showColumnStripes=False)
+    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=False, showColumnStripes=False)
     worksheet.add_table(table)
     worksheet.freeze_panes = "A5"
     worksheet.sheet_view.showGridLines = False

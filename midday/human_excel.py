@@ -15,7 +15,12 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment
 
-from database.models import MiddayRecommendationResult, MiddayRecommendationRun, StockMaster
+from database.models import (
+    ManualSelectionRecord,
+    MiddayRecommendationResult,
+    MiddayRecommendationRun,
+    StockMaster,
+)
 from database.models.quant_run import QuantRankResult
 from backend.core.config_manager import ConfigManager
 from stock_codes import display_stock_code, normalize_ts_code
@@ -68,6 +73,17 @@ def build_midday_human_payload(
         (row for row in results if row.pro_rank is not None),
         key=lambda row: (row.pro_rank or 9999, row.stock_code),
     )
+    manual_selections = list(
+        session.scalars(
+            select(ManualSelectionRecord)
+            .where(ManualSelectionRecord.trade_date == run.session_trade_date)
+            .order_by(ManualSelectionRecord.created_at, ManualSelectionRecord.stock_code)
+        )
+    )
+    manual_codes = [normalize_ts_code(row.stock_code) for row in manual_selections]
+    focus_rows, missing_manual_codes = _focus_candidate_results(
+        results, manual_codes, model_limit=20
+    )
     quant_rows = list(
         session.scalars(
             select(QuantRankResult)
@@ -78,26 +94,42 @@ def build_midday_human_payload(
     )
     stock_codes = {normalize_ts_code(row.stock_code) for row in results}
     stock_codes.update(normalize_ts_code(row.stock_code) for row in quant_rows)
+    stock_codes.update(manual_codes)
     masters = {
         normalize_ts_code(row.code): row
         for row in session.scalars(select(StockMaster).where(StockMaster.code.in_(stock_codes)))
     }
-    result_by_code = {row.stock_code: row for row in results}
+    result_by_code = {normalize_ts_code(row.stock_code): row for row in results}
     result_by_display = {display_stock_code(row.stock_code): row for row in results}
 
-    candidates = [_candidate_row(row, masters.get(row.stock_code)) for row in final]
+    model_top20 = final[:20]
+    model_candidates = [
+        _candidate_row(row, masters.get(normalize_ts_code(row.stock_code)))
+        for row in model_top20
+    ]
+    candidates = [
+        _candidate_row(row, masters.get(normalize_ts_code(row.stock_code)))
+        for row in focus_rows
+    ]
+    candidates.extend(
+        _manual_candidate_placeholder(code, masters.get(code))
+        for code in missing_manual_codes
+    )
     minimum_recommendation_score = float(
         ConfigManager(session=session)
         .get_effective_config()["values"]
         .get("selection_performance.minimum_recommendation_score", 60)
     )
     recommendations = [
-        row for row in candidates
+        row for row in model_candidates
         if row["深度复核分"] is not None
         and float(row["深度复核分"]) >= minimum_recommendation_score
     ]
-    orders = [_price_row(row) for row in final]
-    fundamentals = [_context_row(row, masters.get(row.stock_code)) for row in final]
+    orders = [_price_row(row) for row in model_top20]
+    fundamentals = [
+        _context_row(row, masters.get(normalize_ts_code(row.stock_code)))
+        for row in model_top20
+    ]
     quant_top100 = []
     for quant in quant_rows:
         canonical_code = normalize_ts_code(quant.stock_code)
@@ -121,7 +153,7 @@ def build_midday_human_payload(
     failures = (run.checkpoint_json or {}).get("failures") or []
     issues = []
     for failure in failures:
-        code = str(failure.get("stock_code") or "")
+        code = normalize_ts_code(str(failure.get("stock_code") or ""))
         row = result_by_code.get(code)
         issues.append({
             "股票代码": display_stock_code(code),
@@ -129,6 +161,15 @@ def build_midday_human_payload(
             "问题类型": "深度复核未完成",
             "当前状态": "待人工确认",
             "说明": "结构化结果未通过校验，本次未进入最终推荐。",
+        })
+    for code in missing_manual_codes:
+        master = masters.get(code)
+        issues.append({
+            "股票代码": display_stock_code(code),
+            "股票名称": master.name if master else "",
+            "问题类型": "人工候选缺少量化基线",
+            "当前状态": "未进入评分",
+            "说明": "该人工候选不在上一交易日正式量化可评分结果中，保留展示但不补造评分。",
         })
 
     held_count = sum(row.position_status == "HELD" for row in results)
@@ -141,21 +182,83 @@ def build_midday_human_payload(
         "summary": {
             "量化股票数": len(quant_rows),
             "二筛股票数": run.flash_count,
-            "重点候选数": len(final),
+            "重点候选数": len(candidates),
             "今日推荐数": len(recommendations),
-            "非零仓位数量": sum((_number(row.suggested_weight) or 0) > 0 for row in final),
+            "非零仓位数量": sum((_number(row.suggested_weight) or 0) > 0 for row in model_top20),
             "当前问题数量": len(issues),
             "历史已解决问题数": 0,
             "确认持仓数": held_count,
         },
         "minimum_recommendation_score": minimum_recommendation_score,
         "recommendations": recommendations,
-        "top10": candidates[:10],
+        "top10": model_candidates[:10],
         "candidates": candidates,
         "orders": orders,
         "fundamentals": fundamentals,
         "quant_top100": quant_top100,
         "issues": issues,
+    }
+
+
+def _focus_candidate_results(
+    results: list[MiddayRecommendationResult],
+    manual_codes: list[str],
+    *,
+    model_limit: int,
+) -> tuple[list[MiddayRecommendationResult], list[str]]:
+    unique_manual_codes = list(dict.fromkeys(
+        normalize_ts_code(code) for code in manual_codes
+    ))
+    model_rows = sorted(
+        (row for row in results if row.pro_rank is not None),
+        key=lambda row: (row.pro_rank or 9999, row.stock_code),
+    )[:model_limit]
+    selected_codes = {normalize_ts_code(row.stock_code) for row in model_rows}
+    result_by_code = {
+        normalize_ts_code(row.stock_code): row
+        for row in results
+    }
+    manual_rows = [
+        result_by_code[code]
+        for code in unique_manual_codes
+        if code in result_by_code and code not in selected_codes
+    ]
+    manual_rows.sort(key=lambda row: (
+        row.base_quant_rank is None,
+        row.base_quant_rank or 999999,
+        row.stock_code,
+    ))
+    missing_manual_codes = [
+        code for code in unique_manual_codes
+        if code not in result_by_code
+    ]
+    return model_rows + manual_rows, missing_manual_codes
+
+
+def _manual_candidate_placeholder(code: str, master: StockMaster | None) -> dict[str, Any]:
+    return {
+        "深度复核排名": None,
+        "股票代码": display_stock_code(code),
+        "股票名称": master.name if master else "",
+        "入选来源": "人工关注",
+        "量化排名": None,
+        "量化得分": None,
+        "二筛得分": None,
+        "二筛结论": "未进入评分",
+        "深度复核分": None,
+        "复核优先级": "人工",
+        "一级行业": master.industry if master else "",
+        "产业链": "",
+        "财务状态": "待人工核验",
+        "建议仓位": None,
+        "建议股数": None,
+        "参考价": None,
+        "止损价": None,
+        "第二目标价": None,
+        "风险收益比": None,
+        "核心逻辑": "用户指定人工候选，保留展示。",
+        "主要风险": "缺少上一交易日正式量化可评分基线，不补造评分。",
+        "当前状态": "基线门禁未进入评分",
     }
 
 

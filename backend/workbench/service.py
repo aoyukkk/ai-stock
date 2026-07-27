@@ -320,6 +320,7 @@ class WorkbenchService:
         result = []
         for row in rows:
             screening = row.screening_result or {}
+            metadata = screening.get("_trader_demo") or {}
             source = sources.get(normalize_ts_code(row.stock_code)) or sources.get(row.stock_code)
             if not source:
                 continue
@@ -329,7 +330,10 @@ class WorkbenchService:
                 "stock_name": names.get(normalize_ts_code(row.stock_code), ""), "source": source,
                 "pro_score": _number(review.pro_score) if review else None, "pro_priority": review.priority if review else None,
                 "flash_score": _number(screening.get("llm_score")), "flash_decision": screening.get("screening_decision"),
-                "quant_rank": row.rank, "quant_score": _number((row.quant_scores or {}).get("total_score")),
+                "quant_rank": (
+                    None if metadata.get("manual_review_only") else row.rank
+                ),
+                "quant_score": _number((row.quant_scores or {}).get("total_score")),
                 "financial_status": _fundamental_status(row.fundamental_result or {}),
                 "summary": review.final_summary if review else "",
             })

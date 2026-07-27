@@ -162,3 +162,23 @@ conda run -n ai-stock-agent python -m compileall . -q
 - 可直接重建：`build/`、`.pytest_cache/`、`__pycache__/`、`.pyc`、`tmp/`。
 - 过时但仍有审计价值的说明移动到 `docs/archive/`，不再放在根目录与当前说明混用。
 - 根目录用户入口为 `双击运行_每日工作流程.bat`；`run_midday_once.cmd`、`run_close_once.cmd` 是 BAT 调用的稳定底层入口。日期写死的一次性命令移入备份归档。
+## Quant 原始排名前向效度（Shadow，可选）
+
+正式 Quant 的原始 Top100 持久化后会以非阻断方式尝试冻结排名快照。评估失败只记录
+`RANKING_EVALUATION_CAPTURE_FAILED`，不得把正式 Quant 的成功状态改成失败。
+
+每日增量冻结与收益回填可双击：
+
+```text
+run_ranking_evaluation_daily_once.cmd
+```
+
+周五按版本生成累计报告：
+
+```text
+run_ranking_evaluation_weekly_once.cmd TUSHARE_BASELINE_V1
+run_ranking_evaluation_weekly_once.cmd TUSHARE_QUANT_V2_CORRECTED_SHADOW
+```
+
+Scheduler 保持关闭；不要省略 `factor_version`，不要把 Legacy 与 V2 混合查询。详细合同见
+`docs/RANKING_FORWARD_EFFECTIVENESS_V1.md`。

@@ -11,6 +11,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from reporting.workbook_style import WorkbookStyleService
+from reporting.source_row_style import apply_selection_source_rows
 
 
 NAVY="193B63";BLUE="D9EAF7";PALE="EDF4F8";RED="C00000";GREEN="16833A";WHITE="FFFFFF";GOLD="FFF2CC";GRID="C9D6E2"
@@ -88,6 +89,7 @@ def _sheet(wb,name,rows,title):
     ws.freeze_panes="A4";ws.auto_filter.ref=f"A3:{get_column_letter(width)}{max(3,ws.max_row)}";ws.sheet_view.showGridLines=False
     for col in range(1,width+1):
         values=[str(ws.cell(row,col).value or "") for row in range(3,min(ws.max_row,80)+1)];ws.column_dimensions[get_column_letter(col)].width=min(28,max(10,max((len(value) for value in values),default=8)+2))
+    apply_selection_source_rows(ws,header_row=3,first_data_row=4)
 
 
 def _verify(path,status):

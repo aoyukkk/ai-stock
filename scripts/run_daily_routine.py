@@ -22,7 +22,7 @@ from backend.application.workflow import WorkflowApplicationService, execute_per
 from backend.core.runtime_paths import output_root, tushare_cache_root
 from backend.workbench.service import WorkbenchService
 from database.models.midday import MiddayRecommendationRun
-from database.models.quant_run import QuantRun
+from database.models.quant_run import QuantRankResult, QuantRun
 from database.models.stock import StockMaster
 from database.models.validation import ModelValidationRun, ModelValidationSample, ProResumeRun
 from database.models.workbench import ManualSelectionRecord, PipelineJob
@@ -34,6 +34,7 @@ from database.models.intraday_monitor import IntradayMonitorSession
 from intraday_monitor.coordinator import MiddayCompatibilityGuard
 from review.performance_schemas import PerformanceRequest
 from review.selection_performance_service import SelectionPerformanceService
+from reporting.web_result_publish import publish_internal_web_snapshot
 from stock_codes import normalize_ts_code
 from trader_demo.pro_single_v3 import SINGLE_CONTRACT_VERSION
 
@@ -67,8 +68,13 @@ def main() -> int:
         return 0
     if args.command == "midday":
         result = _run_midday(args.trade_date, force=args.force)
+        result["web_sync"] = publish_internal_web_snapshot()
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-        return 0 if result.get("status") in {"SUCCESS", "PARTIAL_SUCCESS", "WAITING_AFTERNOON_RECHECK"} else 2
+        return 0 if (
+            result.get("status")
+            in {"SUCCESS", "PARTIAL_SUCCESS", "WAITING_AFTERNOON_RECHECK"}
+            and result["web_sync"].get("status") != "FAILED"
+        ) else 2
     result = _run_close(args)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
     return 0
@@ -145,6 +151,7 @@ def _run_close(args) -> dict[str, Any]:
             report["stages"][stage] = _export_daily(args.trade_date, args.market_supplement)
         elif stage == "monitor":
             report["stages"][stage] = _build_monitor(args.trade_date)
+    report["web_sync"] = publish_internal_web_snapshot()
     audit = ROOT / "outputs" / args.trade_date.isoformat() / "审计" / "每日常态化流程报告.json"
     audit.parent.mkdir(parents=True, exist_ok=True)
     audit.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -257,7 +264,17 @@ def _ensure_flash(trade_date: date) -> dict[str, Any]:
     session = get_session()
     try:
         quant = _latest_actionable_quant(session, trade_date)
-        manual_codes = _manual_codes(session, trade_date)
+        requested_manual_codes = _manual_codes(session, trade_date)
+        manual_codes = (
+            _eligible_manual_codes(
+                session,
+                trade_date,
+                quant.run_id,
+                requested_manual_codes,
+            )
+            if quant
+            else []
+        )
         row = _latest_usable_flash(session, trade_date, quant.run_id, manual_codes) if quant else None
         if row:
             return {
@@ -265,6 +282,9 @@ def _ensure_flash(trade_date: date) -> dict[str, Any]:
                 "flash_run_id": row.run_id,
                 "quant_run_id": quant.run_id,
                 "manual_hash": _hash_codes(manual_codes),
+                "manual_requested_count": len(requested_manual_codes),
+                "manual_included_count": len(manual_codes),
+                "manual_excluded": sorted(set(requested_manual_codes) - set(manual_codes)),
             }
     finally:
         session.close()
@@ -282,7 +302,17 @@ def _ensure_pro(trade_date: date) -> dict[str, Any]:
     session = get_session()
     try:
         quant = _latest_actionable_quant(session, trade_date)
-        manual_codes = _manual_codes(session, trade_date)
+        requested_manual_codes = _manual_codes(session, trade_date)
+        manual_codes = (
+            _eligible_manual_codes(
+                session,
+                trade_date,
+                quant.run_id,
+                requested_manual_codes,
+            )
+            if quant
+            else []
+        )
         flash = _latest_usable_flash(session, trade_date, quant.run_id, manual_codes) if quant else None
         if flash is None:
             raise ValueError("CURRENT_FLASH_RUN_REQUIRED")
@@ -293,7 +323,16 @@ def _ensure_pro(trade_date: date) -> dict[str, Any]:
             ProResumeRun.status == "COMPLETED",
         ).order_by(ProResumeRun.created_at.desc()))
         if row:
-            return {"status": "REUSED", "pro_run_id": row.run_id, "candidate_count": row.candidate_count}
+            return {
+                "status": "REUSED",
+                "pro_run_id": row.run_id,
+                "candidate_count": row.candidate_count,
+                "manual_requested_count": len(requested_manual_codes),
+                "manual_included_count": len(manual_codes),
+                "manual_excluded": sorted(
+                    set(requested_manual_codes) - set(manual_codes)
+                ),
+            }
     finally:
         session.close()
     return _run_job("FINAL", trade_date, {
@@ -328,7 +367,7 @@ def _export_daily(trade_date: date, supplement: Path | None) -> dict[str, Any]:
         market = MarketReviewService(session).latest(trade_date)
     finally:
         session.close()
-    _checked_command([
+    daily_result = _checked_json_command([
         sys.executable,
         str(ROOT / "scripts" / "build_human_daily_output.py"),
         "--date", trade_date.isoformat(),
@@ -348,12 +387,13 @@ def _export_daily(trade_date: date, supplement: Path | None) -> dict[str, Any]:
         market_output = Path(str(market_result["output"]))
     return {
         "status": "SUCCESS",
-        "daily_workbook": str(ROOT / "outputs" / trade_date.isoformat() / f"智能交易助手_{trade_date.isoformat()}.xlsx"),
+        "daily_workbook": str(daily_result["output_path"]),
         "market_workbook": str(market_output) if market_output else None,
     }
 
 
 def _build_monitor(trade_date: date) -> dict[str, Any]:
+    trading_days = _recent_trading_days(trade_date, count=7)
     session = get_session()
     run_ids: dict[str, str] = {}
     try:
@@ -363,8 +403,8 @@ def _build_monitor(trade_date: date) -> dict[str, Any]:
                 evaluation_end_date=trade_date,
                 lookback_value=7,
                 lookback_unit="CUSTOM",
-                start_selection_date=trade_date - timedelta(days=6),
-                end_selection_date=trade_date,
+                start_selection_date=trading_days[0],
+                end_selection_date=trading_days[-1],
                 return_basis="SIGNAL_CLOSE",
                 selection_scope=scope,
                 weighting_mode="EQUAL_WEIGHT",
@@ -393,10 +433,44 @@ def _build_monitor(trade_date: date) -> dict[str, Any]:
         ])
     return {
         "status": "SUCCESS",
+        "trading_days": [value.isoformat() for value in trading_days],
+        "selection_window": {
+            "start": trading_days[0].isoformat(),
+            "end": trading_days[-1].isoformat(),
+        },
         "performance_run_ids": run_ids,
         "today_recommendation_output": str(outputs["today_recommendation"]),
         "key_candidates_output": str(outputs["key_candidates"]),
     }
+
+
+def _recent_trading_days(end_date: date, *, count: int) -> list[date]:
+    values: set[date] = set()
+    for path in tushare_cache_root().glob("trade_cal_*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        rows = payload if isinstance(payload, list) else payload.get("data", []) if isinstance(payload, dict) else []
+        for row in rows:
+            if not isinstance(row, dict) or str(row.get("is_open")) not in {"1", "True", "true"}:
+                continue
+            raw = str(row.get("cal_date") or "").strip()
+            try:
+                value = date.fromisoformat(raw) if "-" in raw else date(
+                    int(raw[:4]), int(raw[4:6]), int(raw[6:8])
+                )
+            except (TypeError, ValueError):
+                continue
+            if value <= end_date:
+                values.add(value)
+    daily_path = tushare_cache_root() / "trade_date" / "daily" / f"{end_date:%Y%m%d}.json"
+    if daily_path.is_file():
+        values.add(end_date)
+    selected = sorted(values)[-count:]
+    if len(selected) != count or selected[-1] != end_date:
+        raise ValueError(f"RECENT_TRADING_DAY_CALENDAR_INCOMPLETE:{end_date.isoformat()}:{count}")
+    return selected
 
 
 def _run_job(job_type: str, trade_date: date, options: dict[str, Any]) -> dict[str, Any]:
@@ -454,6 +528,31 @@ def _manual_codes(session, trade_date: date) -> list[str]:
             ManualSelectionRecord.trade_date == trade_date
         ))
     })
+
+
+def _eligible_manual_codes(
+    session,
+    trade_date: date,
+    quant_run_id: str,
+    requested_codes: list[str] | None = None,
+) -> list[str]:
+    requested = requested_codes if requested_codes is not None else _manual_codes(
+        session,
+        trade_date,
+    )
+    quant_codes = {
+        str(code or "").strip().upper().split(".", 1)[0]
+        for code in session.scalars(
+            select(QuantRankResult.stock_code).where(
+                QuantRankResult.quant_run_id == quant_run_id
+            )
+        )
+    }
+    return [
+        code
+        for code in requested
+        if str(code or "").strip().upper().split(".", 1)[0] in quant_codes
+    ]
 
 
 def _latest_usable_flash(

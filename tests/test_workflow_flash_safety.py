@@ -16,11 +16,12 @@ from backend.application.workflow import (
     _flash_tokens_for_date,
     _flash_usable_for_final,
     _mark_job_success,
+    _partition_manual_rows,
     _safe_options,
     _select_flash_for_final,
 )
 from backend.workbench.service import WorkbenchService
-from database.models.workbench import PipelineJob
+from database.models.workbench import ManualSelectionRecord, PipelineJob
 from research.structured_validation import FUNDAMENTAL_PROMPT_VERSION, SCREENING_PROMPT_VERSION
 from trader_demo.service import TraderDemoService
 
@@ -39,6 +40,46 @@ def test_checkpoint_options_accept_daily_pipeline_run_identifiers():
     }
 
     assert _safe_options(options) == dict(sorted(options.items()))
+
+
+def test_manual_rows_outside_actionable_quant_can_be_forced_to_llm_review():
+    rows = [
+        ManualSelectionRecord(
+            trade_date=TRADE_DATE,
+            stock_code="600722.SH",
+            reason="manual",
+            priority="HIGH",
+        ),
+        ManualSelectionRecord(
+            trade_date=TRADE_DATE,
+            stock_code="600730.SH",
+            reason="manual",
+            priority="HIGH",
+        ),
+    ]
+
+    included, excluded = _partition_manual_rows(
+        rows, {"600722"}, include_review_only=True
+    )
+
+    assert [row.stock_code for row in included] == ["600722.SH", "600730.SH"]
+    assert excluded == []
+
+
+def test_manual_rows_outside_quant_remain_excluded_without_explicit_policy():
+    rows = [
+        ManualSelectionRecord(
+            trade_date=TRADE_DATE,
+            stock_code="600730.SH",
+            reason="manual",
+            priority="HIGH",
+        )
+    ]
+
+    included, excluded = _partition_manual_rows(rows, {"600722"})
+
+    assert included == []
+    assert [row.stock_code for row in excluded] == ["600730.SH"]
 
 
 def _session():

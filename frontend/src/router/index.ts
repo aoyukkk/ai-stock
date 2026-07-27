@@ -28,13 +28,15 @@ const routes: RouteRecordRaw[] = [
 ] }, { path: "/:pathMatch(.*)*", redirect: "/workbench" }];
 const router = createRouter({ history: window.aiTraderShell ? createWebHashHistory() : createWebHistory(), routes });
 router.beforeEach(async (to) => {
-  if (window.aiTraderShell || ["/unauthorized", "/forbidden", "/local-login", "/first-run"].includes(to.path)) return true;
+  if (window.aiTraderShell || ["/unauthorized", "/forbidden", "/first-run"].includes(to.path)) return true;
   const auth = useInternalAuthStore();
   try {
     await auth.initialize();
   } catch (error) {
+    if (to.path === "/local-login") return true;
     return (error as { code?: string })?.code === "LOCAL_SESSION_REQUIRED" ? "/local-login" : "/unauthorized";
   }
+  if (to.path === "/local-login") return "/workbench";
   const roles = to.meta.roles as string[] | undefined;
   return roles && !roles.includes(auth.role) ? "/forbidden" : true;
 });

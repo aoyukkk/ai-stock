@@ -575,11 +575,14 @@ def _single_input(sample: ModelValidationSample, sources: dict[str, str]) -> tup
     financial = fundamental.get("financial_status") or {}
     chain = fundamental.get("industry_chain") or {}
     products = fundamental.get("core_products") or []
+    metadata = screening.get("_trader_demo") or {}
+    manual_review_only = bool(metadata.get("manual_review_only"))
     payload = {
         "stock_code": code, "stock_name": _bounded(sample.stock_name, 40),
         "selection_source": sources[code],
         "manual_reason": _bounded((screening.get("_trader_demo") or {}).get("manual_reason") or "", 120),
-        "quant_rank": sample.rank, "quant_score": quant.get("total_score"),
+        "quant_rank": None if manual_review_only else sample.rank,
+        "quant_score": quant.get("total_score"),
         "technical_score": quant.get("technical_score"), "capital_score": quant.get("capital_score"),
         "emotion_score": quant.get("emotion_score"), "momentum_score": quant.get("momentum_score"),
         "risk_score": quant.get("risk_score"), "flash_score": screening.get("llm_score"),
@@ -597,6 +600,9 @@ def _single_input(sample: ModelValidationSample, sources: dict[str, str]) -> tup
         "unverified_field_count": _unverified_count(fundamental),
         "missing_field_count": len(sample.missing_fields or []),
         "hard_risk_status": financial.get("status") if isinstance(financial, dict) else "UNKNOWN",
+        "manual_review_only": manual_review_only,
+        "order_eligible": bool(metadata.get("order_eligible", True)),
+        "hard_gate_reasons": list(metadata.get("hard_gate_reasons") or []),
     }
     serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
     return payload, {
@@ -647,6 +653,20 @@ def _validate_portfolio(response: LLMResponse, expected_codes: set[str]) -> Vali
         return ValidationResult(None, diagnostics)
     if _forbidden_business_key(parsed):
         return ValidationResult(None, {**diagnostics, "error_category": "FORBIDDEN_PRICE_OR_POSITION_FIELD"})
+    if _contains_url(parsed):
+        return ValidationResult(None, {**diagnostics, "error_category": "FABRICATED_URL"})
+    summary = parsed.get("overall_summary")
+    if isinstance(summary, str) and len(summary) > 600:
+        parsed = {
+            **parsed,
+            "overall_summary": summary[:599] + "…",
+        }
+        diagnostics["deterministic_text_normalization"] = {
+            "field": "$.overall_summary",
+            "original_length": len(summary),
+            "normalized_length": 600,
+            "ranking_fields_changed": False,
+        }
     try:
         value = ProPortfolioWireV3.model_validate(parsed)
     except ValidationError as exc:
@@ -658,8 +678,6 @@ def _validate_portfolio(response: LLMResponse, expected_codes: set[str]) -> Vali
         return ValidationResult(None, {**diagnostics, "error_category": "PORTFOLIO_STOCK_CODE_INVALID"})
     if len(codes) != len(set(codes)) or not set(codes).issubset(expected_codes):
         return ValidationResult(None, {**diagnostics, "error_category": "PORTFOLIO_EXTRA_STOCK"})
-    if _contains_url(value.model_dump(mode="json")):
-        return ValidationResult(None, {**diagnostics, "error_category": "FABRICATED_URL"})
     diagnostics.update({"schema_status": "PASS", "error_category": "", "resolved_thinking_mode": response.thinking_mode})
     return ValidationResult(value.model_copy(update={"top_priority_stock_codes": codes}), diagnostics)
 

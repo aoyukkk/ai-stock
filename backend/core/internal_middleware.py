@@ -15,10 +15,11 @@ from backend.core.internal_auth import (
     CloudflareAccessVerifier,
     LocalPasswordAuthService,
     load_active_user,
+    load_shared_user,
 )
 from backend.core.internal_settings import InternalWebSettings
 from database.models.internal_auth import InternalAuditEvent, InternalPasswordCredential, InternalUser
-from database.session import get_session
+from database.session import get_auth_session
 
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -29,7 +30,8 @@ ADMIN_PREFIXES = (
     "/api/workbench/secrets",
     "/api/v1/config",
 )
-ADMIN_EXACT = {"/api/workbench/settings", "/api/workbench/runtime/shutdown", "/docs", "/openapi.json", "/redoc"}
+ADMIN_EXACT = {"/api/workbench/runtime/shutdown", "/docs", "/openapi.json", "/redoc"}
+ADMIN_WRITE_EXACT = {"/api/workbench/settings"}
 
 
 class RequestBodyLimitMiddleware:
@@ -100,15 +102,16 @@ class CloudflareAccessAuthMiddleware(BaseHTTPMiddleware):
         request.state.internal_user = user
         request.state.access_email = user.email
         request.state.cloudflare_verified = cloudflare_verified
+        request.state.password_change_required = False
 
         local_session = None
         local_session_required = _server_endpoint(request.url.path)
         if (
             self.settings.local_password_enabled
             and local_session_required
-            and request.url.path != "/api/internal/auth/login"
+            and request.url.path not in {"/api/internal/auth/login", "/api/internal/auth/local/login", "/api/internal/auth/config/public"}
         ):
-            session = get_session()
+            session = get_auth_session()
             try:
                 service = LocalPasswordAuthService(session, self.settings.session_hours)
                 csrf = request.headers.get("X-CSRF-Token") if request.method not in SAFE_METHODS else None
@@ -126,8 +129,12 @@ class CloudflareAccessAuthMiddleware(BaseHTTPMiddleware):
                 return self._error(401, "LOCAL_SESSION_REQUIRED")
             if credential is None:
                 return self._error(401, "LOCAL_PASSWORD_NOT_CONFIGURED")
-            if credential.must_change_password and request.url.path not in {
-                "/api/internal/auth/change-password", "/api/internal/auth/logout"
+            request.state.password_change_required = bool(
+                self.settings.force_password_change_on_first_login and credential.must_change_password
+            )
+            if request.state.password_change_required and request.url.path not in {
+                "/api/internal/auth/me", "/api/internal/auth/change-password",
+                "/api/internal/auth/set-password", "/api/internal/auth/logout"
             }:
                 return self._error(403, "PASSWORD_CHANGE_REQUIRED")
 
@@ -150,7 +157,7 @@ class CloudflareAccessAuthMiddleware(BaseHTTPMiddleware):
 
     async def _authenticate(self, request: Request) -> tuple[AuthenticatedUser | None, bool]:
         if self.settings.local_bypass and _loopback(request):
-            session = get_session()
+            session = get_auth_session()
             try:
                 row = session.scalar(select(InternalUser).where(InternalUser.role == "ADMIN", InternalUser.active.is_(True)))
                 if row is None:
@@ -161,13 +168,13 @@ class CloudflareAccessAuthMiddleware(BaseHTTPMiddleware):
             finally:
                 session.close()
         if self.settings.shared_password_enabled:
-            session = get_session()
+            session = get_auth_session()
             try:
-                return load_active_user(session, self.settings.shared_identity_email, mark_login=False), False
+                return load_shared_user(session, self.settings, mark_login=False), False
             finally:
                 session.close()
         claims = await self.verifier.verify(request.headers.get("Cf-Access-Jwt-Assertion", ""))
-        session = get_session()
+        session = get_auth_session()
         try:
             return load_active_user(session, str(claims["email"])), True
         finally:
@@ -176,7 +183,7 @@ class CloudflareAccessAuthMiddleware(BaseHTTPMiddleware):
     def _audit(self, request: Request, user: AuthenticatedUser) -> None:
         source_ip = request.headers.get("CF-Connecting-IP") if request.state.cloudflare_verified else (request.client.host if request.client else None)
         agent = request.headers.get("User-Agent", "")[:1024]
-        session = get_session()
+        session = get_auth_session()
         try:
             session.add(InternalAuditEvent(
                 access_email=user.email,
@@ -199,11 +206,12 @@ class CloudflareAccessAuthMiddleware(BaseHTTPMiddleware):
 def _required_role(method: str, path: str) -> str:
     if path in {
         "/api/internal/auth/login",
+        "/api/internal/auth/local/login",
         "/api/internal/auth/logout",
         "/api/internal/auth/change-password",
     }:
         return "VIEWER"
-    if path in ADMIN_EXACT or any(path.startswith(prefix) for prefix in ADMIN_PREFIXES):
+    if path in ADMIN_EXACT or (method not in SAFE_METHODS and path in ADMIN_WRITE_EXACT) or any(path.startswith(prefix) for prefix in ADMIN_PREFIXES):
         return "ADMIN"
     if method not in SAFE_METHODS:
         return "TRADER"

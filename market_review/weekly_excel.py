@@ -340,8 +340,7 @@ class WeeklyMarketReviewExcelExporter:
             cell.alignment = CENTER
             cell.border = BORDER
             cell.font = Font(name="Microsoft YaHei", size=10)
-            if row % 2 == 0:
-                cell.fill = PatternFill("solid", fgColor=PALE)
+            cell.fill = PatternFill("solid", fgColor=WHITE)
         sheet.row_dimensions[row].height = height
 
     @staticmethod

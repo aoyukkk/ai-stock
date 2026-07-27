@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS forward_outcome (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_run_id VARCHAR(128) NOT NULL, route VARCHAR(64) NOT NULL, trade_date DATE NOT NULL,
+  stock_code VARCHAR(32) NOT NULL, stock_name VARCHAR(128), industry VARCHAR(128), timing_contract_id INTEGER NOT NULL,
+  data_snapshot_id VARCHAR(128) NOT NULL, universe_snapshot_id VARCHAR(128) NOT NULL,
+  baseline_status VARCHAR(32), v2_2_status VARCHAR(32), v3_status VARCHAR(32), factor_version VARCHAR(64), strategy_version VARCHAR(64), gate_version VARCHAR(64),
+  execution_policy VARCHAR(64) NOT NULL, entry_trade_date DATE, entry_price NUMERIC(18,8), entry_status VARCHAR(40) NOT NULL,
+  exit_trade_date_d1 DATE, exit_price_d1 NUMERIC(18,8), return_d1 NUMERIC(18,8),
+  exit_trade_date_d3 DATE, exit_price_d3 NUMERIC(18,8), return_d3 NUMERIC(18,8),
+  exit_trade_date_d5 DATE, exit_price_d5 NUMERIC(18,8), return_d5 NUMERIC(18,8),
+  exit_trade_date_d10 DATE, exit_price_d10 NUMERIC(18,8), return_d10 NUMERIC(18,8),
+  mae_d1 NUMERIC(18,8), mfe_d1 NUMERIC(18,8), mae_d3 NUMERIC(18,8), mfe_d3 NUMERIC(18,8), mae_d5 NUMERIC(18,8), mfe_d5 NUMERIC(18,8),
+  benchmark_return NUMERIC(18,8), industry_return NUMERIC(18,8), data_status VARCHAR(40) NOT NULL,
+  horizon_status_json JSON NOT NULL, sensitivity_json JSON NOT NULL, execution_details_json JSON NOT NULL,
+  missed_opportunity NUMERIC(18,8), avoided_loss NUMERIC(18,8), non_fill_quality VARCHAR(32),
+  all_triggered_gates JSON NOT NULL, binding_gate VARCHAR(64), co_binding_gates JSON NOT NULL, evaluation_order JSON NOT NULL,
+  unique_block_reason VARCHAR(256), joint_block_reason VARCHAR(512), input_hash VARCHAR(64) NOT NULL, version VARCHAR(64) NOT NULL,
+  created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL,
+  FOREIGN KEY(timing_contract_id) REFERENCES strategy_timing_contract(id),
+  CONSTRAINT uq_forward_outcome_source_stock_policy UNIQUE(source_run_id, stock_code, execution_policy)
+);

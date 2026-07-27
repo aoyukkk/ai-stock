@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from backend.core.config_manager import ConfigManager
 from database.models.performance import SelectionCohort, SelectionCohortMember
+from database.models.quant_run import QuantRun
 from database.models.validation import (
     ModelValidationAllocation,
     ModelValidationOrderPlan,
@@ -19,6 +20,11 @@ from database.models.validation import (
 from stock_codes import normalize_ts_code
 
 
+V2_CUTOVER_DATE = date(2026, 7, 24)
+V2_FACTOR_VERSION = "TUSHARE_QUANT_V2_CORRECTED_SHADOW"
+COMPLETE_RUN_STATUSES = ("SUCCESS", "PARTIAL_SUCCESS", "COMPLETED")
+
+
 class SelectionCohortResolver:
     def __init__(self, session) -> None:
         self.session = session
@@ -26,15 +32,37 @@ class SelectionCohortResolver:
     def resolve(self, start_date: date | None, end_date: date, lookback_value: int) -> list[SelectionCohort]:
         runs = self.session.scalars(select(ModelValidationRun).where(
             ModelValidationRun.base_market_trade_date <= end_date,
-            ModelValidationRun.status.in_(["SUCCESS", "PARTIAL_SUCCESS"]),
+            ModelValidationRun.status.in_(COMPLETE_RUN_STATUSES),
         ).order_by(ModelValidationRun.base_market_trade_date.desc(), ModelValidationRun.created_at.desc())).all()
+        quant_runs = {
+            row.run_id: row
+            for row in self.session.scalars(
+                select(QuantRun).where(
+                    QuantRun.run_id.in_({run.quant_run_id for run in runs})
+                )
+            )
+        }
         selected: dict[date, ModelValidationRun] = {}
+        legacy_only_dates: set[date] = set()
         for run in runs:
             if start_date and run.base_market_trade_date < start_date:
                 continue
-            if run.base_market_trade_date in selected or not self._is_complete(run):
+            if not self._is_complete(run):
+                continue
+            quant = quant_runs.get(run.quant_run_id)
+            factor_version = quant.factor_version if quant else None
+            if run.base_market_trade_date >= V2_CUTOVER_DATE:
+                if factor_version != V2_FACTOR_VERSION:
+                    legacy_only_dates.add(run.base_market_trade_date)
+                    continue
+                legacy_only_dates.discard(run.base_market_trade_date)
+            if run.base_market_trade_date in selected:
                 continue
             selected[run.base_market_trade_date] = run
+        missing_v2_dates = sorted(legacy_only_dates - set(selected))
+        if missing_v2_dates:
+            values = ",".join(day.isoformat() for day in missing_v2_dates)
+            raise RuntimeError(f"V2_SELECTION_COHORT_REQUIRED:{values}")
         dates = sorted(selected)[-lookback_value:]
         return [self._get_or_create(selected[day]) for day in dates]
 
@@ -82,6 +110,9 @@ class SelectionCohortResolver:
         return codes <= allocations and codes <= plans
 
     def _get_or_create(self, run: ModelValidationRun) -> SelectionCohort:
+        quant = self.session.scalar(
+            select(QuantRun).where(QuantRun.run_id == run.quant_run_id)
+        )
         pro = self.session.scalar(select(ProResumeRun).where(
             ProResumeRun.flash_validation_run_id == run.run_id,
             ProResumeRun.status.in_(["COMPLETED", "PARTIAL_PRO_FAILURE"]),
@@ -123,6 +154,8 @@ class SelectionCohortResolver:
             manual_count=source_counts["MANUAL"], both_count=source_counts["BOTH"], status="IMMUTABLE",
             completed_at=run.updated_at, config_snapshot_json={
                 "validation": run.config_snapshot,
+                "source_run_mode": run.run_mode,
+                "source_quant_factor_version": quant.factor_version if quant else None,
                 "candidate_set_hash": candidate_hash,
                 "upstream_candidate_set_hash": pro.candidate_set_hash if pro else None,
                 "cohort_policy": {

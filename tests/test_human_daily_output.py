@@ -1,6 +1,15 @@
 from openpyxl import Workbook, load_workbook
 
-from scripts.build_human_daily_output import _human_issue, _human_text, _human_warning, _polish_workbook, _yes_no
+from scripts.build_human_daily_output import (
+    _compact_concept_tags,
+    _human_issue,
+    _human_risk_summary,
+    _human_text,
+    _human_warning,
+    _polish_workbook,
+    _review_status,
+    _yes_no,
+)
 from scripts.organize_outputs_by_date import _date_from_name
 
 
@@ -8,6 +17,8 @@ def test_human_output_translates_machine_statuses():
     assert _human_text("WATCH_ONLY") == "普通观察"
     assert _human_text("STABLE") == "稳定"
     assert _human_text("MULTI_SEGMENT") == "多环节"
+    assert _human_text("HEALTHY") == "稳健"
+    assert _human_text("HIGH_RISK") == "高风险"
 
 
 def test_human_output_removes_repeated_disclaimer_and_translates_warnings():
@@ -48,6 +59,19 @@ def test_human_output_translates_flash_template_validation_error():
     assert result["说明"] == "二筛评分结构与模板示例过于一致，结果已标记为待人工确认"
     assert "$" not in result["说明"]
     assert "Flash" not in result["说明"]
+
+
+def test_human_output_compacts_concepts_and_translates_machine_risk():
+    concepts = "同花顺全A；沪深300；人工智能；人工智能；算力；融资融券；数据中心；云计算；边缘计算；软件"
+    compacted = _compact_concept_tags(concepts, limit=4)
+
+    assert compacted == "人工智能；算力；数据中心；云计算"
+    assert _human_risk_summary(
+        {},
+        {"risk_note": "receivable_risk and goodwill_risk require manual review"},
+    ) == "应收账款风险；商誉风险 需要人工复核"
+    assert _review_status(True) == "需要"
+    assert _review_status(False) == "不需要"
 
 
 def test_human_output_polish_centers_tables_and_freezes_panes(tmp_path):

@@ -40,7 +40,11 @@ const writeSheet = (sheet, title, subtitle, headers, rows, tableName) => {
   sheet.getRange(`A5:${endCol}${endRow}`).values = body;
   sheet.getRange(`A5:${endCol}${endRow}`).format = {font: {color: "#000000"}, wrapText: true, horizontalAlignment: "center", verticalAlignment: "center", borders: {insideHorizontal: {style: "thin", color: "#E1E5EA"}}};
   sheet.freezePanes.freezeRows(4);
-  sheet.tables.add(`A4:${endCol}${endRow}`, true, tableName).style = "TableStyleMedium2";
+  const table = sheet.tables.add(`A4:${endCol}${endRow}`, true, tableName);
+  table.style = "TableStyleMedium2";
+  table.showBandedRows = false;
+  table.showBandedColumns = false;
+  sheet.getRange(`A5:${endCol}${endRow}`).format.fill = COLORS.white;
   applyCenteredAlignment(sheet, `A4:${endCol}${endRow}`);
   sheet.getRange(`A4:${endCol}${endRow}`).format.autofitColumns();
   for (let c=0; c<headers.length; c++) {

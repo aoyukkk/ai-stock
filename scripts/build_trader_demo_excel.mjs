@@ -15,7 +15,7 @@ const C = {
   green: "#E2F0D9", greenText: "#006100", blue: "#D9EAF7", blueText: "#1F4E78",
   purple: "#E4DFEC", purpleText: "#5F497A", yellow: "#FFF2CC", amberText: "#9C6500",
   red: "#F4CCCC", redText: "#9C0006", gray: "#E7E6E6", grayText: "#666666",
-  unverified: "#FFF2CC", border: "#D9E1E8",
+  unverified: "#FFF2CC", border: "#D9E1E8", manualSource: "#FFF2CC", modelSource: "#D9EAF7",
 };
 const col = (n) => { let s = ""; while (n > 0) { n--; s = String.fromCharCode(65 + n % 26) + s; n = Math.floor(n / 26); } return s; };
 const safe = (value) => {
@@ -25,6 +25,11 @@ const safe = (value) => {
   return /^[=+\-@]/.test(text) ? `'${text}` : text;
 };
 const setWidth = (sheet, index, width) => sheet.getRange(`${col(index)}:${col(index)}`).format.columnWidth = width;
+const sourceFill = (value) => {
+  const text = String(value ?? "").trim().toUpperCase();
+  if (!text) return C.white;
+  return /人工|共同|MANUAL|BOTH|HUMAN/.test(text) ? C.manualSource : C.modelSource;
+};
 const tableBlock = (sheet, startRow, headers, rows, tableName) => {
   const endCol = col(headers.length);
   const body = rows.length ? rows.map((row) => row.map(safe)) : [headers.map(() => "")];
@@ -36,12 +41,23 @@ const tableBlock = (sheet, startRow, headers, rows, tableName) => {
   };
   sheet.getRange(`A${startRow + 1}:${endCol}${endRow}`).values = body;
   sheet.getRange(`A${startRow + 1}:${endCol}${endRow}`).format = {
-    font: {color: "#202020", size: 9}, horizontalAlignment: "center", verticalAlignment: "center", wrapText: true,
+    fill: C.white, font: {color: "#202020", size: 9}, horizontalAlignment: "center", verticalAlignment: "center", wrapText: true,
     borders: {insideHorizontal: {style: "thin", color: C.border}},
   };
   const table = sheet.tables.add(`A${startRow}:${endCol}${endRow}`, true, tableName);
   table.style = "TableStyleMedium2";
+  table.showBandedRows = false;
+  table.showBandedColumns = false;
   table.showFilterButton = true;
+  const sourceIndex = headers.findIndex((header) =>
+    ["入选来源", "来源", "选择来源", "交易候选来源", "selection_source"].includes(header)
+  );
+  if (sourceIndex >= 0) {
+    body.forEach((row, index) => {
+      sheet.getRange(`A${startRow + 1 + index}:${endCol}${startRow + 1 + index}`).format.fill =
+        sourceFill(row[sourceIndex]);
+    });
+  }
   applyCenteredAlignment(sheet, `A${startRow}:${endCol}${endRow}`);
   return {endRow, bodyStart: startRow + 1, endCol};
 };
@@ -54,9 +70,9 @@ const colorScale = (range) => range.conditionalFormats.add("colorScale", {
 });
 const contains = (range, text, fill, font) => range.conditionalFormats.add("containsText", {text, format: {fill, font: {color: font, bold: true}}});
 const sourceFormats = (range) => {
-  contains(range, "LLM", C.green, C.greenText);
-  contains(range, "MANUAL", C.blue, C.blueText);
-  contains(range, "BOTH", C.purple, C.purpleText);
+  contains(range, "LLM", C.modelSource, C.blueText);
+  contains(range, "MANUAL", C.manualSource, C.amberText);
+  contains(range, "BOTH", C.manualSource, C.amberText);
 };
 for (const sheet of Object.values(sheets)) {
   sheet.showGridLines = false;
@@ -71,10 +87,6 @@ sheets[names[0]].getRange(`B2:B${q.endRow}`).format.numberFormat = "@";
 sheets[names[0]].getRange(`G2:L${q.endRow}`).format.numberFormat = "0.00";
 colorScale(sheets[names[0]].getRange(`G2:G${q.endRow}`));
 const quantBody = sheets[names[0]].getRange(`A2:T${q.endRow}`);
-quantBody.conditionalFormats.addCustom('=$O2="是"',{fill:"#FFF9E6"});
-quantBody.conditionalFormats.addCustom('=$S2="LLM"',{fill:C.green});
-quantBody.conditionalFormats.addCustom('=$S2="MANUAL"',{fill:C.blue});
-quantBody.conditionalFormats.addCustom('=$S2="BOTH"',{fill:C.purple});
 contains(sheets[names[0]].getRange(`O2:O${q.endRow}`), "是", C.yellow, C.amberText);
 contains(sheets[names[0]].getRange(`Q2:Q${q.endRow}`), "是", C.green, C.greenText);
 contains(sheets[names[0]].getRange(`R2:R${q.endRow}`), "是", C.blue, C.blueText);

@@ -237,7 +237,7 @@ def _rewrite_current_issues(ws, by_code: dict[str, dict]) -> None:
             ws.cell(r_idx, c_idx, value)
     _style_existing_sheet(ws, 9, 5)
     table = Table(displayName="CurrentRuleItems", ref="A4:E9")
-    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=False)
     ws.add_table(table)
     ws.freeze_panes = "A5"
     ws.auto_filter.ref = "A4:E9"
@@ -286,7 +286,7 @@ def _build_verification_sheet(wb, payload: dict) -> None:
     end_row = 4 + len(payload["items"])
     _style_verification_sheet(ws, end_row)
     table = Table(displayName="HumanVerificationTable", ref=f"A4:J{end_row}")
-    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=False)
     ws.add_table(table)
     ws.freeze_panes = "D5"
     ws.auto_filter.ref = f"A4:J{end_row}"
@@ -341,7 +341,7 @@ def _build_source_sheet(wb, payload: dict) -> None:
     end_row = 4 + len(source_rows)
     _style_source_sheet(ws, end_row)
     table = Table(displayName="HumanVerificationSources", ref=f"A4:G{end_row}")
-    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=False)
     ws.add_table(table)
     ws.freeze_panes = "D5"
     ws.auto_filter.ref = f"A4:G{end_row}"
@@ -394,7 +394,7 @@ def _style_verification_sheet(ws, end_row: int) -> None:
         cell.font = Font(name="Microsoft YaHei", size=10, bold=True, color=WHITE)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for row_idx, row in enumerate(ws.iter_rows(min_row=5, max_row=end_row, min_col=1, max_col=10), 5):
-        fill = GREEN if row_idx % 2 else BLUE_PALE
+        fill = YELLOW
         for cell in row:
             cell.fill = PatternFill("solid", fgColor=fill)
             cell.font = Font(name="Microsoft YaHei", size=9, color=TEXT)
@@ -420,7 +420,7 @@ def _style_source_sheet(ws, end_row: int) -> None:
         cell.font = Font(name="Microsoft YaHei", size=10, bold=True, color=WHITE)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for row_idx, row in enumerate(ws.iter_rows(min_row=5, max_row=end_row, min_col=1, max_col=7), 5):
-        fill = BLUE_PALE if row_idx % 2 == 0 else WHITE
+        fill = WHITE
         for cell in row:
             cell.fill = PatternFill("solid", fgColor=fill)
             if cell.column != 5:

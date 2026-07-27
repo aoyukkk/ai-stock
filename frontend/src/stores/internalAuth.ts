@@ -5,6 +5,8 @@ import { internalAuthApi, type InternalIdentity, type InternalRole } from "@/api
 
 export const useInternalAuthStore = defineStore("internal-auth", () => {
   const identity = ref<InternalIdentity | null>(null);
+  const localPasswordEnabled = computed(() => identity.value?.local_password_enabled || false);
+  const passwordChangeRequired = computed(() => identity.value?.password_change_required || false);
   const initialized = ref(false);
   const role = computed<InternalRole>(() => window.aiTraderShell ? "ADMIN" : (identity.value?.role || "VIEWER"));
   const canWrite = computed(() => role.value === "ADMIN" || role.value === "TRADER");
@@ -24,5 +26,5 @@ export const useInternalAuthStore = defineStore("internal-auth", () => {
     initialized.value = false;
   }
 
-  return { identity, initialized, role, canWrite, isAdmin, initialize, reset };
+  return { identity, initialized, role, canWrite, isAdmin, localPasswordEnabled, passwordChangeRequired, initialize, reset };
 });

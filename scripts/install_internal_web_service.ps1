@@ -47,6 +47,14 @@ if (Test-Path (Join-Path $InstallRoot "config")) {
     }
 }
 $EnvFile = Join-Path $ProgramDataRoot "config\internal-web.env"
+$AuthDatabasePath = Join-Path $ProgramDataRoot "data\ai_trader_internal.db"
+$BusinessPublishRoot = Join-Path $ProgramDataRoot "business"
+$BusinessDatabasePath = Join-Path $BusinessPublishRoot "ai_trader_business.db"
+$LegacyBusinessDatabasePath = Join-Path $ProgramDataRoot "data\ai_trader_business.db"
+New-Item -ItemType Directory -Force -Path $BusinessPublishRoot | Out-Null
+if ((Test-Path $LegacyBusinessDatabasePath) -and -not (Test-Path $BusinessDatabasePath)) {
+    Copy-Item -LiteralPath $LegacyBusinessDatabasePath -Destination $BusinessDatabasePath
+}
 if (Test-Path $EnvFile) {
     $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     Copy-Item $EnvFile (Join-Path $ProgramDataRoot "backups\internal-web.env.$Stamp.bak")
@@ -58,13 +66,21 @@ APP_PUBLIC_HOSTNAME=$PublicHostname
 APP_ORIGIN_HOST=127.0.0.1
 APP_ORIGIN_PORT=8080
 AUTH_MODE=$AuthMode
+INTERNAL_WEB_AUTH_MODE=$AuthMode
+LOCAL_PASSWORD_ENABLED=$($AuthMode -eq 'LOCAL_SHARED_PASSWORD')
+INTERNAL_WEB_SHARED_ROLE=TRADER
 SHARED_LOGIN_USERNAME=$SharedUsername
 CLOUDFLARE_TEAM_DOMAIN=$TeamDomain
 CLOUDFLARE_ACCESS_AUD=$AccessAud
 ALLOWED_USER_EMAILS=$($Emails -join ',')
 INTERNAL_USER_ROLES=$($Roles | ConvertTo-Json -Compress)
 CLOUDFLARE_ACCESS_SESSION_HOURS=12
+FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN=false
 ALLOW_LOCAL_AUTH_BYPASS=false
+AI_TRADER_DB_PATH=$AuthDatabasePath
+INTERNAL_WEB_AUTH_DATABASE_PATH=$AuthDatabasePath
+INTERNAL_WEB_BUSINESS_DATABASE_PATH=$BusinessDatabasePath
+INTERNAL_WEB_SESSION_HOURS=12
 ENABLE_REAL_TRADING=false
 AI_AUTO_REAL_ORDER_ENABLED=false
 SCHEDULER_ENABLED=false
@@ -73,11 +89,12 @@ AI_TRADER_SERVER_DATA_ROOT=$ProgramDataRoot
 AI_TRADER_LOG_DIR=$ProgramDataRoot\logs
 "@ | Set-Content -LiteralPath $EnvFile -Encoding ascii
 icacls $ProgramDataRoot /inheritance:r /grant:r "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" | Out-Null
+$PublisherIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+icacls $BusinessPublishRoot /inheritance:r /grant:r "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "${PublisherIdentity}:(OI)(CI)M" | Out-Null
 $WebExe = Join-Path $InstallRoot "ai-trader-internal-web.exe"
 if ($AuthMode -eq 'LOCAL_SHARED_PASSWORD') {
-    $DatabasePath = Join-Path $ProgramDataRoot "data\ai_trader_internal.db"
     if ($ReuseExistingSharedPassword) {
-        if (-not (Test-Path $DatabasePath)) { throw "EXISTING_SHARED_PASSWORD_DATABASE_NOT_FOUND" }
+        if (-not (Test-Path $AuthDatabasePath)) { throw "EXISTING_SHARED_PASSWORD_DATABASE_NOT_FOUND" }
     } else {
         & $WebExe set-shared-password
         if ($LASTEXITCODE -ne 0) { throw "SHARED_PASSWORD_SETUP_FAILED" }

@@ -518,8 +518,7 @@ def write_table(ws, start_row: int, headers: list[str], rows: list[list[Any]], *
             cell.border = ALL_BORDER
             cell.alignment = CENTER
             cell.font = Font(name="Microsoft YaHei", size=10)
-            if row_number % 2 == 0:
-                cell.fill = PatternFill("solid", fgColor=LIGHT_BLUE)
+            cell.fill = PatternFill("solid", fgColor=WHITE)
     end_row = start_row + len(rows)
     end_column = len(headers)
     if ws.auto_filter.ref is None:
