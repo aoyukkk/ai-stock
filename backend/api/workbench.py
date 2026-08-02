@@ -286,7 +286,13 @@ def order_position_results(trade_date: date, request: Request, pipeline_run_id: 
 def fundamentals(trade_date: date, request: Request, pipeline_run_id: str | None = None) -> dict:
     session, service = _service()
     try:
-        return success_response(data={"items": service.fundamentals(trade_date, pipeline_run_id)}, trace_id=request.state.trace_id)
+        return success_response(
+            data={
+                "items": service.fundamentals(trade_date, pipeline_run_id),
+                "currentness": service.freshness_summary(trade_date, pipeline_run_id),
+            },
+            trace_id=request.state.trace_id,
+        )
     finally:
         session.close()
 

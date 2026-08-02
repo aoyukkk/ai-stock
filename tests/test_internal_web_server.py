@@ -34,7 +34,7 @@ from database.models.internal_auth import (
     JobExecutionLock,
 )
 from database.models.workbench import PipelineJob
-from database.session import close_db, create_engine_from_url, get_engine, get_session, init_db
+from database.session import close_db, create_engine_from_url, get_auth_session, get_engine, get_session, init_auth_db
 
 
 PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -76,7 +76,10 @@ def anyio_backend():
 @pytest.fixture()
 def internal_env(tmp_path: Path, monkeypatch):
     close_db()
-    monkeypatch.setenv("AI_TRADER_DB_PATH", str(tmp_path / "internal.db"))
+    database_path = str(tmp_path / "internal.db")
+    monkeypatch.setenv("AI_TRADER_DB_PATH", database_path)
+    monkeypatch.setenv("INTERNAL_WEB_AUTH_DATABASE_PATH", database_path)
+    monkeypatch.setenv("INTERNAL_WEB_BUSINESS_DATABASE_PATH", database_path)
     monkeypatch.setenv("APP_RUNTIME_MODE", "INTERNAL_WEB_SERVER")
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.setenv("ALLOW_LOCAL_AUTH_BYPASS", "false")
@@ -90,12 +93,13 @@ def internal_env(tmp_path: Path, monkeypatch):
     close_db()
 
 
-def settings(*, bypass=False, auth_mode="CLOUDFLARE_ACCESS", max_bytes=1024 * 1024):
+def settings(*, bypass=False, auth_mode="CLOUDFLARE_ACCESS", max_bytes=1024 * 1024, force_password_change=False):
     return InternalWebSettings(
         runtime_mode="INTERNAL_WEB_SERVER", app_env="development",
         public_hostname="trader.example.com", origin_host="127.0.0.1", origin_port=8080,
         team_domain="team.cloudflareaccess.com", access_aud="aud-test", auth_mode=auth_mode,
         allowed_users=USERS, session_hours=12, local_bypass=bypass, max_request_bytes=max_bytes,
+        force_password_change_on_first_login=force_password_change,
     )
 
 
@@ -180,7 +184,7 @@ def test_authentication_roles_inactive_user_and_audit(internal_env: Path):
         headers = {"Cf-Access-Jwt-Assertion": "verified-at-edge"}
         assert client.post("/api/internal/auth/logout", headers=headers).status_code == 200
         assert client.get("/api/internal/users", headers=headers).status_code == 403
-    session = get_session()
+    session = get_auth_session()
     try:
         assert session.scalar(select(func.count()).select_from(InternalAuditEvent)) >= 1
         user = session.scalar(select(InternalUser).where(InternalUser.email == "viewer2@example.com"))
@@ -194,9 +198,28 @@ def test_authentication_roles_inactive_user_and_audit(internal_env: Path):
         assert client.get("/workbench", headers={"Cf-Access-Jwt-Assertion": "x"}).status_code == 403
 
 
+def test_cloudflare_access_default_does_not_require_local_password(internal_env: Path):
+    dist = internal_env / "dist"; dist.mkdir(); (dist / "index.html").write_text("ok", encoding="utf-8")
+    app = create_internal_web_app(
+        settings(), frontend_dist=dist, lock_path=internal_env / "cloudflare-default.lock",
+        auth_verifier=ClaimsVerifier("admin@example.com"),
+    )
+    with TestClient(app, base_url="https://trader.example.com") as client:
+        headers = {"Cf-Access-Jwt-Assertion": "verified-at-edge"}
+        identity = client.get("/api/internal/auth/me", headers=headers)
+        assert identity.status_code == 200
+        payload = identity.json()["data"]
+        assert payload["authenticated"] is True and payload["email"] == "admin@example.com"
+        assert payload["role"] == "ADMIN" and payload["auth_source"] == "CLOUDFLARE_ACCESS"
+        assert payload["local_password_enabled"] is False and payload["password_change_required"] is False
+        config = client.get("/api/internal/auth/config/public", headers=headers)
+        assert config.status_code == 200
+        assert config.json()["data"]["force_password_change_on_first_login"] is False
+
+
 def test_user_sync_deactivates_removed_accounts_without_reactivating_admin_disabled_user(internal_env: Path):
-    init_db()
-    session = get_session()
+    init_auth_db()
+    session = get_auth_session()
     try:
         sync_internal_users(session, settings())
         configured = session.scalar(select(InternalUser).where(InternalUser.email == "viewer@example.com"))
@@ -304,11 +327,11 @@ def test_argon2_password_lock_csrf_and_logout(tmp_path: Path):
         user = InternalUser(email="admin@example.com", display_name="Admin", role="ADMIN", active=True)
         session.add(user); session.commit()
         service = LocalPasswordAuthService(session, 12)
-        service.set_temporary_password(user.id, "Temporary-Password-123")
+        service.set_temporary_password(user.id, "Temporary-Password-123", must_change=True)
         raw, csrf, must_change = service.login(AuthenticatedUser(user.id, user.email, user.display_name, user.role), "Temporary-Password-123")
         assert must_change is True and service.validate(raw, csrf) is not None
         assert service.validate(raw, "wrong") is None
-        service.set_temporary_password(user.id, "Another-Temporary-123")
+        service.set_temporary_password(user.id, "Another-Temporary-123", must_change=True)
         assert service.validate(raw) is None
         raw, csrf, _ = service.login(AuthenticatedUser(user.id, user.email, user.display_name, user.role), "Another-Temporary-123")
         service.change_password(user.id, "Another-Temporary-123", "New-Password-456!")
@@ -324,7 +347,7 @@ def test_argon2_password_lock_csrf_and_logout(tmp_path: Path):
 
 def test_local_password_requires_matching_user_csrf_and_first_change(internal_env: Path):
     dist = internal_env / "dist"; dist.mkdir(); (dist / "index.html").write_text("ok", encoding="utf-8")
-    password_settings = settings(auth_mode="CLOUDFLARE_ACCESS_PLUS_LOCAL_PASSWORD")
+    password_settings = settings(auth_mode="CLOUDFLARE_ACCESS_PLUS_LOCAL_PASSWORD", force_password_change=True)
     app = create_internal_web_app(
         password_settings,
         frontend_dist=dist,
@@ -332,10 +355,10 @@ def test_local_password_requires_matching_user_csrf_and_first_change(internal_en
         auth_verifier=ClaimsVerifier("viewer@example.com"),
     )
     with TestClient(app, base_url="https://trader.example.com") as client:
-        session = get_session()
+        session = get_auth_session()
         try:
             viewer = session.scalar(select(InternalUser).where(InternalUser.email == "viewer@example.com"))
-            LocalPasswordAuthService(session, 12).set_temporary_password(viewer.id, "Temporary-Password-123")
+            LocalPasswordAuthService(session, 12).set_temporary_password(viewer.id, "Temporary-Password-123", must_change=True)
         finally:
             session.close()
         headers = {"Cf-Access-Jwt-Assertion": "edge-verified"}
@@ -344,7 +367,9 @@ def test_local_password_requires_matching_user_csrf_and_first_change(internal_en
         logged_in = client.post("/api/internal/auth/login", headers=headers, json={"password": "Temporary-Password-123"})
         assert logged_in.status_code == 200
         csrf = logged_in.json()["data"]["csrf_token"]
-        assert client.get("/api/internal/auth/me", headers=headers).status_code == 403
+        identity_before_change = client.get("/api/internal/auth/me", headers=headers)
+        assert identity_before_change.status_code == 200
+        assert identity_before_change.json()["data"]["password_change_required"] is True
         assert client.post("/api/internal/auth/logout", headers=headers).status_code == 403
         changed = client.post(
             "/api/internal/auth/change-password",
@@ -352,8 +377,10 @@ def test_local_password_requires_matching_user_csrf_and_first_change(internal_en
             json={"current_password": "Temporary-Password-123", "new_password": "New-Password-456!"},
         )
         assert changed.status_code == 200
+        assert "SameSite=lax" in changed.headers["set-cookie"]
+        rotated_csrf = changed.json()["data"]["csrf_token"]
         assert client.get("/api/internal/auth/me", headers=headers).status_code == 200
-        assert client.post("/api/internal/auth/logout", headers=headers | {"X-CSRF-Token": csrf}).status_code == 200
+        assert client.post("/api/internal/auth/logout", headers=headers | {"X-CSRF-Token": rotated_csrf}).status_code == 200
 
 
 def test_shared_password_mode_login_session_csrf_and_no_cloudflare_dependency(internal_env: Path):
@@ -364,24 +391,23 @@ def test_shared_password_mode_login_session_csrf_and_no_cloudflare_dependency(in
     with TestClient(app, base_url="https://trader.example.com") as client:
         assert client.get("/workbench").status_code == 200
         assert client.get("/api/internal/auth/me").status_code == 401
-        session = get_session()
+        session = get_auth_session()
         try:
-            user = session.scalar(select(InternalUser).where(InternalUser.email == "shared-partners@local.invalid"))
-            assert user is not None and user.role == "ADMIN"
+            user = session.scalar(select(InternalUser).where(InternalUser.user_key == "shared_internal_user"))
+            assert user is not None and user.role == "TRADER"
             LocalPasswordAuthService(session, 12).set_password(user.id, "Shared-Password-123!", must_change=False)
         finally:
             session.close()
 
-        assert client.post(
-            "/api/internal/auth/login", json={"username": "wrong", "password": "Shared-Password-123!"}
-        ).status_code == 401
         logged_in = client.post(
-            "/api/internal/auth/login", json={"username": "partners", "password": "Shared-Password-123!"}
+            "/api/internal/auth/local/login", json={"password": "Shared-Password-123!"}
         )
         assert logged_in.status_code == 200
         csrf = logged_in.json()["data"]["csrf_token"]
         identity = client.get("/api/internal/auth/me").json()["data"]
-        assert identity["auth_mode"] == "LOCAL_SHARED_PASSWORD" and identity["role"] == "ADMIN"
+        assert identity["auth_mode"] == "LOCAL_SHARED_PASSWORD" and identity["role"] == "TRADER"
+        assert client.get("/api/workbench/settings").status_code == 200
+        assert client.put("/api/workbench/settings", headers={"X-CSRF-Token": csrf}, json={"values": {}}).status_code == 403
         assert client.post("/api/internal/auth/logout").status_code == 403
         assert client.post("/api/internal/auth/logout", headers={"X-CSRF-Token": csrf}).status_code == 200
         assert client.get("/api/internal/auth/me").status_code == 401

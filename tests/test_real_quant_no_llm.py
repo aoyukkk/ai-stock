@@ -16,6 +16,7 @@ def test_real_quant_script_does_not_import_llm_gateway(monkeypatch, tmp_path) ->
     report = run_real_quant_top500(
         provider="mock",
         history_provider="mock",
+        backup_history_provider=None,
         top_n=5,
         sample_limit=5,
         output=tmp_path / "no_llm_report.json",

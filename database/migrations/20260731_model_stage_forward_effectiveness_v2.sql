@@ -1,0 +1,15 @@
+-- MODEL_STAGE_FORWARD_EFFECTIVENESS_V2
+-- SQLAlchemy metadata is the packaged SQLite bootstrap path.  This migration
+-- marker documents the additive tables; no existing ranking/outcome table is
+-- altered and no historical record is rewritten.
+--
+-- New tables:
+--   model_effectiveness_stage_snapshot
+--   model_effectiveness_stage_item
+--   model_effectiveness_daily_metric
+--   model_effectiveness_weekly_run
+--   model_effectiveness_data_issue
+--
+-- The stage tables reference ranking_evaluation_snapshot and
+-- ranking_evaluation_snapshot_item, so D1/D3/D5/D10 prices remain exclusively
+-- in ranking_evaluation_forward_outcome.

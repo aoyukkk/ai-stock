@@ -32,9 +32,19 @@ export function desktopPaths(): DesktopPaths {
   };
 }
 
-export function backendEnvironment(paths: DesktopPaths, port: number, token: string): NodeJS.ProcessEnv {
+const SENSITIVE_ENV_NAME = /(TOKEN|API[_-]?KEY|PASSWORD|PASSWD|SECRET|CREDENTIAL|AUTHORIZATION|COOKIE)/i;
+
+export function backendEnvironment(
+  paths: DesktopPaths,
+  port: number,
+  token: string,
+  allowLegacySecretFallback = false
+): NodeJS.ProcessEnv {
+  const inherited = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => allowLegacySecretFallback || !SENSITIVE_ENV_NAME.test(name))
+  );
   return {
-    ...process.env,
+    ...inherited,
     AI_TRADER_USER_DATA_DIR: paths.root,
     AI_TRADER_DB_PATH: paths.database,
     AI_TRADER_CACHE_DIR: paths.cache,
@@ -48,6 +58,8 @@ export function backendEnvironment(paths: DesktopPaths, port: number, token: str
     AI_TRADER_DESKTOP_MODE: "true",
     AI_TRADER_PORT: String(port),
     AI_TRADER_LOCAL_API_TOKEN: token,
+    PYTHON_DOTENV_DISABLED: allowLegacySecretFallback ? "0" : "1",
+    AI_TRADER_LEGACY_SECRET_FALLBACK: allowLegacySecretFallback ? "true" : "false",
     ENABLE_REAL_TRADING: "false",
     SCHEDULER_ENABLED: "false",
     PAPER_TRADING_ENABLED: "false",

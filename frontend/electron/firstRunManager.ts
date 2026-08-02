@@ -36,6 +36,14 @@ export async function initializeFirstRun(paths: DesktopPaths): Promise<FirstRunR
     ? path.join(process.resourcesPath, "seed")
     : path.resolve(app.getAppPath(), "..", "build", "seed");
   const manifestPath = path.join(seedRoot, "SEED_DATA_MANIFEST_1.0.0.json");
+  if (!(await exists(manifestPath))) {
+    await writeFile(marker, JSON.stringify({
+      initializedAt: new Date().toISOString(),
+      seedVersion: null,
+      mode: "EMPTY_SECURE_START"
+    }, null, 2), "utf8");
+    return { firstRun: true, seedVersion: null };
+  }
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as SeedManifest;
   if (manifest.checksum_status !== "PASS") {
     throw new Error("SEED_MANIFEST_NOT_VERIFIED");

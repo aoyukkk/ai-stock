@@ -49,6 +49,22 @@ coverage/
 
 # Session-level render and workbook support files
 tmp/
+temp/
+
+# Local backups are retained outside Git; review and hash them before any approved cleanup.
+backups/**
+!backups/.gitkeep
+
+# Local release binaries are not source. Keep versioned notes/manifests visible.
+release/**/*.exe
+release/**/*.msi
+release/**/*.zip
+release/**/*.7z
+release/**/win-unpacked/
+
+# Generated reports must use an explicit generated subdirectory.
+reports/generated/
+reports/security_generated/
 
 # OS
 .DS_Store

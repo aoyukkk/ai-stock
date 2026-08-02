@@ -1,0 +1,25 @@
+ranking_evaluation:
+  enabled: true
+  shadow_only: true
+  activation_date: 2026-07-24
+  top_n: 100
+  horizons: [1, 3, 5, 10]
+  return_basis: RAW_CLOSE
+  evaluation_version: RANKING_FORWARD_EFFECTIVENESS_V1
+  auto_capture_after_quant: true
+  auto_refresh_outcomes: true
+  weekly_output_enabled: true
+  weekly_output_day: FRIDAY
+  scheduler_enabled: false
+  output_excel: true
+  output_json: true
+  output_csv: true
+  snapshot_output_root: outputs/ranking_evaluation/snapshots
+  weekly_output_root: outputs/ranking_evaluation/weekly
+  daily_cache_root: data/cache/tushare/trade_date/daily
+  adj_factor_cache_root: data/cache/tushare/trade_date/adj_factor
+  trade_calendar_cache_root: data/cache/tushare
+  minimum_rank_ic_samples: 2
+  supported_factor_versions:
+    - TUSHARE_BASELINE_V1
+    - TUSHARE_QUANT_V2_CORRECTED_SHADOW

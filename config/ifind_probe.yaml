@@ -19,9 +19,10 @@ ifind_probe:
     - iFinDPy
   login_function: THS_iFinDLogin
   logout_function: THS_iFinDLogout
-  login_arguments:
-    username: IFIND_USERNAME
-    password: IFIND_PASSWORD
+  # Credentials are resolved from the environment at runtime and must never be
+  # stored in this repository or copied into a distributable package.
+  username_env: IFIND_USERNAME
+  password_env: IFIND_PASSWORD
   fallback_samples:
     stocks:
       - {canonical_code: 600000.SH, market: SH, board: MAIN}

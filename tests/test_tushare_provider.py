@@ -142,6 +142,21 @@ def test_tushare_stock_basic_and_trade_calendar(monkeypatch, tmp_path) -> None:
     assert calendar.status == "available"
 
 
+def test_tushare_stock_list_can_force_refresh(monkeypatch, tmp_path) -> None:
+    calls = _install_fake_tushare(monkeypatch)
+    provider = TushareMarketDataProvider(
+        cache_dir=tmp_path,
+        cache_enabled=True,
+        request_interval_seconds=0,
+    )
+
+    provider.get_stock_list()
+    provider.get_stock_list()
+    provider.get_stock_list(use_cache=False)
+
+    assert calls["stock_basic"] == 2
+
+
 def test_tushare_market_data_endpoints(monkeypatch, tmp_path) -> None:
     _install_fake_tushare(monkeypatch)
     provider = TushareMarketDataProvider(cache_dir=tmp_path, cache_enabled=False, request_interval_seconds=0)

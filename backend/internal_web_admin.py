@@ -19,7 +19,7 @@ def set_shared_password() -> int:
     from backend.core.internal_auth import LocalPasswordAuthService, sync_internal_users
     from backend.core.internal_settings import load_internal_web_settings
     from database.models.internal_auth import InternalUser
-    from database.session import get_session, init_db
+    from database.session import get_auth_session, init_auth_db
 
     settings = load_internal_web_settings()
     if not settings.shared_password_enabled:
@@ -31,8 +31,8 @@ def set_shared_password() -> int:
     if len(password) < 12:
         raise RuntimeError("PASSWORD_TOO_SHORT")
 
-    init_db()
-    session = get_session()
+    init_auth_db()
+    session = get_auth_session()
     try:
         sync_internal_users(session, settings)
         user = session.scalar(select(InternalUser).where(InternalUser.email == settings.shared_identity_email))

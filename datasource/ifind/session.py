@@ -148,6 +148,13 @@ class IFindSessionManager:
 
     def _login_arguments(self, function: Callable[..., Any]) -> dict[str, str]:
         mapping = dict(self.config.get("login_arguments") or {})
+        if not mapping:
+            username_env = str(self.config.get("username_env") or "").strip()
+            password_env = str(self.config.get("password_env") or "").strip()
+            if username_env:
+                mapping["username"] = username_env
+            if password_env:
+                mapping["password"] = password_env
         signature = inspect.signature(function)
         kwargs: dict[str, str] = {}
         for parameter, env_name in mapping.items():

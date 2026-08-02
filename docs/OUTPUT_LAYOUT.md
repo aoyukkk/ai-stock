@@ -45,3 +45,22 @@ outputs/
 11. 任一结构检查失败时禁止覆盖当天正式文件，先修复后重新生成。
 
 具体开关位于 `config/reporting.yaml`，生成后由 `reporting.workbook_standard` 执行统一验收。
+## Ranking forward effectiveness (Shadow)
+
+```text
+outputs/ranking_evaluation/
+  snapshots/<ranking-trade-date>/<factor-version>/
+    rank-snapshot-<hash>.json
+    rank-snapshot-<hash>.csv
+  weekly/<week-ending>/<factor-version>/<run-id>/
+    summary.json
+    daily_metrics.csv
+    ranking_details.csv
+    data_quality.csv
+    run_manifest.json
+    量化排名前向效度评估_<factor-version>_<week-ending>_<run-id>.xlsx
+```
+
+快照和报告目录均由日期、版本、run_id/Hash 隔离，禁止覆盖。Excel 只在批准的
+`@oai/artifact-tool` 运行时可用时生成；否则 manifest 明确记录
+`workbook_status=RUNTIME_UNAVAILABLE`。

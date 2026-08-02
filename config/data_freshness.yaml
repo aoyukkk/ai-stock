@@ -1,0 +1,39 @@
+contract_version: point-in-time-freshness-v1
+timezone: Asia/Shanghai
+
+datasets:
+  ths_industry_members:
+    max_age_trading_days: 1
+    stale_action: BLOCK_STAGE
+    unverified_action: BLOCK_STAGE
+    missing_action: BLOCK_STAGE
+    refresh_on_stale: true
+    historical_current_membership_allowed: false
+  ths_concept_members:
+    max_age_trading_days: 1
+    stale_action: DEGRADE
+    unverified_action: DEGRADE
+    missing_action: DEGRADE
+    refresh_on_stale: true
+    historical_current_membership_allowed: false
+  fundamentals:
+    max_age_hours: 24
+    stale_action: DEGRADE
+    unverified_action: DEGRADE
+    missing_action: DEGRADE
+    refresh_on_stale: true
+    historical_current_membership_allowed: false
+  news:
+    max_age_hours: 36
+    stale_action: DEGRADE
+    unverified_action: DEGRADE
+    missing_action: DEGRADE
+    refresh_on_stale: true
+    historical_current_membership_allowed: false
+  overseas:
+    max_age_hours: 24
+    stale_action: DEGRADE
+    unverified_action: DEGRADE
+    missing_action: DEGRADE
+    refresh_on_stale: false
+    historical_current_membership_allowed: false

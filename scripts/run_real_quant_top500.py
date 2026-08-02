@@ -112,14 +112,19 @@ def run_real_quant_top500(
         use_cache=use_cache,
         refresh_cache=refresh_cache,
     )
+    effective_backup_history_provider = (
+        None
+        if provider == "mock" and history_provider == "mock"
+        else backup_history_provider
+    )
     backup_history = (
         _provider(
-            backup_history_provider,
+            effective_backup_history_provider,
             akshare_no_proxy=akshare_no_proxy,
             use_cache=use_cache,
             refresh_cache=refresh_cache,
         )
-        if backup_history_provider
+        if effective_backup_history_provider
         else None
     )
     if isinstance(history, TushareMarketDataProvider):
@@ -169,7 +174,7 @@ def run_real_quant_top500(
         report = _build_report(
             provider=provider,
             history_provider=history_provider,
-            backup_history_provider=backup_history_provider,
+            backup_history_provider=effective_backup_history_provider,
             universe_count=0,
             filtered_count=0,
             scored_count=0,
@@ -375,10 +380,16 @@ def run_real_quant_top500(
         factor_version=quant_config.factor_version,
         results=selected,
     )
-    if save_to_db and selected:
+    if save_to_db and results:
         session = get_session()
         try:
-            save_factor_scores(session, ranking)
+            persistence_ranking = ranking.model_copy(
+                update={
+                    "returned_count": len(results),
+                    "results": results,
+                }
+            )
+            save_factor_scores(session, persistence_ranking)
         finally:
             session.close()
     performance["ranking_seconds"] = _round_seconds(time.perf_counter() - ranking_started)
@@ -395,7 +406,7 @@ def run_real_quant_top500(
     report = _build_report(
         provider=provider,
         history_provider=history_provider,
-        backup_history_provider=backup_history_provider,
+        backup_history_provider=effective_backup_history_provider,
         universe_count=universe_count,
         filtered_count=filtered_count,
         scored_count=len(results),

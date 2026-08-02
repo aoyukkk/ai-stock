@@ -364,8 +364,11 @@ class SelectionPerformanceService:
             "suggested_position_percent": _float(members[row.cohort_member_id].suggested_position_percent), "return_basis": run.return_basis,
             "baseline_trade_date": row.baseline_trade_date, "baseline_price": _float(row.baseline_price),
             "evaluation_trade_date": row.evaluation_trade_date, "holding_day": row.holding_day,
-            "open_price": _float(row.open_price), "close_price": _float(row.close_price), "daily_return": _float(row.daily_return),
-            "cumulative_return": _float(row.cumulative_return), "drawdown_to_date": _float(row.drawdown_to_date),
+            "open_price": _float(row.open_price), "high_price": _float(row.high_price),
+            "low_price": _float(row.low_price), "close_price": _float(row.close_price),
+            "daily_return": _float(row.daily_return), "cumulative_return": _float(row.cumulative_return),
+            "peak_cumulative_return": _float(row.peak_cumulative_return),
+            "drawdown_to_date": _float(row.drawdown_to_date),
             "max_drawdown_to_date": _float(row.max_drawdown_to_date), "return_source": row.return_source, "data_status": row.data_status,
         } for row in rows]
 

@@ -9,8 +9,18 @@ from fundamentals.profile import TushareFundamentalProfileBuilder
 from llm_gateway.schemas import LLMResponse
 from research.output_boundary import scan_output_boundary
 from research.input_quality import summarize_structured_input
-from research.structured_validation import StructuredLightScreening, StructuredValidationProvider
-from research.wire_schemas import FundamentalInferenceWireV3, fundamental_wire_example, fundamental_wire_to_domain
+from research.structured_validation import (
+    StructuredLightScreening,
+    StructuredValidationProvider,
+    _bounded_list_compactions,
+)
+from research.wire_schemas import (
+    FundamentalEnrichmentWireV4,
+    FundamentalInferenceWireV3,
+    fundamental_v4_example,
+    fundamental_wire_example,
+    fundamental_wire_to_domain,
+)
 from stock_codes import display_stock_code, normalize_ts_code
 
 
@@ -131,7 +141,32 @@ def test_copied_flash_example_is_repaired_with_context(monkeypatch):
     assert len(gateway.requests) == 2
     repair_payload = json.loads(gateway.requests[1].messages[1].content)
     assert repair_payload["context"]["quant"]["total_score"] == 78
+    assert "不得与example中的示例分数组合相同" in repair_payload["instruction"]
     assert provider.audit[0]["diagnostics"]["repair_category"] == "DEGENERATE_COMPONENT_RESPONSE"
+
+
+def test_bounded_lists_are_deduplicated_and_compacted_before_schema_validation():
+    payload = fundamental_v4_example("001390.SZ")
+    payload["inferred_concept_tags"] = [
+        "概念一", "概念一", "概念二", "概念三", "概念四", "概念五", "概念六", "概念七",
+    ]
+    response = _response(json.dumps(payload, ensure_ascii=False))
+
+    category, _, _, parsed = StructuredValidationProvider._validate_response(
+        response, FundamentalEnrichmentWireV4, "001390.SZ",
+    )
+
+    assert category == ""
+    assert parsed is not None
+    assert parsed.inferred_concept_tags == [
+        "概念一", "概念二", "概念三", "概念四", "概念五", "概念六",
+    ]
+    assert _bounded_list_compactions(response, FundamentalEnrichmentWireV4) == [{
+        "field": "inferred_concept_tags",
+        "raw_count": 8,
+        "unique_count": 7,
+        "saved_count": 6,
+    }]
 
 
 def test_length_and_fence_have_distinct_categories():

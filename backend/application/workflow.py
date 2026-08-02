@@ -17,7 +17,7 @@ from backend.application.excel_export import DailyExcelExportService
 from backend.application.pro_v3 import ProductionProV3ApplicationService
 from backend.core.runtime_paths import output_root, report_root, tushare_cache_root
 from backend.workbench.historical import HistoricalPipelineRunResolver
-from database.models.quant_run import QuantRun
+from database.models.quant_run import QuantRankResult, QuantRun
 from database.models.system import LLMUsage
 from database.models.validation import (
     ModelValidationLLMAudit,
@@ -32,6 +32,9 @@ from database.stock_master_sync import StockMasterSyncService
 from datasource.tushare_provider import TushareMarketDataProvider
 from market_review.service import MarketReviewService
 from quant.run_repository import QuantRunRepository
+from services.ranking_evaluation.constants import load_config as load_ranking_evaluation_config
+from services.ranking_evaluation.data_quality_service import RankingDataQualityService
+from services.ranking_evaluation.snapshot_service import RankingSnapshotService
 from research.knowledge_mode import LLMKnowledgeMode
 from scripts.prewarm_tushare_trade_date_cache import run_prewarm
 from scripts.run_real_quant_top500 import run_real_quant_top500
@@ -228,10 +231,40 @@ def _run_quant(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, 
         manifest_id=manifest.id, temporal_status=manifest.temporal_status.value, actionable=manifest.actionable,
         config_snapshot={"top_n": settings["quant_top_n"], "provider": "tushare", "history_provider": "tushare"},
     )
+    ranking_capture = {"status": "DISABLED"}
+    if bool(load_ranking_evaluation_config().get("auto_capture_after_quant", True)):
+        try:
+            ranking_capture = RankingSnapshotService(session).capture(
+                trade_date=job.trade_date,
+                source_quant_run_id=row.run_id,
+                factor_version="TUSHARE_BASELINE_V1",
+            )
+        except Exception as exc:
+            # Quant is already committed. Evaluation is deliberately fail-open
+            # for production ranking, but its own failure remains auditable.
+            session.rollback()
+            RankingDataQualityService(session).record(
+                issue_code="RANKING_EVALUATION_CAPTURE_FAILED",
+                issue_level="ABNORMAL",
+                affected_date=job.trade_date,
+                affected_version="TUSHARE_BASELINE_V1",
+                detail=f"{type(exc).__name__}: {_safe_error(exc)}",
+            )
+            session.commit()
+            ranking_capture = {
+                "status": "WARNING",
+                "warning_code": "RANKING_EVALUATION_CAPTURE_FAILED",
+            }
+    ranking_capture = json.loads(json.dumps(ranking_capture, ensure_ascii=False, default=str))
     after_llm = int(session.scalar(select(LLMUsage.id).order_by(LLMUsage.id.desc())) or 0)
     if before_llm != after_llm or not row.no_llm_call_verified:
         raise RuntimeError("QUANT_ZERO_LLM_ASSERTION_FAILED")
-    return {"run_ids": {"quant_run_id": row.run_id, "manifest_id": manifest.id}, "scored_count": row.scored_count, "no_llm_call_verified": True}
+    return {
+        "run_ids": {"quant_run_id": row.run_id, "manifest_id": manifest.id},
+        "scored_count": row.scored_count,
+        "no_llm_call_verified": True,
+        "ranking_evaluation_capture": ranking_capture,
+    }
 
 
 def _run_flash(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, Any]:
@@ -247,8 +280,39 @@ def _run_flash(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, 
         quant_query = quant_query.where(QuantRun.run_id == requested_quant_run_id)
     quant = session.scalar(quant_query.order_by(QuantRun.created_at.desc()))
     if quant is None: raise ValueError("ACTIONABLE_QUANT_RUN_REQUIRED")
-    manual_rows = list(session.scalars(select(ManualSelectionRecord).where(ManualSelectionRecord.trade_date == job.trade_date)))
-    manual = [ManualSelection(row.stock_code, row.reason, row.priority) for row in manual_rows]
+    manual_rows = list(session.scalars(
+        select(ManualSelectionRecord)
+        .where(
+            ManualSelectionRecord.trade_date == job.trade_date
+        )
+        .order_by(
+            ManualSelectionRecord.created_at,
+            ManualSelectionRecord.stock_code,
+        )
+    ))
+    quant_codes = set(session.scalars(
+        select(QuantRankResult.stock_code).where(
+            QuantRankResult.quant_run_id == quant.run_id
+        )
+    ))
+    eligible_manual_rows, excluded_manual_rows = _partition_manual_rows(
+        manual_rows,
+        quant_codes,
+        include_review_only=True,
+    )
+    review_only_manual_rows = [
+        row
+        for row in eligible_manual_rows
+        if str(row.stock_code or "").strip().upper().split(".", 1)[0]
+        not in {
+            str(code or "").strip().upper().split(".", 1)[0]
+            for code in quant_codes
+        }
+    ]
+    manual = [
+        ManualSelection(row.stock_code, row.reason, row.priority)
+        for row in eligible_manual_rows
+    ]
     settings = _workbench_settings(session)
     flash_limit = min(int(settings["daily_token_limit"]), PipelineBudgetConfig().flash_limit)
     existing_flash_tokens = _flash_tokens_for_date(session, job.trade_date)
@@ -260,6 +324,21 @@ def _run_flash(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, 
     checkpoint_state["budget"] = {
         "stage": "FLASH", "used_before": existing_flash_tokens,
         "limit": flash_limit, "remaining_before": flash_limit - existing_flash_tokens,
+    }
+    checkpoint_state["manual_pool"] = {
+        "requested_count": len(manual_rows),
+        "included_count": len(eligible_manual_rows),
+        "excluded_count": len(excluded_manual_rows),
+        "forced_review_count": len(review_only_manual_rows),
+        "forced_review_codes": [row.stock_code for row in review_only_manual_rows],
+        "policy": "ALL_MANUAL_TO_FLASH_AND_PRO_REVIEW_ST_HARD_GATE_RETAINED",
+        "excluded": [
+            {
+                "stock_code": row.stock_code,
+                "reason": "NOT_IN_ACTIONABLE_QUANT_UNIVERSE",
+            }
+            for row in excluded_manual_rows
+        ],
     }
     job.checkpoint = checkpoint_state
     session.commit()
@@ -304,13 +383,30 @@ def _run_flash(session, job: PipelineJob, options: dict[str, Any]) -> dict[str, 
                 model_validation_top_n=int(settings["llm_top_n"]), defer_candidate_generation=True,
                 concurrency=int(settings["flash_concurrency"]), batch_size=int(settings["flash_batch_size"]),
                 checkpoint_callback=checkpoint,
+                allow_manual_outside_quant=True,
             )
     except Exception as exc:
         _finalize_interrupted_flash_run(session, quant.run_id, exc)
         raise
     return {
         "run_ids": {"quant_run_id": quant.run_id, "flash_run_id": validation_run_id},
-        "manual_count": len(manual), "flash_token_usage": job.token_usage,
+        "manual_count": len(manual),
+        "manual_excluded_count": len(excluded_manual_rows),
+        "manual_excluded": [
+            {
+                "stock_code": row.stock_code,
+                "reason": "NOT_IN_ACTIONABLE_QUANT_UNIVERSE",
+            }
+            for row in excluded_manual_rows
+        ],
+        "manual_forced_review_count": len(review_only_manual_rows),
+        "manual_forced_review_codes": [
+            row.stock_code for row in review_only_manual_rows
+        ],
+        "manual_review_policy": (
+            "ALL_MANUAL_TO_FLASH_AND_PRO_REVIEW_ST_HARD_GATE_RETAINED"
+        ),
+        "flash_token_usage": job.token_usage,
         "flash_token_limit": flash_limit,
     }
 
@@ -441,6 +537,27 @@ def _flash_tokens_for_date(session, trade_date: date) -> int:
         .where(ModelValidationRun.base_market_trade_date == trade_date)
     )
     return int(value or 0)
+
+
+def _partition_manual_rows(
+    manual_rows: list[ManualSelectionRecord],
+    quant_codes: set[str],
+    *,
+    include_review_only: bool = False,
+) -> tuple[list[ManualSelectionRecord], list[ManualSelectionRecord]]:
+    canonical_quant_codes = {
+        str(code or "").strip().upper().split(".", 1)[0]
+        for code in quant_codes
+    }
+    eligible: list[ManualSelectionRecord] = []
+    excluded: list[ManualSelectionRecord] = []
+    for row in manual_rows:
+        code = str(row.stock_code or "").strip().upper().split(".", 1)[0]
+        if code in canonical_quant_codes or include_review_only:
+            eligible.append(row)
+        else:
+            excluded.append(row)
+    return eligible, excluded
 
 
 def _flash_usable_for_final(run: ModelValidationRun) -> bool:

@@ -20,9 +20,12 @@ hiddenimports += [
 ]
 hiddenimports = [item for item in hiddenimports if item != "backend.internal_web_service"]
 
+# The internal-Web package carries only its own schema.  Provider configuration
+# is loaded from the ACL-protected ProgramData config directory when required;
+# credentials and provider probe files must never enter this package.
 common_datas = [
     (str(ROOT / "frontend" / "dist"), "frontend/dist"),
-    (str(ROOT / "config"), "config"),
+    (str(ROOT / "config" / "internal_web.yaml"), "config"),
 ]
 for package in ("akshare", "baostock", "tushare", "openpyxl"):
     common_datas.extend(collect_data_files(package, include_py_files=False))

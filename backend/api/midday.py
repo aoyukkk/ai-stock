@@ -111,7 +111,43 @@ def midday_v22_status(request: Request, trade_date: date) -> dict:
     try:
         run = session.scalar(select(MiddayV22Run).where(MiddayV22Run.trade_date == trade_date).order_by(MiddayV22Run.created_at.desc()))
         recheck = session.scalar(select(MiddayV22AfternoonRun).where(MiddayV22AfternoonRun.trade_date == trade_date).order_by(MiddayV22AfternoonRun.created_at.desc()))
-        if run is None: return success_response(data={"status": "NOT_RUN"}, trace_id=request.state.trace_id)
+        if run is None:
+            official = session.scalar(
+                select(MiddayRecommendationRun)
+                .where(MiddayRecommendationRun.session_trade_date == trade_date)
+                .order_by(MiddayRecommendationRun.created_at.desc())
+            )
+            if official is None:
+                return success_response(data={"status": "NOT_RUN"}, trace_id=request.state.trace_id)
+            rows = list(session.scalars(
+                select(MiddayRecommendationResult)
+                .where(MiddayRecommendationResult.run_id == official.run_id)
+            ))
+            layer_counts: dict[str, int] = {}
+            for row in rows:
+                layer = _official_result_layer(row)
+                layer_counts[layer] = layer_counts.get(layer, 0) + 1
+            data = {
+                "run_id": official.run_id,
+                "trade_date": official.session_trade_date,
+                "decision_time": official.decision_time,
+                "status": official.status,
+                "current_stage": official.current_stage,
+                "baseline_trade_date": official.baseline_trade_date,
+                "base_pool_count": official.base_pool_count,
+                "snapshot_count": official.snapshot_count,
+                "minute_count": official.minute_count,
+                "flash_count": official.flash_count,
+                "pro_count": official.pro_count,
+                "final_count": official.final_count,
+                "held_count": official.held_count,
+                "counts": {"result_layers": layer_counts},
+                "excel_path": official.excel_path,
+                "afternoon_recheck_run_id": None,
+                "afternoon_recheck_status": "NOT_RUN",
+                "compatibility_source": "CURRENT_MIDDAY",
+            }
+            return success_response(data=data, trace_id=request.state.trace_id)
         data = {"run_id": run.run_id, "trade_date": run.trade_date, "decision_time": run.cutoff_time, "status": run.status, "current_stage": run.current_stage, "previous_regime": run.previous_regime, "midday_regime": run.midday_regime, "counts": run.counts_json, "excel_path": (run.output_paths_json or {}).get("excel"), "afternoon_recheck_run_id": recheck.run_id if recheck else None, "afternoon_recheck_status": recheck.status if recheck else "NOT_RUN"}
         return success_response(data=data, trace_id=request.state.trace_id)
     finally: session.close()
@@ -121,10 +157,60 @@ def midday_v22_status(request: Request, trade_date: date) -> dict:
 def midday_v22_results(request: Request, run_id: str, page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=100)) -> dict:
     session = _session()
     try:
+        official = session.scalar(
+            select(MiddayRecommendationRun).where(MiddayRecommendationRun.run_id == run_id)
+        )
+        if official is not None:
+            result = MiddayRecommendationService(session).results(
+                run_id, page=page, page_size=page_size
+            )
+            result["items"] = [_official_result_payload(row) for row in result["items"]]
+            return success_response(data=result, trace_id=request.state.trace_id)
         rows = list(session.scalars(select(MiddayV22Result).where(MiddayV22Result.run_id == run_id).order_by(MiddayV22Result.id)))
         start = (page - 1) * page_size
         return success_response(data={"items": [row.payload_json for row in rows[start:start+page_size]], "total": len(rows), "page": page, "page_size": page_size}, trace_id=request.state.trace_id)
     finally: session.close()
+
+
+def _official_result_layer(row) -> str:
+    value = row if isinstance(row, dict) else {
+        "hard_gate_status": row.hard_gate_status,
+        "position_status": row.position_status,
+        "pro_rank": row.pro_rank,
+        "candidate_action": row.candidate_action,
+    }
+    if value.get("position_status") == "HELD":
+        return "AFTERNOON_WATCH"
+    if value.get("hard_gate_status") != "PASS" or value.get("pro_rank") is None:
+        return "BLOCKED"
+    if value.get("candidate_action") == "AFTERNOON_PREPARE_ENTRY":
+        return "BUY_READY"
+    if value.get("candidate_action") in {"WAIT_PULLBACK", "KEEP_WATCH"}:
+        return "AFTERNOON_WATCH"
+    return "BLOCKED"
+
+
+def _official_result_payload(row: dict) -> dict:
+    payload = dict(row)
+    payload.update({
+        "result_layer": _official_result_layer(row),
+        "quant_rank": row.get("base_quant_rank"),
+        "quant_score": row.get("base_quant_score"),
+        "strategy_id": row.get("candidate_action"),
+        "live_strategy_status": row.get("flash_decision"),
+        "admission_score_v2_1": row.get("midday_enhanced_score"),
+        "admission_status_v2": row.get("hard_gate_status"),
+        "trigger_status": row.get("feature_scope"),
+        "trigger_reasons": row.get("key_risks") or [],
+        "afternoon_recheck": {
+            "current_price": row.get("recommended_price"),
+            "maximum_acceptable_price": row.get("max_acceptable_price"),
+            "invalidation_price": row.get("stop_loss"),
+            "stop_loss_reference": row.get("stop_loss"),
+        },
+        "compatibility_source": "CURRENT_MIDDAY",
+    })
+    return payload
 
 
 @router.post("/api/workbench/midday/v22/recheck")

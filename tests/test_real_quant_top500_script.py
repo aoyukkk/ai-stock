@@ -9,6 +9,7 @@ def test_real_quant_top500_script_runs_with_mock_provider(tmp_path) -> None:
     report = run_real_quant_top500(
         provider="mock",
         history_provider="mock",
+        backup_history_provider=None,
         top_n=500,
         sample_limit=20,
         output=output,

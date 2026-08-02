@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -15,7 +16,11 @@ from database.session import get_session, init_db
 from datasource.ifind.http.errors import IFindHttpError, IFindHttpErrorCategory
 from midday.coordinator import MiddayAppCoordinator
 from midday.core import MiddayTimeGate
-from midday.human_excel import _humanize_note
+from midday.human_excel import (
+    _focus_candidate_results,
+    _humanize_note,
+    _manual_candidate_placeholder,
+)
 from midday.provider import MiddayIFindCollector
 from midday.scoring import MiddayScoringEngine
 from midday.service import MiddayRecommendationService, _equal_weights
@@ -131,6 +136,46 @@ def test_midday_human_output_translates_model_notes() -> None:
     assert _humanize_note("Low liquidity confirmation (35.4)") == "量能确认偏弱（35.4）"
 
 
+def test_focus_candidates_are_model_top20_plus_all_manual_without_duplicates() -> None:
+    model_rows = [
+        SimpleNamespace(
+            stock_code=f"{index:06d}.SZ",
+            pro_rank=index,
+            base_quant_rank=index,
+        )
+        for index in range(1, 26)
+    ]
+    manual_only = SimpleNamespace(
+        stock_code="600001.SH",
+        pro_rank=None,
+        base_quant_rank=200,
+    )
+    focus, missing = _focus_candidate_results(
+        [*model_rows, manual_only],
+        ["000005.SZ", "600001.SH", "600001.SH", "600730.SH"],
+        model_limit=20,
+    )
+
+    assert len(focus) == 21
+    assert [row.pro_rank for row in focus[:20]] == list(range(1, 21))
+    assert focus[-1].stock_code == "600001.SH"
+    assert sum(row.stock_code == "000005.SZ" for row in focus) == 1
+    assert all(row.stock_code != "000021.SZ" for row in focus)
+    assert missing == ["600730.SH"]
+
+
+def test_missing_manual_candidate_keeps_visible_placeholder() -> None:
+    row = _manual_candidate_placeholder(
+        "600730.SH",
+        SimpleNamespace(name="*ST高科", industry="文教休闲"),
+    )
+    assert row["股票代码"] == "600730"
+    assert row["股票名称"] == "*ST高科"
+    assert row["入选来源"] == "人工关注"
+    assert row["量化得分"] is None
+    assert row["当前状态"] == "基线门禁未进入评分"
+
+
 def test_human_excel_overview_can_use_weight_count() -> None:
     root = Path(__file__).resolve().parents[1]
     builder = (root / "scripts/build_human_daily_excel.mjs").read_text(encoding="utf-8")
@@ -159,15 +204,24 @@ def test_workbook_gate_rejects_table_header_metadata_mismatch(tmp_path: Path) ->
     workbook.close()
 
 
-def test_midday_fast_path_stays_within_ifind_hard_call_limit() -> None:
+def test_midday_fast_path_has_refresh_headroom_in_configured_call_budget() -> None:
     root = Path(__file__).resolve().parents[1]
     config = yaml.safe_load((root / "config" / "midday_recommendation.yaml").read_text(encoding="utf-8"))["midday_recommendation"]
     ifind = config["ifind"]
     assert ifind["fast_minutes_only"] is True
-    assert ifind["max_external_calls"] == 30
-    assert ifind["minute_max_stocks"] <= ifind["max_external_calls"]
+    assert ifind["max_external_calls"] > ifind["minute_max_stocks"]
     assert (root / "run_midday_once.cmd").is_file()
     assert (root / "scripts" / "run_midday_once.py").is_file()
+
+
+def test_midday_collector_uses_configured_call_budget(tmp_path: Path) -> None:
+    collector = MiddayIFindCollector(
+        None,
+        _config(tmp_path),
+        {"max_external_calls": 40},
+        provider=object(),
+    )
+    assert collector.summary()["hard_limit"] == 40
 
 
 def test_midday_minute_collection_isolates_recoverable_provider_failure(tmp_path: Path) -> None:

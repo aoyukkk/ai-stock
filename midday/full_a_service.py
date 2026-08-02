@@ -119,7 +119,11 @@ class FullAMiddayService:
     def _preflight(self,trade_date,run):
         if self.app.real_trading_enabled:raise FullAFailure("PREFLIGHT","REAL_TRADING_ENABLED","ENABLE_REAL_TRADING must be false")
         baseline=self.session.scalar(select(QuantRun).where(QuantRun.base_market_trade_date<trade_date,QuantRun.status=="COMPLETED",QuantRun.temporal_status.in_(["PASS","PASS_WITH_WARNINGS"]),QuantRun.actionable.is_(True)).order_by(QuantRun.base_market_trade_date.desc(),QuantRun.created_at.desc()))
-        if not baseline or baseline.base_market_trade_date!=date(2026,7,17):raise FullAFailure("PREFLIGHT","LATEST_COMPLETED_TRADE_DATE_INVALID",str(getattr(baseline,"base_market_trade_date",None)))
+        try:
+            expected_baseline_date=_previous_open_trade_date_from_cache(trade_date,tushare_cache_root())
+        except ValueError as exc:
+            raise FullAFailure("PREFLIGHT","TRADE_CALENDAR_STATUS_UNKNOWN",str(exc)) from exc
+        if not baseline or baseline.base_market_trade_date!=expected_baseline_date:raise FullAFailure("PREFLIGHT","LATEST_COMPLETED_TRADE_DATE_INVALID",f"expected={expected_baseline_date};actual={getattr(baseline,'base_market_trade_date',None)}")
         quant_rows=list(self.session.scalars(select(QuantRankResult).where(QuantRankResult.quant_run_id==baseline.run_id).order_by(QuantRankResult.rank)))
         if len(quant_rows)!=baseline.scored_count or len(quant_rows)<5000:raise FullAFailure("PREFLIGHT","FULL_QUANT_RESULTS_INCOMPLETE",f"rows={len(quant_rows)}")
         masters={normalize_ts_code(row.code):row for row in self.session.scalars(select(StockMaster))};daily=TradeDateTimingCache(tushare_cache_root()).load(baseline.base_market_trade_date,set(masters))
@@ -260,6 +264,36 @@ class FullAMiddayService:
 
 class FullAFailure(RuntimeError):
     def __init__(self,stage,code,message):super().__init__(message);self.stage=stage;self.code=code
+
+
+def _previous_open_trade_date_from_cache(trade_date:date,cache_root:Path)->date:
+    """Resolve the previous SSE session from local Tushare cache only.
+
+    Full-A preflight must remain read-only and must not spend provider quota just
+    to discover the baseline date.  Cache files are request-keyed, so merge all
+    valid rows instead of assuming the newest file covers the requested day.
+    """
+    open_dates:set[date]=set()
+    for path in Path(cache_root).glob("trade_cal_*.json"):
+        try:
+            payload=json.loads(path.read_text(encoding="utf-8"))
+        except (OSError,json.JSONDecodeError):
+            continue
+        rows=payload if isinstance(payload,list) else payload.get("data",[]) if isinstance(payload,dict) else []
+        for row in rows:
+            if not isinstance(row,dict):continue
+            try:
+                if int(row.get("is_open") or 0)!=1:continue
+            except (TypeError,ValueError):
+                continue
+            raw=str(row.get("cal_date") or "").strip()
+            try:
+                value=datetime.strptime(raw,"%Y%m%d").date() if len(raw)==8 and raw.isdigit() else date.fromisoformat(raw)
+            except ValueError:
+                continue
+            if value<trade_date:open_dates.add(value)
+    if not open_dates:raise ValueError(f"PREVIOUS_OPEN_TRADE_DATE_UNAVAILABLE:{trade_date.isoformat()}")
+    return max(open_dates)
 
 
 def _git_head():

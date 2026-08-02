@@ -23,14 +23,18 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class MiddayIFindCollector:
-    def __init__(self, session, app_config: AppConfig, config: dict[str, Any], *, provider=None, auth=None, client=None, authorized_call_limit: int = 30) -> None:
+    def __init__(self, session, app_config: AppConfig, config: dict[str, Any], *, provider=None, auth=None, client=None, authorized_call_limit: int | None = None) -> None:
         self.session = session
         self.app_config = app_config
         self.config = config
         self.auth = auth
         self.client = client
         self.provider = provider
-        self.authorized_call_limit = authorized_call_limit
+        self.authorized_call_limit = int(
+            authorized_call_limit
+            if authorized_call_limit is not None
+            else config.get("max_external_calls", 75)
+        )
         self.stats = {"auth": 0, "index": 0, "snapshot": 0, "minute": 0, "minute_failures": 0, "retries": 0, "cache_hits": 0}
         self.failures: list[dict[str, str]] = []
 
@@ -123,7 +127,7 @@ class MiddayIFindCollector:
         return {
             **self.stats,
             "total": total,
-            "hard_limit": min(self.authorized_call_limit, int(self.config.get("max_external_calls", 30))),
+            "hard_limit": self.authorized_call_limit,
             "failures": list(self.failures),
         }
 
@@ -140,7 +144,7 @@ class MiddayIFindCollector:
         )
         self.client = IFindHttpClient(
             self.auth,
-            maximum_calls=min(self.authorized_call_limit, int(self.config.get("max_external_calls", 75))),
+            maximum_calls=self.authorized_call_limit,
             authorized_maximum_calls=self.authorized_call_limit,
             interval_ms=int(self.config.get("minimum_call_interval_ms", 1000)),
         )

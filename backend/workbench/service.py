@@ -320,6 +320,7 @@ class WorkbenchService:
         result = []
         for row in rows:
             screening = row.screening_result or {}
+            metadata = screening.get("_trader_demo") or {}
             source = sources.get(normalize_ts_code(row.stock_code)) or sources.get(row.stock_code)
             if not source:
                 continue
@@ -329,7 +330,10 @@ class WorkbenchService:
                 "stock_name": names.get(normalize_ts_code(row.stock_code), ""), "source": source,
                 "pro_score": _number(review.pro_score) if review else None, "pro_priority": review.priority if review else None,
                 "flash_score": _number(screening.get("llm_score")), "flash_decision": screening.get("screening_decision"),
-                "quant_rank": row.rank, "quant_score": _number((row.quant_scores or {}).get("total_score")),
+                "quant_rank": (
+                    None if metadata.get("manual_review_only") else row.rank
+                ),
+                "quant_score": _number((row.quant_scores or {}).get("total_score")),
                 "financial_status": _fundamental_status(row.fundamental_result or {}),
                 "summary": review.final_summary if review else "",
             })
@@ -400,6 +404,16 @@ class WorkbenchService:
                 "research_mode_label": _status_label(fundamental.get("research_mode")),
                 "financial_status_label": _status_label(_fundamental_status(fundamental)),
                 "as_of_time": fundamental.get("as_of_time"),
+                "decision_as_of_time": fundamental.get("decision_as_of_time"),
+                "report_generated_at": fundamental.get("report_generated_at"),
+                "report_period": fundamental.get("report_period"),
+                "latest_announcement_date": fundamental.get("latest_announcement_date"),
+                "fundamental_data_as_of_time": fundamental.get("fundamental_data_as_of_time"),
+                "cache_fetched_at": fundamental.get("cache_fetched_at"),
+                "cache_age_hours": fundamental.get("cache_age_hours"),
+                "freshness_status": fundamental.get("freshness_status") or "UNVERIFIED",
+                "point_in_time_safe": bool(fundamental.get("point_in_time_safe", False)),
+                "degradation_reason": fundamental.get("degradation_reason"),
                 "financial_summary": _financial_snapshot_summary(fundamental.get("financial_snapshot") or {}),
                 "key_risks": fundamental.get("key_risks") or [],
                 "evidence_count": len(evidence),
@@ -407,6 +421,28 @@ class WorkbenchService:
                 "evidence_urls": [item.url for item in evidence],
             })
         return result
+
+    def freshness_summary(self, trade_date: date, pipeline_run_id: str | None = None) -> dict[str, Any]:
+        items = self.fundamentals(trade_date, pipeline_run_id)
+        statuses: dict[str, int] = {}
+        for item in items:
+            status = str(item.get("freshness_status") or "UNVERIFIED")
+            statuses[status] = statuses.get(status, 0) + 1
+        stale_or_unverified = sum(
+            count for status, count in statuses.items()
+            if status not in {"FRESH", "VERIFIED_CURRENT"}
+        )
+        return {
+            "decision_as_of_time": next(
+                (item.get("decision_as_of_time") for item in items if item.get("decision_as_of_time")),
+                None,
+            ),
+            "dataset_count": len(items),
+            "status_counts": statuses,
+            "stale_or_unverified_count": stale_or_unverified,
+            "currentness_status": "CURRENT" if items and stale_or_unverified == 0 else "DEGRADED",
+            "contract_version": "point-in-time-freshness-v1",
+        }
 
     def manual_snapshot(self, trade_date: date, pipeline_run_id: str | None = None) -> list[dict[str, Any]]:
         bundle = self.resolver.resolve(trade_date, pipeline_run_id)

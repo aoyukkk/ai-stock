@@ -12,6 +12,7 @@ def test_manual_real_quant_api_runs_with_mock_provider(tmp_path) -> None:
         json={
             "provider": "mock",
             "history_provider": "mock",
+            "backup_history_provider": None,
             "top_n": 5,
             "sample_limit": 5,
             "save_to_db": False,
@@ -35,6 +36,7 @@ def test_manual_real_quant_api_accepts_performance_options(tmp_path) -> None:
         json={
             "provider": "mock",
             "history_provider": "mock",
+            "backup_history_provider": None,
             "top_n": 5,
             "sample_limit": 5,
             "use_cache": False,

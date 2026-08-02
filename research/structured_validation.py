@@ -194,6 +194,7 @@ class StructuredValidationProvider:
         ))
         diagnostics = _diagnose_response(response)
         category, field, detail, parsed = self._validate_response(response, schema, expected_code)
+        diagnostics["local_list_compaction"] = _bounded_list_compactions(response, schema)
         if not category:
             category, field, detail = _flash_component_semantic_error(parsed, schema, example)
         original_category = category
@@ -213,6 +214,9 @@ class StructuredValidationProvider:
             diagnostics["repair_input_tokens"] = repaired.input_tokens
             diagnostics["repair_output_tokens"] = repaired.output_tokens
             category, field, detail, parsed = self._validate_response(repaired, schema, expected_code)
+            diagnostics["repair_response_local_list_compaction"] = _bounded_list_compactions(
+                repaired, schema
+            )
             if not category:
                 category, field, detail = _flash_component_semantic_error(parsed, schema, example)
             diagnostics["repair_response"] = repair_diagnostics
@@ -296,6 +300,7 @@ class StructuredValidationProvider:
         if violation:
             return violation.category, violation.path, violation.rule, None
         payload["stock_code"] = expected_code
+        payload = _normalize_bounded_lists(payload, schema)
         try:
             return "", "", "", schema.model_validate(payload)
         except ValidationError as exc:
@@ -315,6 +320,17 @@ class StructuredValidationProvider:
             payload["instruction"] += (
                 "删除所有第一、领先、龙头、唯一供应商、市场份额、客户名称和订单陈述；"
                 "改用可能、潜在、需核验等中性表达。"
+            )
+        if category == "SCHEMA_ERROR":
+            payload["instruction"] += (
+                "所有数组必须去重并严格遵守上限：normalized_concept_tags最多12项，"
+                "inferred_concept_tags最多6项，evidence_fields和missing_fields/"
+                "missing_data最多20项；不要原样返回超限数组。"
+            )
+        if category == "DEGENERATE_COMPONENT_RESPONSE":
+            payload["instruction"] += (
+                "必须依据当前股票输入重新独立计算各组件分；组件分不得全部相同，"
+                "且不得与example中的示例分数组合相同。"
             )
         if category in {
             "EMPTY_JSON_CONTENT", "JSON_TRUNCATED", "PROVIDER_CONTENT_POLICY_REFUSAL",
@@ -402,6 +418,81 @@ def _diagnose_response(response: LLMResponse) -> dict[str, Any]:
         "local_scanner_result": "NOT_RUN",
         "violation_code": "", "violation_json_path": "", "violation_rule": "",
     }
+
+
+_BOUNDED_LIST_FIELDS: dict[type[BaseModel], dict[str, int]] = {
+    FundamentalEnrichmentWireV4: {
+        "core_products": 20,
+        "normalized_concept_tags": 12,
+        "inferred_concept_tags": 6,
+        "invalidation_conditions": 8,
+        "evidence_fields": 20,
+        "missing_fields": 20,
+    },
+    FlashComponentWireV4: {
+        "evidence_fields": 20,
+        "missing_data": 20,
+    },
+}
+
+
+def _normalize_bounded_lists(
+    payload: dict[str, Any], schema: type[BaseModel]
+) -> dict[str, Any]:
+    limits = _BOUNDED_LIST_FIELDS.get(schema, {})
+    if not limits:
+        return payload
+    normalized = dict(payload)
+    for field, limit in limits.items():
+        value = normalized.get(field)
+        if not isinstance(value, list):
+            continue
+        deduplicated: list[Any] = []
+        seen: set[str] = set()
+        for item in value:
+            key = json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduplicated.append(item)
+            if len(deduplicated) >= limit:
+                break
+        normalized[field] = deduplicated
+    return normalized
+
+
+def _bounded_list_compactions(
+    response: LLMResponse, schema: type[BaseModel]
+) -> list[dict[str, Any]]:
+    if response.status != "ok":
+        return []
+    try:
+        payload = (
+            response.parsed_json
+            if response.content == "safe-json" and isinstance(response.parsed_json, dict)
+            else json.loads(response.content or "")
+        )
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    result: list[dict[str, Any]] = []
+    for field, limit in _BOUNDED_LIST_FIELDS.get(schema, {}).items():
+        value = payload.get(field)
+        if not isinstance(value, list):
+            continue
+        unique_count = len({
+            json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
+            for item in value
+        })
+        if len(value) > limit or unique_count != len(value):
+            result.append({
+                "field": field,
+                "raw_count": len(value),
+                "unique_count": unique_count,
+                "saved_count": min(unique_count, limit),
+            })
+    return result
 
 
 def _flash_component_semantic_error(

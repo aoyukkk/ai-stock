@@ -17,6 +17,7 @@ class InternalUser(IDMixin, TimestampMixin, ReprMixin, Base):
     )
 
     email: Mapped[str] = mapped_column(String(320), nullable=False)
+    user_key: Mapped[str | None] = mapped_column(String(96), unique=True)
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -29,7 +30,10 @@ class InternalPasswordCredential(IDMixin, TimestampMixin, ReprMixin, Base):
 
     internal_user_id: Mapped[int] = mapped_column(nullable=False)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
-    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    password_initialized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    session_version: Mapped[int] = mapped_column(nullable=False, default=1)
     failed_attempts: Mapped[int] = mapped_column(nullable=False, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

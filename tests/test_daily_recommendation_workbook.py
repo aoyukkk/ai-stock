@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from openpyxl import load_workbook
 
 from scripts.build_human_daily_output import (
@@ -45,6 +46,46 @@ def test_today_recommendation_sheet_is_valid_when_no_stock_reaches_threshold(tmp
         assert workbook["今日推荐"]["A5"].value == "暂无推荐"
         assert len(workbook["今日推荐"].tables) == 1
         assert result["工作表数量"] == 7
+    finally:
+        workbook.close()
+
+    corrupted = load_workbook(output)
+    corrupted["今日推荐"]["K5"] = "receivable_risk"
+    corrupted.save(output)
+    corrupted.close()
+    with pytest.raises(ValueError, match="WORKBOOK_MACHINE_TEXT_LEAK"):
+        _validate_workbook(output)
+
+
+def test_generated_workbook_uses_selection_source_colors_without_row_stripes(tmp_path: Path) -> None:
+    payload = build_human_payload(
+        _raw_payload([
+            ("000001", "模型一", "LLM_TOP20", 62),
+            ("000002", "人工一", "MANUAL", 61),
+            ("000003", "共同一", "BOTH", 60),
+        ]),
+        "2026-07-17",
+        minimum_recommendation_score=60,
+    )
+    output = tmp_path / "智能交易助手_2026-07-17.xlsx"
+    _build_workbook(payload, output, tmp_path / "预览")
+    _polish_workbook(output)
+
+    workbook = load_workbook(output, data_only=False)
+    try:
+        for sheet_name in ("今日推荐", "重点候选", "挂单与仓位", "基本面摘要"):
+            sheet = workbook[sheet_name]
+            assert sheet["A5"].fill.fgColor.rgb == "FFDCEAF5"
+            assert sheet["A6"].fill.fgColor.rgb == "FFFFF2CC"
+            assert sheet["A7"].fill.fgColor.rgb == "FFFFF2CC"
+            assert all(
+                table.tableStyleInfo.showRowStripes is False
+                for table in sheet.tables.values()
+            )
+        assert workbook["量化前100"]["A5"].fill.fgColor.rgb == "FFDCEAF5"
+        code_cell = workbook["今日推荐"]["B5"]
+        assert code_cell.value == 1
+        assert code_cell.number_format == "000000"
     finally:
         workbook.close()
 

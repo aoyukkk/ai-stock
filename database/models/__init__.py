@@ -106,6 +106,53 @@ from database.models.entry_timing import AdmissionRun, EntryTimingResult
 from database.models.entry_timing_v2 import AdmissionV2Run, EntryTimingV2Result, MarketEmotionSnapshot, StrategyClassificationResult
 from database.models.entry_timing_v22 import DeploymentV22Result, DeploymentV22Run, MarketAdjustedEvaluation, MarketRegimeV2Snapshot
 from database.models.postclose_official import PostCloseOfficialRun
+from database.models.decision_explainability import (
+    AdmissionV3Result,
+    AdmissionV3Run,
+    FactorAttribution,
+    FactorPerformanceHistory,
+    GateEvaluation,
+    StrategyTimingContract,
+)
+from database.models.forward_shadow import (
+    ForwardOutcome,
+    GateCounterfactualRun,
+    GateValueEvaluation,
+    ModelVersionComparison,
+)
+from database.models.weekly_review import (
+    WeeklyRecommendationReviewDetail,
+    WeeklyRecommendationReviewRun,
+    WeeklyRecommendationReviewSupersession,
+)
+from database.models.ranking_evaluation import (
+    ModelEffectivenessDailyMetric,
+    ModelEffectivenessDataIssue,
+    ModelEffectivenessStageItem,
+    ModelEffectivenessStageSnapshot,
+    ModelEffectivenessWeeklyRun,
+    RankingEvaluationArtifact,
+    RankingEvaluationDailyMetric,
+    RankingEvaluationDataIssue,
+    RankingEvaluationForwardOutcome,
+    RankingEvaluationSnapshot,
+    RankingEvaluationSnapshotItem,
+    RankingEvaluationState,
+    RankingEvaluationWeeklyRun,
+)
+from database.models.event_overlay import (
+    EventEvidenceItemRecord,
+    EventEvidenceSnapshotRecord,
+    EventOverlayDataIssueRecord,
+    EventReviewResultRecord,
+    EventScreeningItemRecord,
+    EventScreeningRunRecord,
+)
+from database.models.full_universe_effectiveness import (
+    FullUniverseEvaluationRun,
+    FullUniverseQuantItem,
+    FullUniverseQuantSnapshot,
+)
 
 __all__ = [
     "AIAnalysisResult",
@@ -211,4 +258,39 @@ __all__ = [
     "DeploymentV22Result",
     "MarketAdjustedEvaluation",
     "PostCloseOfficialRun",
+    "StrategyTimingContract",
+    "AdmissionV3Run",
+    "FactorAttribution",
+    "FactorPerformanceHistory",
+    "AdmissionV3Result",
+    "GateEvaluation",
+    "ForwardOutcome",
+    "GateCounterfactualRun",
+    "GateValueEvaluation",
+    "ModelVersionComparison",
+    "WeeklyRecommendationReviewDetail",
+    "WeeklyRecommendationReviewRun",
+    "WeeklyRecommendationReviewSupersession",
+    "RankingEvaluationArtifact",
+    "RankingEvaluationDailyMetric",
+    "RankingEvaluationDataIssue",
+    "RankingEvaluationForwardOutcome",
+    "RankingEvaluationSnapshot",
+    "RankingEvaluationSnapshotItem",
+    "RankingEvaluationState",
+    "RankingEvaluationWeeklyRun",
+    "ModelEffectivenessDailyMetric",
+    "ModelEffectivenessDataIssue",
+    "ModelEffectivenessStageItem",
+    "ModelEffectivenessStageSnapshot",
+    "ModelEffectivenessWeeklyRun",
+    "EventEvidenceItemRecord",
+    "EventEvidenceSnapshotRecord",
+    "EventOverlayDataIssueRecord",
+    "EventReviewResultRecord",
+    "EventScreeningItemRecord",
+    "EventScreeningRunRecord",
+    "FullUniverseEvaluationRun",
+    "FullUniverseQuantItem",
+    "FullUniverseQuantSnapshot",
 ]

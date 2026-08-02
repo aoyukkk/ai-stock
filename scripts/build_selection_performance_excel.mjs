@@ -14,6 +14,7 @@ const sheets = [
 ];
 const col = (n) => { let value = ""; while (n > 0) { n--; value = String.fromCharCode(65 + n % 26) + value; n = Math.floor(n / 26); } return value; };
 const safe = (value) => value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : value;
+const sourceFill = (value) => /人工|共同|MANUAL|BOTH|HUMAN/.test(String(value ?? "").toUpperCase()) ? "#FFF2CC" : "#D9EAF7";
 for (const [index, [name, rows]] of sheets.entries()) {
   const sheet = workbook.worksheets.add(name);
   sheet.showGridLines = false;
@@ -29,7 +30,20 @@ for (const [index, [name, rows]] of sheets.entries()) {
   const endRow = 4 + body.length;
   sheet.getRange(`A5:${endCol}${endRow}`).values = body;
   sheet.getRange(`A4:${endCol}4`).format = {fill:"#D9EAF7",font:{bold:true,color:"#17365D"}};
-  sheet.tables.add(`A4:${endCol}${endRow}`, true, `SelectionPerformanceTable${index + 1}`).style = "TableStyleMedium2";
+  const table = sheet.tables.add(`A4:${endCol}${endRow}`, true, `SelectionPerformanceTable${index + 1}`);
+  table.style = "TableStyleMedium2";
+  table.showBandedRows = false;
+  table.showBandedColumns = false;
+  sheet.getRange(`A5:${endCol}${endRow}`).format.fill = "#FFFFFF";
+  const sourceIndex = headers.findIndex((header) => /^(selection_source|入选来源|选择来源|来源)$/i.test(header));
+  if (sourceIndex >= 0) {
+    body.forEach((row, rowIndex) => {
+      const value = row[sourceIndex];
+      if (value !== "" && value !== null && value !== undefined) {
+        sheet.getRange(`A${5 + rowIndex}:${endCol}${5 + rowIndex}`).format.fill = sourceFill(value);
+      }
+    });
+  }
   applyCenteredAlignment(sheet, `A4:${endCol}${endRow}`);
   sheet.freezePanes.freezeRows(4);
   headers.forEach((header, i) => {

@@ -1,0 +1,10 @@
+-- FULL_UNIVERSE_QUANT_EFFECTIVENESS_V1
+-- Additive SQLAlchemy-managed tables:
+--   full_universe_quant_snapshot
+--   full_universe_quant_item
+--   full_universe_evaluation_run
+--
+-- Existing Quant, Top100 ranking snapshots, forward outcomes, Flash checkpoints,
+-- prompts, frozen decisions and orders are not altered. Future closes are not
+-- persisted in these tables; evaluation reuses the existing local batch market
+-- data and trading-calendar contract to avoid duplicate outcome storage.

@@ -9,8 +9,6 @@ export const http = axios.create({
   timeout: 20000
 });
 
-let desktopConnection: { baseUrl: string; sessionToken: string } | null = null;
-
 export function createTraceId(): string {
   const random = Math.random().toString(16).slice(2);
   return `frontend-${Date.now()}-${random}`;
@@ -18,11 +16,7 @@ export function createTraceId(): string {
 
 http.interceptors.request.use(async (config) => {
   config.headers = config.headers || {};
-  if (window.aiTraderShell) {
-    desktopConnection ||= await window.aiTraderShell.getConnection();
-    config.baseURL = desktopConnection.baseUrl;
-    config.headers["X-AI-Trader-Token"] = desktopConnection.sessionToken;
-  } else {
+  if (!window.aiTraderShell) {
     config.baseURL = browserApiBaseUrl;
     if (!["GET", "HEAD", "OPTIONS"].includes(String(config.method || "GET").toUpperCase())) {
       const csrf = sessionStorage.getItem("ai-trader-csrf");
@@ -61,6 +55,17 @@ export async function apiDelete<T = unknown>(url: string, config?: AxiosRequestC
 
 async function request<T>(config: AxiosRequestConfig): Promise<ApiEnvelope<T>> {
   try {
+    if (window.aiTraderShell) {
+      const response = await window.aiTraderShell.backend.request({
+        method: String(config.method || "GET"),
+        url: String(config.url || ""),
+        data: config.data,
+        params: config.params as Record<string, string | number | boolean | Array<string | number | boolean> | null> | undefined
+      });
+      const envelope = sanitizeEnvelope(response.data as ApiEnvelope<T>);
+      if (!envelope.success) throw contractError(envelope, response.status);
+      return envelope;
+    }
     const response = await http.request<ApiEnvelope<T>>(config);
     const envelope = sanitizeEnvelope(response.data);
     if (!envelope.success) {
@@ -106,16 +111,8 @@ function normalizeError(error: unknown): FrontendApiError {
   const axiosError = error as AxiosError<ApiEnvelope>;
   const envelope = axiosError.response?.data;
   const errorCode = envelope?.error?.code || envelope?.code;
-  if (
-    (axiosError.response?.status === 401 && errorCode === "LOCAL_SESSION_REQUIRED") ||
-    (axiosError.response?.status === 403 && errorCode === "PASSWORD_CHANGE_REQUIRED")
-  ) {
-    if (window.location.pathname !== "/local-login") window.location.assign("/local-login");
-  } else if (axiosError.response?.status === 401 && window.location.pathname !== "/local-login") {
-    window.location.assign("/unauthorized");
-  } else if (axiosError.response?.status === 403 && window.location.pathname !== "/forbidden") {
-    window.location.assign("/forbidden");
-  }
+  const redirectPath = authRedirectPath(axiosError.response?.status, errorCode, window.location.pathname);
+  if (redirectPath) window.location.assign(redirectPath);
   if (envelope) {
     return {
       success: false,
@@ -132,6 +129,11 @@ function normalizeError(error: unknown): FrontendApiError {
     message: axiosError.message || "Network request failed",
     status: axiosError.response?.status
   };
+}
+
+export function authRedirectPath(status: number | undefined, errorCode: string | undefined, pathname: string): string | null {
+  if (status !== 401 || pathname === "/local-login") return null;
+  return errorCode === "LOCAL_SESSION_REQUIRED" ? "/local-login" : "/unauthorized";
 }
 
 function contractError(envelope: ApiEnvelope, status?: number): FrontendApiError {

@@ -115,6 +115,25 @@ class CloudflareAccessVerifier:
 
 
 def sync_internal_users(session, settings: InternalWebSettings) -> None:
+    if settings.shared_password_enabled:
+        row = session.scalar(select(InternalUser).where(InternalUser.user_key == "shared_internal_user"))
+        if row is None:
+            row = session.scalar(select(InternalUser).where(InternalUser.email == settings.shared_identity_email))
+        if row is None:
+            session.add(InternalUser(
+                email=settings.shared_identity_email,
+                user_key="shared_internal_user",
+                display_name="内部共享用户",
+                role=settings.shared_identity_role,
+                active=True,
+            ))
+        else:
+            row.user_key = "shared_internal_user"
+            row.display_name = "内部共享用户"
+            row.role = settings.shared_identity_role
+            row.active = True
+        session.commit()
+        return
     configured = set(settings.allowed_users)
     now = datetime.now(timezone.utc)
     for row in session.scalars(select(InternalUser)):
@@ -146,6 +165,19 @@ def load_active_user(session, email: str, *, mark_login: bool = True) -> Authent
     return AuthenticatedUser(row.id, row.email, row.display_name, row.role)
 
 
+def load_shared_user(session, settings: InternalWebSettings, *, mark_login: bool = True) -> AuthenticatedUser | None:
+    row = session.scalar(select(InternalUser).where(InternalUser.user_key == "shared_internal_user"))
+    if row is None:
+        row = session.scalar(select(InternalUser).where(InternalUser.email == settings.shared_identity_email))
+    if row is None or not row.active:
+        return None
+    now = datetime.now(timezone.utc)
+    if mark_login and (row.last_login_at is None or _aware(row.last_login_at) < now - timedelta(minutes=15)):
+        row.last_login_at = now
+        session.commit()
+    return AuthenticatedUser(row.id, row.email, row.display_name, row.role)
+
+
 class LocalPasswordAuthService:
     cookie_name = "ai_trader_internal_session"
 
@@ -154,11 +186,11 @@ class LocalPasswordAuthService:
         self.session_hours = session_hours
         self.hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
 
-    def set_temporary_password(self, user_id: int, password: str) -> None:
-        self.set_password(user_id, password, must_change=True)
+    def set_temporary_password(self, user_id: int, password: str, *, must_change: bool = False) -> None:
+        self.set_password(user_id, password, must_change=must_change)
 
     def set_password(self, user_id: int, password: str, *, must_change: bool = False) -> None:
-        if len(password) < 12:
+        if len(password) < 16:
             raise ValueError("PASSWORD_TOO_SHORT")
         row = self.session.scalar(select(InternalPasswordCredential).where(
             InternalPasswordCredential.internal_user_id == user_id
@@ -169,12 +201,18 @@ class LocalPasswordAuthService:
                 internal_user_id=user_id,
                 password_hash=password_hash,
                 must_change_password=must_change,
+                password_initialized=True,
+                password_changed_at=datetime.now(timezone.utc),
+                session_version=1,
                 failed_attempts=0,
             )
             self.session.add(row)
         else:
             row.password_hash = password_hash
             row.must_change_password = must_change
+            row.password_initialized = True
+            row.password_changed_at = datetime.now(timezone.utc)
+            row.session_version += 1
             row.failed_attempts = 0
             row.locked_until = None
         now = datetime.now(timezone.utc)
@@ -207,19 +245,12 @@ class LocalPasswordAuthService:
         internal_user = self.session.get(InternalUser, user.id)
         if internal_user is not None:
             internal_user.last_login_at = now
-        raw_token = secrets.token_urlsafe(48)
-        csrf = secrets.token_urlsafe(32)
-        self.session.add(InternalAuthSession(
-            internal_user_id=user.id,
-            token_hash=_hash(raw_token),
-            csrf_hash=_hash(csrf),
-            expires_at=now + timedelta(hours=self.session_hours),
-        ))
+        raw_token, csrf = self._create_session(user.id, now)
         self.session.commit()
         return raw_token, csrf, credential.must_change_password
 
-    def change_password(self, user_id: int, current_password: str, new_password: str) -> None:
-        if len(new_password) < 12 or hmac.compare_digest(current_password, new_password):
+    def change_password(self, user_id: int, current_password: str, new_password: str) -> tuple[str, str]:
+        if len(new_password) < 16 or hmac.compare_digest(current_password, new_password):
             raise ValueError("NEW_PASSWORD_INVALID")
         credential = self.session.scalar(select(InternalPasswordCredential).where(
             InternalPasswordCredential.internal_user_id == user_id
@@ -232,9 +263,31 @@ class LocalPasswordAuthService:
             raise AccessTokenError("LOCAL_PASSWORD_INVALID") from exc
         credential.password_hash = self.hasher.hash(new_password)
         credential.must_change_password = False
+        credential.password_initialized = True
+        credential.password_changed_at = datetime.now(timezone.utc)
+        credential.session_version += 1
         credential.failed_attempts = 0
         credential.locked_until = None
+        now = datetime.now(timezone.utc)
+        for active_session in self.session.scalars(select(InternalAuthSession).where(
+            InternalAuthSession.internal_user_id == user_id,
+            InternalAuthSession.revoked_at.is_(None),
+        )):
+            active_session.revoked_at = now
+        raw_token, csrf = self._create_session(user_id, now)
         self.session.commit()
+        return raw_token, csrf
+
+    def _create_session(self, user_id: int, now: datetime | None = None) -> tuple[str, str]:
+        raw_token = secrets.token_urlsafe(48)
+        csrf = secrets.token_urlsafe(32)
+        self.session.add(InternalAuthSession(
+            internal_user_id=user_id,
+            token_hash=_hash(raw_token),
+            csrf_hash=_hash(csrf),
+            expires_at=(now or datetime.now(timezone.utc)) + timedelta(hours=self.session_hours),
+        ))
+        return raw_token, csrf
 
     def validate(self, raw_token: str, csrf: str | None = None) -> InternalAuthSession | None:
         if not raw_token:

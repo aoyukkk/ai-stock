@@ -65,6 +65,14 @@
         <span>日期 {{ store.tradeDate }}</span><span>数据 <StatusTag :status="store.status?.data.status" /></span><span>终排 <StatusTag :status="store.status?.final.status" /></span>
       </div>
       <el-main class="page-main">
+        <el-alert
+          v-if="auth.identity?.identity_scope === 'SHARED_IDENTITY'"
+          class="identity-warning"
+          title="SHARED_IDENTITY：共享账号不能进行个人追责；需要个人审计时请使用 Cloudflare Access 独立邮箱模式。"
+          type="warning"
+          show-icon
+          :closable="false"
+        />
         <el-alert v-if="store.error" class="global-error" :title="store.error" type="error" show-icon :closable="false" />
         <RouterView />
       </el-main>
@@ -100,12 +108,15 @@ const navGroups = computed(() => [
     ...(auth.canWrite ? [{ path: "/manual-selection", label: "人工选股", icon: User, key: "manual" }] : []),
     { path: "/final-ranking", label: "最终排序", icon: List, key: "final" },
     ...(auth.canWrite ? [{ path: "/entry-timing", label: "买入准入分析", icon: TrendCharts, key: "" }] : []),
+    { path: "/decision-explainability", label: "决策解释", icon: TrendCharts, key: "" },
+    { path: "/event-overlay-shadow", label: "V3事件覆盖Shadow", icon: TrendCharts, key: "" },
     { path: "/order-position", label: "挂单与仓位", icon: Wallet, key: "final" },
     { path: "/fundamentals", label: "重点基本面", icon: Document, key: "final" },
   ] },
   { label: "复盘与管理", items: [
     { path: "/market-review", label: "大盘复盘", icon: TrendCharts, key: "market_review" },
     { path: "/selection-performance", label: "选股收益统计", icon: DataAnalysis, key: "" },
+    { path: "/model-effectiveness", label: "Quant & Flash Effectiveness", icon: TrendCharts, key: "" },
     { path: "/runs", label: "运行记录", icon: List, key: "" },
     ...(auth.isAdmin ? [{ path: "/settings", label: "系统设置", icon: Setting, key: "" }] : []),
   ] },
@@ -157,6 +168,7 @@ onMounted(() => { void auth.initialize(); void store.refresh(); });
 .mobile-menu, .mobile-status-row { display: none; }
 .page-main { min-width: 0; padding: 18px 20px 28px; overflow-x: hidden; }
 .global-error { margin-bottom: 12px; }
+.identity-warning { margin-bottom: 12px; }
 @media (max-width: 1180px) { .core-status { display: none; } .topbar { grid-template-columns: 1fr auto; } }
 @media (max-width: 760px) {
   .desktop-sidebar { display: none; }

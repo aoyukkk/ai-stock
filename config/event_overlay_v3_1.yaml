@@ -1,0 +1,63 @@
+versions:
+  decision: AI_STOCK_DECISION_V3_1_EVENT_OVERLAY_SHADOW
+  screening: LLM_SCREENING_V3_1_FRESH_EVENT_OVERLAY_SHADOW
+  event_review: EVENT_REVIEW_V3_FRESHNESS_VERIFIED_OUTCOME_SEPARATED
+  search_contract: FLASH_DIRECT_SEARCH_CONTRACT_V7_NON_THINKING_SERVER_TOOL_LOOP
+production_or_shadow: SHADOW
+screening:
+  input_top_n: 100
+  output_top_n: 20
+  pro_max_n: 20
+  retry_count: 1
+  max_sources_per_stock: 8
+  max_events_per_stock: 5
+  timeout_seconds: 120
+  confidence_discount_direct_search: 0.70
+web_search:
+  endpoint: https://api.deepseek.com/anthropic/v1/messages
+  model: deepseek-v4-flash
+  max_uses: 2
+  max_tokens: 10000
+  max_continuations: 2
+  workers: 4
+scoring:
+  mode: CONFIDENCE_GATED_EVENT_DELTA_V3_1
+  max_event_delta: 8.0
+  risk_penalties:
+    ALLOW: 0.0
+    PROMOTE: 0.0
+    KEEP: 0.0
+    DEMOTE: 0.0
+    WATCH_ONLY: -4.0
+    BLOCK: -100.0
+source_tiers:
+  tier_1:
+    - cninfo.com.cn
+    - sse.com.cn
+    - szse.cn
+    - gov.cn
+  tier_2:
+    - cs.com.cn
+    - stcn.com
+    - cnstock.com
+  tier_3:
+    - eastmoney.com
+    - 10jqka.com.cn
+    - sina.com.cn
+  tier_4:
+    - unknown
+freshness:
+  default_hours: 72
+  announcement_hours: 168
+  market_news_hours: 36
+  unknown_publish_time_eligible: false
+  announcement_source_types:
+    - 交易所公告
+    - 公司公告
+    - 政府公告
+    - 定期报告
+    - 临时公告
+  market_news_source_types:
+    - 市场新闻
+    - 媒体报道
+    - 行业新闻

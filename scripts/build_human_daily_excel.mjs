@@ -11,6 +11,10 @@ const isMidday = data.output_mode === "midday";
 const priceSheetName = isMidday ? "价格与权重" : "挂单与仓位";
 const contextSheetName = isMidday ? "复核依据" : "基本面摘要";
 const minimumRecommendationScore = Number(data.minimum_recommendation_score ?? 60);
+const recommendationOperator = String(data.recommendation_operator ?? "GREATER_THAN_OR_EQUAL");
+const recommendationRuleText = recommendationOperator === "STRICT_GREATER_THAN"
+  ? `最终复核分严格超过 ${minimumRecommendationScore.toFixed(0)} 分`
+  : `最终复核分不低于 ${minimumRecommendationScore.toFixed(0)} 分`;
 const recommendations = Array.isArray(data.recommendations)
   ? data.recommendations
   : (data.candidates || []).filter((row) => Number(row["深度复核分"]) >= minimumRecommendationScore);
@@ -21,6 +25,7 @@ const C = {
   navy: "#17365D", teal: "#2F6B66", white: "#FFFFFF", ink: "#1F2933",
   light: "#F4F7F9", border: "#D6DEE5", blue: "#DCEAF5", green: "#E3F1E6",
   yellow: "#FFF2CC", red: "#F9DEDC", gray: "#E9EDF0", orange: "#FCE4D6",
+  manualSource: "#FFF2CC", modelSource: "#DCEAF5",
 };
 const col = (n) => { let s = ""; while (n > 0) { n--; s = String.fromCharCode(65 + n % 26) + s; n = Math.floor(n / 26); } return s; };
 const safe = (value) => {
@@ -29,12 +34,21 @@ const safe = (value) => {
   const text = String(value);
   return /^[=+\-@]/.test(text) ? `'${text}` : text;
 };
+const codeCell = (value) => {
+  const digits = String(value ?? "").replace(/\D/g, "").slice(0, 6);
+  return /^\d{6}$/.test(digits) ? Number(digits) : safe(value);
+};
 const setWidth = (sheet, index, width) => { sheet.getRange(`${col(index)}:${col(index)}`).format.columnWidth = width; };
 const contains = (range, text, fill, font = C.ink) => range.conditionalFormats.add("containsText", {text, format: {fill, font: {color: font, bold: true}}});
 const colorScale = (range) => range.conditionalFormats.add("colorScale", {criteria: [
   {type: "lowestValue", color: "#F4CCCC"}, {type: "percentile", value: 50, color: "#FFF2CC"},
   {type: "highestValue", color: "#C6E0B4"},
 ]});
+const sourceFill = (value) => {
+  const text = String(value ?? "").trim().toUpperCase();
+  if (!text) return C.white;
+  return /人工|共同|MANUAL|BOTH|HUMAN/.test(text) ? C.manualSource : C.modelSource;
+};
 const tableBlock = (sheet, startRow, headers, rows, tableName, emptyLabel = "无待处理事项") => {
   const endCol = col(headers.length);
   const body = rows.length
@@ -48,12 +62,21 @@ const tableBlock = (sheet, startRow, headers, rows, tableName, emptyLabel = "无
   };
   sheet.getRange(`A${startRow + 1}:${endCol}${endRow}`).values = body;
   sheet.getRange(`A${startRow + 1}:${endCol}${endRow}`).format = {
-    font: {color: C.ink, size: 9}, horizontalAlignment: "center", verticalAlignment: "center", wrapText: true,
+    fill: C.white, font: {color: C.ink, size: 9}, horizontalAlignment: "center", verticalAlignment: "center", wrapText: true,
     borders: {insideHorizontal: {style: "thin", color: C.border}},
   };
   const table = sheet.tables.add(`A${startRow}:${endCol}${endRow}`, true, tableName);
   table.style = "TableStyleMedium2";
+  table.showBandedRows = false;
+  table.showBandedColumns = false;
   table.showFilterButton = true;
+  const sourceIndex = headers.findIndex((header) => ["入选来源", "来源", "选择来源", "交易候选来源"].includes(header));
+  if (sourceIndex >= 0) {
+    body.forEach((row, index) => {
+      sheet.getRange(`A${startRow + 1 + index}:${endCol}${startRow + 1 + index}`).format.fill =
+        sourceFill(row[sourceIndex]);
+    });
+  }
   applyCenteredAlignment(sheet, `A${startRow}:${endCol}${endRow}`);
   return {endRow, endCol};
 };
@@ -84,15 +107,21 @@ const positionedCountFormula = data.summary["非零仓位数量"] === undefined
   ? `=COUNTIF('挂单与仓位'!V5:V${4 + data.orders.length},\">0\")`
   : `=${data.summary["非零仓位数量"]}`;
 card("D4:F4", "D5:F6", isMidday ? "等权候选" : "有仓位建议", positionedCountFormula, C.green);
-card("G4:I4", "G5:I6", "当前问题", "=COUNTA('当前问题'!A5:A100)", C.red);
+card(
+  "G4:I4",
+  "G5:I6",
+  "当前问题",
+  `=${Number(data.summary["当前问题数"] || 0)}`,
+  C.red,
+);
 card("J4:L4", "J5:L6", "今日推荐", `=${recommendations.length}`, C.yellow);
 overview.getRange("A7:L7").merge(); overview.getRange("A7").values = [["优先复核清单"]];
 overview.getRange("A7:L7").format = {fill: C.teal, font: {bold: true, color: C.white, size: 11}, rowHeight: 24};
 const topHeaders = ["复核排名","股票代码","股票名称","来源","二筛分","深度复核分","结论","建议仓位","参考价","止损价","第二目标价","核心逻辑"];
-const topRows = data.top10.map((r) => [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["二筛得分"],r["深度复核分"],r["二筛结论"],r["建议仓位"],r["参考价"],r["止损价"],r["第二目标价"],r["核心逻辑"]]);
+const topRows = data.top10.map((r) => [r["深度复核排名"],codeCell(r["股票代码"]),r["股票名称"],r["入选来源"],r["二筛得分"],r["深度复核分"],r["二筛结论"],r["建议仓位"],r["参考价"],r["止损价"],r["第二目标价"],r["核心逻辑"]]);
 const top = tableBlock(overview, 8, topHeaders, topRows, "OverviewTopCandidates");
 overview.freezePanes.freezeRows(3);
-overview.getRange(`B9:B${top.endRow}`).format.numberFormat = "@";
+overview.getRange(`B9:B${top.endRow}`).format.numberFormat = "000000";
 overview.getRange(`E9:F${top.endRow}`).format.numberFormat = "0.00";
 overview.getRange(`H9:H${top.endRow}`).format.numberFormat = "0.00%";
 overview.getRange(`I9:K${top.endRow}`).format.numberFormat = "0.00";
@@ -107,17 +136,17 @@ titleBand(
   recommendation,
   "K",
   "今日推荐",
-  `从重点候选中保留最终复核分不低于 ${minimumRecommendationScore.toFixed(0)} 分的股票；模型筛选、人工关注和共同入选使用同一门槛。`,
+  `从重点候选中保留${recommendationRuleText}的股票；模型筛选、人工关注和共同入选使用同一门槛。`,
 );
 const rHeaders = ["复核排名","股票代码","股票名称","入选来源","最终复核分","复核优先级","一级行业","产业链","财务状态","核心逻辑","主要风险"];
 const rRows = recommendations.map((row) => [
-  row["深度复核排名"], row["股票代码"], row["股票名称"], row["入选来源"],
+  row["深度复核排名"], codeCell(row["股票代码"]), row["股票名称"], row["入选来源"],
   row["深度复核分"], row["复核优先级"], row["一级行业"], row["产业链"],
   row["财务状态"], row["核心逻辑"], row["主要风险"],
 ]);
 const rt = tableBlock(recommendation, 4, rHeaders, rRows, "HumanDailyRecommendations", "暂无推荐");
 recommendation.freezePanes.freezeRows(4); recommendation.freezePanes.freezeColumns(3);
-recommendation.getRange(`B5:B${rt.endRow}`).format.numberFormat = "@";
+recommendation.getRange(`B5:B${rt.endRow}`).format.numberFormat = "000000";
 recommendation.getRange(`E5:E${rt.endRow}`).format.numberFormat = "0.00";
 recommendation.getRange(`J5:K${rt.endRow}`).format.wrapText = true;
 if (recommendations.length) colorScale(recommendation.getRange(`E5:E${rt.endRow}`));
@@ -125,12 +154,12 @@ if (recommendations.length) colorScale(recommendation.getRange(`E5:E${rt.endRow}
 
 // 重点候选
 const candidate = sheets["重点候选"];
-titleBand(candidate, "V", "重点候选", "按深度复核排名排列；星号表示尚未外部核验的保守归纳。");
+titleBand(candidate, "V", "重点候选", "完整展示模型前20与全部人工候选，按股票代码去重；无量化基线的人工候选保留展示但不补造评分。");
 const cHeaders = ["复核排名","股票代码","股票名称","入选来源","量化排名","量化得分","二筛得分","二筛结论","深度复核分","复核优先级","一级行业","产业链","财务状态","建议仓位","建议股数","参考价","止损价","第二目标价","风险收益比","核心逻辑","主要风险","当前状态"];
-const cRows = data.candidates.map((r)=>[r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["量化排名"],r["量化得分"],r["二筛得分"],r["二筛结论"],r["深度复核分"],r["复核优先级"],r["一级行业"],r["产业链"],r["财务状态"],r["建议仓位"],r["建议股数"],r["参考价"],r["止损价"],r["第二目标价"],r["风险收益比"],r["核心逻辑"],r["主要风险"],r["当前状态"]]);
+const cRows = data.candidates.map((r)=>[r["深度复核排名"],codeCell(r["股票代码"]),r["股票名称"],r["入选来源"],r["量化排名"],r["量化得分"],r["二筛得分"],r["二筛结论"],r["深度复核分"],r["复核优先级"],r["一级行业"],r["产业链"],r["财务状态"],r["建议仓位"],r["建议股数"],r["参考价"],r["止损价"],r["第二目标价"],r["风险收益比"],r["核心逻辑"],r["主要风险"],r["当前状态"]]);
 const ct = tableBlock(candidate,4,cHeaders,cRows,"HumanCandidates");
 candidate.freezePanes.freezeRows(4); candidate.freezePanes.freezeColumns(3);
-candidate.getRange(`B5:B${ct.endRow}`).format.numberFormat="@";
+candidate.getRange(`B5:B${ct.endRow}`).format.numberFormat="000000";
 candidate.getRange(`F5:I${ct.endRow}`).format.numberFormat="0.00";
 candidate.getRange(`N5:N${ct.endRow}`).format.numberFormat="0.00%";
 candidate.getRange(`O5:O${ct.endRow}`).format.numberFormat="#,##0";
@@ -147,11 +176,11 @@ const oHeaders=isMidday
   ? ["复核排名","股票代码","股票名称","入选来源","量化得分","二筛得分","二筛结论","深度复核分","参考价","最高接受价","止损价","第一目标价","第二目标价","第一目标收益比","第二目标收益比","当前收益比","建议仓位","说明"]
   : ["复核排名","股票代码","股票名称","入选来源","量化得分","二筛得分","二筛结论","深度复核分","保守价","均衡价","积极价","参考价","最高接受价","止损价","第一目标价","第二目标价","第一目标收益比","第二目标收益比","当前收益比","建议仓位","建议资金","建议股数","预计最大损失","说明"];
 const oRows=data.orders.map((r)=>isMidday
-  ? [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["量化得分"],r["二筛得分"],r["二筛结论"],r["深度复核分"],r["参考价"],r["最高接受价"],r["止损价"],r["第一目标价"],r["第二目标价"],r["第一目标风险收益比"],r["第二目标风险收益比"],r["当前风险收益比"],r["建议仓位"],r["说明"]]
-  : [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["量化得分"],r["二筛得分"],r["二筛结论"],r["深度复核分"],r["保守价"],r["均衡价"],r["积极价"],r["参考价"],r["最高接受价"],r["止损价"],r["第一目标价"],r["第二目标价"],r["第一目标风险收益比"],r["第二目标风险收益比"],r["当前风险收益比"],r["建议仓位"],r["建议资金"],r["建议股数"],r["预计最大损失"],r["说明"]]);
+  ? [r["深度复核排名"],codeCell(r["股票代码"]),r["股票名称"],r["入选来源"],r["量化得分"],r["二筛得分"],r["二筛结论"],r["深度复核分"],r["参考价"],r["最高接受价"],r["止损价"],r["第一目标价"],r["第二目标价"],r["第一目标风险收益比"],r["第二目标风险收益比"],r["当前风险收益比"],r["建议仓位"],r["说明"]]
+  : [r["深度复核排名"],codeCell(r["股票代码"]),r["股票名称"],r["入选来源"],r["量化得分"],r["二筛得分"],r["二筛结论"],r["深度复核分"],r["保守价"],r["均衡价"],r["积极价"],r["参考价"],r["最高接受价"],r["止损价"],r["第一目标价"],r["第二目标价"],r["第一目标风险收益比"],r["第二目标风险收益比"],r["当前风险收益比"],r["建议仓位"],r["建议资金"],r["建议股数"],r["预计最大损失"],r["说明"]]);
 const ot=tableBlock(order,4,oHeaders,oRows,"HumanOrders");
 order.freezePanes.freezeRows(4); order.freezePanes.freezeColumns(3);
-order.getRange(`B5:B${ot.endRow}`).format.numberFormat="@";
+order.getRange(`B5:B${ot.endRow}`).format.numberFormat="000000";
 if(isMidday){
   order.getRange(`E5:P${ot.endRow}`).format.numberFormat="0.00";
   order.getRange(`Q5:Q${ot.endRow}`).format.numberFormat="0.00%";
@@ -179,34 +208,37 @@ if(isMidday){
 
 // 基本面摘要
 const fundamental=sheets[contextSheetName];
-titleBand(fundamental,isMidday?"L":"S",contextSheetName,isMidday?"汇总午间数据范围、入选逻辑和主要风险，便于快速人工复核。":"星号表示基于现有主营和结构化信息作出的保守归纳，建议重点核验核心逻辑与失效条件。");
+titleBand(fundamental,isMidday?"L":"T",contextSheetName,isMidday?"汇总午间数据范围、入选逻辑和主要风险，便于快速人工复核。":"基本面由结构化数据与获准重跑的 LLM 补全；“已联网核验”行附公开来源，仍需结合公告原文判断。");
 const fHeaders=isMidday
   ? ["复核排名","股票代码","股票名称","入选来源","一级行业","数据范围","入选逻辑","主要风险","资料状态","财务说明","人工复核","复核优先级"]
-  : ["复核排名","股票代码","股票名称","入选来源","一级行业","产业链","链条位置","主营业务","核心产品","概念标签","结构性方向","潜在优势","行业趋势","核心逻辑","失效条件","财务状态","财务说明","人工复核","复核优先级"];
+  : ["复核排名","股票代码","股票名称","入选来源","一级行业","产业链","链条位置","主营业务","核心产品","概念标签","结构性方向","潜在优势","行业趋势","核心逻辑","失效条件","财务状态","财务说明","人工复核","复核优先级","核验来源"];
 const fRows=data.fundamentals.map((r)=>isMidday
-  ? [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["一级行业"],r["结构性方向"],r["核心逻辑"],r["失效条件"],r["财务状态"],r["财务说明"],r["人工复核"],r["复核优先级"]]
-  : [r["深度复核排名"],r["股票代码"],r["股票名称"],r["入选来源"],r["一级行业"],r["产业链"],r["链条位置"],r["主营业务"],r["核心产品"],r["概念标签"],r["结构性方向"],r["潜在优势"],r["行业趋势"],r["核心逻辑"],r["失效条件"],r["财务状态"],r["财务说明"],r["人工复核"],r["复核优先级"]]);
+  ? [r["深度复核排名"],codeCell(r["股票代码"]),r["股票名称"],r["入选来源"],r["一级行业"],r["结构性方向"],r["核心逻辑"],r["失效条件"],r["财务状态"],r["财务说明"],r["人工复核"],r["复核优先级"]]
+  : [r["深度复核排名"],codeCell(r["股票代码"]),r["股票名称"],r["入选来源"],r["一级行业"],r["产业链"],r["链条位置"],r["主营业务"],r["核心产品"],r["概念标签"],r["结构性方向"],r["潜在优势"],r["行业趋势"],r["核心逻辑"],r["失效条件"],r["财务状态"],r["财务说明"],r["人工复核"],r["复核优先级"],r["核验来源"]]);
 const ft=tableBlock(fundamental,4,fHeaders,fRows,"HumanFundamentals");
 fundamental.freezePanes.freezeRows(4); fundamental.freezePanes.freezeColumns(3);
-fundamental.getRange(`B5:B${ft.endRow}`).format.numberFormat="@";
+fundamental.getRange(`B5:B${ft.endRow}`).format.numberFormat="000000";
 if(isMidday){
   fundamental.getRange(`G5:J${ft.endRow}`).format.wrapText=true;
   fundamental.getRange(`A5:L${ft.endRow}`).format.rowHeight=54;
-  contains(fundamental.getRange(`K5:K${ft.endRow}`),"是",C.yellow);
+  contains(fundamental.getRange(`K5:K${ft.endRow}`),"需要",C.yellow);
+  contains(fundamental.getRange(`K5:K${ft.endRow}`),"已联网核验",C.green);
   for(let i=1;i<=12;i++) setWidth(fundamental,i,[7,8,10].includes(i)?38:[2,3,4,5,6,9].includes(i)?16:11);
 }else{
-  fundamental.getRange(`H5:Q${ft.endRow}`).format.wrapText=true;
-  contains(fundamental.getRange(`P5:P${ft.endRow}`),"承压",C.orange); contains(fundamental.getRange(`R5:R${ft.endRow}`),"是",C.yellow);
-  for(let i=1;i<=19;i++) setWidth(fundamental,i,[8,9,10,11,12,13,14,15,17].includes(i)?34:[2,3,4,5,6].includes(i)?16:11);
+  fundamental.getRange(`H5:T${ft.endRow}`).format.wrapText=true;
+  contains(fundamental.getRange(`P5:P${ft.endRow}`),"承压",C.orange); contains(fundamental.getRange(`R5:R${ft.endRow}`),"需要",C.yellow);
+  contains(fundamental.getRange(`R5:R${ft.endRow}`),"已联网核验",C.green);
+  for(let i=1;i<=20;i++) setWidth(fundamental,i,i===20?48:[8,9,10,11,12,13,14,15,17].includes(i)?34:[2,3,4,5,6].includes(i)?16:11);
 }
 
 // 量化前100
 const quant=sheets["量化前100"];
 titleBand(quant,"L","量化前100","用于快速浏览，不包含全市场技术字段。");
 const qHeaders=["量化排名","股票代码","股票名称","一级行业","量化总分","技术得分","资金得分","情绪得分","动量得分","风险得分","进入二筛","进入重点候选"];
-const qRows=data.quant_top100.map((r)=>[r["量化排名"],r["股票代码"],r["股票名称"],r["一级行业"],r["量化总分"],r["技术得分"],r["资金得分"],r["情绪得分"],r["动量得分"],r["风险得分"],r["进入二筛"],r["进入重点候选"]]);
+const qRows=data.quant_top100.map((r)=>[r["量化排名"],codeCell(r["股票代码"]),r["股票名称"],r["一级行业"],r["量化总分"],r["技术得分"],r["资金得分"],r["情绪得分"],r["动量得分"],r["风险得分"],r["进入二筛"],r["进入重点候选"]]);
 const qt=tableBlock(quant,4,qHeaders,qRows,"HumanQuantTop100");
-quant.freezePanes.freezeRows(4); quant.getRange(`B5:B${qt.endRow}`).format.numberFormat="@";
+quant.getRange(`A5:L${qt.endRow}`).format.fill=C.modelSource;
+quant.freezePanes.freezeRows(4); quant.getRange(`B5:B${qt.endRow}`).format.numberFormat="000000";
 quant.getRange(`E5:J${qt.endRow}`).format.numberFormat="0.00"; colorScale(quant.getRange(`E5:E${qt.endRow}`));
 contains(quant.getRange(`L5:L${qt.endRow}`),"是",C.green); [10,13,15,17,11,11,11,11,11,11,11,14].forEach((w,i)=>setWidth(quant,i+1,w));
 
@@ -214,9 +246,9 @@ contains(quant.getRange(`L5:L${qt.endRow}`),"是",C.green); [10,13,15,17,11,11,1
 const issues=sheets["当前问题"];
 titleBand(issues,"E","当前问题",`当前仅列出仍需处理的事项；历史已解决问题 ${data.summary["历史已解决问题数"]} 项不再重复展示。`);
 const iHeaders=["股票代码","股票名称","问题类型","当前状态","说明"];
-const iRows=data.issues.map((r)=>[r["股票代码"],r["股票名称"],r["问题类型"],r["当前状态"],r["说明"]]);
+const iRows=data.issues.map((r)=>[codeCell(r["股票代码"]),r["股票名称"],r["问题类型"],r["当前状态"],r["说明"]]);
 const it=tableBlock(issues,4,iHeaders,iRows,"HumanCurrentIssues");
-issues.freezePanes.freezeRows(4); issues.getRange(`A5:A${it.endRow}`).format.numberFormat="@"; issues.getRange(`E5:E${it.endRow}`).format.wrapText=true;
+issues.freezePanes.freezeRows(4); issues.getRange(`A5:A${it.endRow}`).format.numberFormat="000000"; issues.getRange(`E5:E${it.endRow}`).format.wrapText=true;
 contains(issues.getRange(`D5:D${it.endRow}`),"已阻断",C.red); contains(issues.getRange(`D5:D${it.endRow}`),"待人工确认",C.yellow);
 [14,16,18,16,52].forEach((w,i)=>setWidth(issues,i+1,w));
 
@@ -225,7 +257,7 @@ const output=await SpreadsheetFile.exportXlsx(workbook); await output.save(outpu
 
 if(previewDir){
   await fs.mkdir(previewDir,{recursive:true});
-  const ranges={"今日概览":"A1:L22","今日推荐":"A1:K16","重点候选":"A1:V16",[priceSheetName]:isMidday?"A1:R16":"A1:X16",[contextSheetName]:isMidday?"A1:L12":"A1:S12","量化前100":"A1:L18","当前问题":"A1:E12"};
+  const ranges={"今日概览":"A1:L22","今日推荐":"A1:K16","重点候选":`A1:V${Math.max(16,ct.endRow)}`,[priceSheetName]:isMidday?"A1:R16":"A1:X16",[contextSheetName]:isMidday?"A1:L12":"A1:T12","量化前100":"A1:L18","当前问题":"A1:E12"};
   for(const [sheetName,range] of Object.entries(ranges)){
     const image=await workbook.render({sheetName,range,scale:1.1,format:"png"});
     await fs.writeFile(path.join(previewDir,`${sheetName}.png`),new Uint8Array(await image.arrayBuffer()));

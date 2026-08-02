@@ -81,7 +81,7 @@ def _write_sheet(workbook: Workbook, name: str, rows: list[dict[str, Any]], inde
         cell.font = Font(bold=True, color="17365D")
 
     table = Table(displayName=f"SelectionPerformanceTable{index}", ref=f"A4:{last_column}{last_row}")
-    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=False)
     sheet.add_table(table)
     sheet.freeze_panes = "A5"
     for column, header in enumerate(headers, start=1):

@@ -7,6 +7,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from reporting.source_row_style import apply_selection_source_rows
 
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 SHEETS = ("01_复核结论", "02_逐股复核", "03_条件观察计划", "04_市场状态", "05_调用审计")
@@ -43,6 +44,7 @@ def _sheet(wb, title, rows):
         if header in {"stock_code", "股票代码", "代码"}:
             for cell in ws[get_column_letter(index)]: cell.number_format = "@"
         ws.column_dimensions[get_column_letter(index)].width = min(36, max(12, max(len(str(ws.cell(row, index).value or "")) for row in range(1, ws.max_row+1))*1.3+2))
+    apply_selection_source_rows(ws, header_row=1, first_data_row=2)
 
 
 def _verify(path):

@@ -17,6 +17,9 @@ const routes: RouteRecordRaw[] = [
   { path: "manual-selection", component: () => import("@/views/ManualSelectionView.vue"), meta: { roles: ["ADMIN", "TRADER"] } },
   { path: "final-ranking", component: () => import("@/views/ResultTableView.vue"), props: { kind: "final" } },
   { path: "entry-timing", component: () => import("@/views/EntryTimingView.vue"), meta: { roles: ["ADMIN", "TRADER"] } },
+  { path: "decision-explainability", component: () => import("@/views/DecisionExplainabilityView.vue") },
+  { path: "event-overlay-shadow", component: () => import("@/views/EventOverlayShadowView.vue") },
+  { path: "model-effectiveness", component: () => import("@/views/ModelEffectivenessView.vue") },
   { path: "order-position", component: () => import("@/views/ResultTableView.vue"), props: { kind: "orders" } },
   { path: "fundamentals", component: () => import("@/views/ResultTableView.vue"), props: { kind: "fundamentals" } },
   { path: "selection-performance", component: () => import("@/views/SelectionPerformanceView.vue") },
@@ -27,13 +30,15 @@ const routes: RouteRecordRaw[] = [
 ] }, { path: "/:pathMatch(.*)*", redirect: "/workbench" }];
 const router = createRouter({ history: window.aiTraderShell ? createWebHashHistory() : createWebHistory(), routes });
 router.beforeEach(async (to) => {
-  if (window.aiTraderShell || ["/unauthorized", "/forbidden", "/local-login", "/first-run"].includes(to.path)) return true;
+  if (window.aiTraderShell || ["/unauthorized", "/forbidden", "/first-run"].includes(to.path)) return true;
   const auth = useInternalAuthStore();
   try {
     await auth.initialize();
   } catch (error) {
+    if (to.path === "/local-login") return true;
     return (error as { code?: string })?.code === "LOCAL_SESSION_REQUIRED" ? "/local-login" : "/unauthorized";
   }
+  if (to.path === "/local-login") return "/workbench";
   const roles = to.meta.roles as string[] | undefined;
   return roles && !roles.includes(auth.role) ? "/forbidden" : true;
 });

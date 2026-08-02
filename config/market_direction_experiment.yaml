@@ -1,0 +1,45 @@
+experiment_name: Market Direction GRU Feasibility Experiment
+data:
+  index_code: 000001.SH
+  exchange: SSE
+  start_date: '20050101'
+  end_date: auto
+  cache_root: data/cache/market_forecast
+  market_close_time: '15:30'
+features:
+  epsilon: 1.0e-12
+sequence:
+  lookback_days: 60
+walk_forward:
+  first_test_year: 2015
+  minimum_initial_train_years: 8
+  minimum_train_samples: 1500
+  minimum_validation_samples: 150
+  minimum_full_test_samples: 150
+  minimum_partial_test_samples: 50
+model:
+  hidden_size: 32
+  num_layers: 2
+  dropout: 0.20
+  output_size: 1
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  batch_size: 64
+  max_epochs: 100
+  early_stopping_patience: 10
+  gradient_clip_norm: 1.0
+  probability_threshold: 0.50
+bootstrap:
+  block_length: 20
+  resamples: 5000
+  random_seed: 20260721
+decision:
+  minimum_accuracy_improvement: 0.01
+  significance_level: 0.05
+  minimum_folds_beating_baseline_ratio: 0.60
+  maximum_seed_accuracy_std: 0.01
+  near_random_lower: 0.49
+  near_random_upper: 0.51
+seeds: [7, 42, 2026]
+device: auto
+quick_test: false

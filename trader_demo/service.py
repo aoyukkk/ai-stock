@@ -92,6 +92,7 @@ class TraderDemoService:
     def evaluation_rows(
         quant_rows: list[QuantRankResult], *, ranks: Iterable[int] | None,
         top_n: int | None, manual: list[ManualSelection],
+        allow_manual_outside_quant: bool = False,
     ) -> list[QuantRankResult]:
         by_rank = {row.rank: row for row in quant_rows}
         by_code = {_canonical(row.stock_code): row for row in quant_rows}
@@ -106,19 +107,35 @@ class TraderDemoService:
                 raise ValueError("INVALID_LLM_TOP_N")
             for row in quant_rows[:top_n]:
                 chosen[_canonical(row.stock_code)] = row
+        next_review_rank = max((row.rank for row in quant_rows), default=0) + 1
         for item in manual:
             code = _canonical(item.stock_code)
             if code not in by_code:
-                raise ValueError(f"MANUAL_STOCK_NOT_IN_QUANT_RUN:{item.stock_code}")
-            chosen[code] = by_code[code]
+                if not allow_manual_outside_quant:
+                    raise ValueError(
+                        f"MANUAL_STOCK_NOT_IN_QUANT_RUN:{item.stock_code}"
+                    )
+                chosen[code] = _manual_review_only_rank(
+                    item.stock_code, next_review_rank
+                )
+                next_review_rank += 1
+            else:
+                chosen[code] = by_code[code]
         return sorted(chosen.values(), key=lambda row: row.rank)
 
     def preview(
         self, *, quant_run_id: str | None, ranks: Iterable[int] | None,
         top_n: int | None, manual: list[ManualSelection], retry_stocks: set[str] | None = None,
+        allow_manual_outside_quant: bool = False,
     ) -> dict[str, Any]:
         run, manifest, quant_rows = self.load_context(quant_run_id)
-        pool = self.evaluation_rows(quant_rows, ranks=ranks, top_n=top_n, manual=manual)
+        pool = self.evaluation_rows(
+            quant_rows,
+            ranks=ranks,
+            top_n=top_n,
+            manual=manual,
+            allow_manual_outside_quant=allow_manual_outside_quant,
+        )
         pool = self._filter_retry_stocks(pool, retry_stocks)
         profiles = [self.guard._profile(row.stock_code, run) for row in pool]
         failures = self.guard.real_gate_failures(run, manifest, profiles)
@@ -151,9 +168,16 @@ class TraderDemoService:
         concurrency: int = 1,
         batch_size: int = 10,
         checkpoint_callback: Callable[[dict[str, Any]], None] | None = None,
+        allow_manual_outside_quant: bool = False,
     ) -> str:
         run, manifest, quant_rows = self.load_context(quant_run_id, knowledge_mode)
-        pool = self.evaluation_rows(quant_rows, ranks=ranks, top_n=top_n, manual=manual)
+        pool = self.evaluation_rows(
+            quant_rows,
+            ranks=ranks,
+            top_n=top_n,
+            manual=manual,
+            allow_manual_outside_quant=allow_manual_outside_quant,
+        )
         pool = self._filter_retry_stocks(pool, retry_stocks)
         manual_map = {_canonical(item.stock_code): item for item in manual}
         profiles = [self.guard._profile(row.stock_code, run) for row in pool]
@@ -191,6 +215,10 @@ class TraderDemoService:
                 "defer_candidate_generation": defer_candidate_generation,
                 "concurrency": concurrency,
                 "batch_size": batch_size,
+                "allow_manual_outside_quant": allow_manual_outside_quant,
+                "manual_review_policy": (
+                    "ALL_MANUAL_TO_FLASH_AND_PRO_REVIEW_ST_HARD_GATE_RETAINED"
+                ),
                 "knowledge_mode": knowledge_mode.value,
                 "fundamental_prompt_version": FUNDAMENTAL_PROMPT_VERSION,
                 "fundamental_contract_version": "fundamental_enrichment_wire_v4",
@@ -271,6 +299,18 @@ class TraderDemoService:
                     else False
                 )
                 manual_item = manual_map.get(_canonical(rank_row.stock_code))
+                manual_review_only = bool(
+                    getattr(rank_row, "manual_review_only", False)
+                )
+                hard_gate_reasons = (
+                    ["MANUAL_OUTSIDE_ACTIONABLE_QUANT_UNIVERSE"]
+                    if manual_review_only
+                    else []
+                )
+                if manual_review_only and "ST" in str(
+                    profile.stock_name or ""
+                ).upper():
+                    hard_gate_reasons.append("ST")
                 selection_source = "BOTH" if llm_selected and manual_item else ("LLM" if llm_selected else ("MANUAL" if manual_item else ""))
                 screening["_trader_demo"] = {
                     "execution_status": "SUCCESS" if not task_errors else "FAILED",
@@ -278,6 +318,10 @@ class TraderDemoService:
                     "manual_selected": bool(manual_item), "manual_reason": manual_item.reason if manual_item else "",
                     "manual_priority": manual_item.priority if manual_item else "", "selection_source": selection_source,
                     "input_quality": context.get("input_quality") or {},
+                    "manual_review_only": manual_review_only,
+                    "hard_gate_review_only": manual_review_only,
+                    "hard_gate_reasons": hard_gate_reasons,
+                    "order_eligible": not manual_review_only,
                 }
                 sample = ModelValidationSample(
                     validation_run_id=validation_run_id, quant_run_id=run.run_id,
@@ -432,7 +476,10 @@ class TraderDemoService:
             code = normalize_ts_code(sample.stock_code)
             rank_row = quant_rows.get(code)
             if rank_row is None:
-                raise ValueError(f"VALIDATION_SAMPLE_QUANT_ROW_MISSING:{code}")
+                metadata = (sample.screening_result or {}).get("_trader_demo") or {}
+                if not metadata.get("manual_review_only"):
+                    raise ValueError(f"VALIDATION_SAMPLE_QUANT_ROW_MISSING:{code}")
+                rank_row = _manual_review_rank_from_sample(sample)
             items.append({
                 "rank_row": rank_row,
                 "profile": SimpleNamespace(
@@ -590,7 +637,11 @@ class TraderDemoService:
                 continue
             rank_row = quant_rows.get(normalize_ts_code(sample.stock_code))
             if rank_row is None:
-                raise ValueError(f"CANDIDATE_QUANT_ROW_MISSING:{sample.stock_code}")
+                if not metadata.get("manual_review_only"):
+                    raise ValueError(
+                        f"CANDIDATE_QUANT_ROW_MISSING:{sample.stock_code}"
+                    )
+                rank_row = _manual_review_rank_from_sample(sample)
             profile = self.guard._profile(rank_row.stock_code, quant_run)
             candidates.append(
                 {
@@ -624,10 +675,19 @@ class TraderDemoService:
             plan_item = dict(item)
             if original_screening.get("_trader_demo", {}).get("execution_status") != "SUCCESS":
                 plan_item["screening"] = {**original_screening, "screening_decision": "REJECT", "confidence": 0}
-            try:
-                plan = self.guard._build_order_plan(run, plan_item)
-            except Exception as exc:
-                plan = _blocked_plan(run, item["rank_row"].stock_code, f"ORDER_PLAN_ERROR:{type(exc).__name__}")
+            metadata = original_screening.get("_trader_demo") or {}
+            if metadata.get("hard_gate_review_only"):
+                reasons = ",".join(metadata.get("hard_gate_reasons") or [])
+                plan = _blocked_plan(
+                    run,
+                    item["rank_row"].stock_code,
+                    f"MANUAL_REVIEW_ONLY_HARD_GATE:{reasons or 'UNSPECIFIED'}",
+                )
+            else:
+                try:
+                    plan = self.guard._build_order_plan(run, plan_item)
+                except Exception as exc:
+                    plan = _blocked_plan(run, item["rank_row"].stock_code, f"ORDER_PLAN_ERROR:{type(exc).__name__}")
             warnings = list(plan.get("warnings") or [])
             if item["selection_source"] == "MANUAL" and original_screening.get("screening_decision") != "ADVANCE":
                 warnings.append("人工选择，但LLM未入选")
@@ -645,7 +705,25 @@ class TraderDemoService:
             account_equity=account_equity, available_cash=available_cash,
             snapshot_time=run.decision_time, existing_positions=[],
         ))
-        allocations = self.guard._size_positions(candidates, plans, account_equity, available_cash) if candidates else []
+        sizable_pairs = [
+            (candidate, plan)
+            for candidate, plan in zip(candidates, plans)
+            if not (
+                (candidate["screening"].get("_trader_demo") or {}).get(
+                    "hard_gate_review_only"
+                )
+            )
+        ]
+        allocations = (
+            self.guard._size_positions(
+                [candidate for candidate, _ in sizable_pairs],
+                [plan for _, plan in sizable_pairs],
+                account_equity,
+                available_cash,
+            )
+            if sizable_pairs
+            else []
+        )
         by_code = {item["stock_code"]: item for item in allocations}
         for candidate, plan in zip(candidates, plans):
             code = candidate["rank_row"].stock_code
@@ -848,6 +926,45 @@ def select_model_validation_items(items: list[dict[str, Any]], top_n: int) -> li
 
 def _canonical(value: str) -> str:
     return display_stock_code(value)
+
+
+def _manual_review_only_rank(
+    stock_code: str, rank: int
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        stock_code=normalize_ts_code(stock_code),
+        rank=rank,
+        total_score=None,
+        technical_score=None,
+        capital_score=None,
+        emotion_score=None,
+        momentum_score=None,
+        risk_score=None,
+        factor_detail_reference={
+            "manual_review_only": True,
+            "hard_gate_reasons": [
+                "MANUAL_OUTSIDE_ACTIONABLE_QUANT_UNIVERSE"
+            ],
+        },
+        manual_review_only=True,
+    )
+
+
+def _manual_review_rank_from_sample(
+    sample: ModelValidationSample,
+) -> SimpleNamespace:
+    scores = dict(sample.quant_scores or {})
+    row = _manual_review_only_rank(sample.stock_code, int(sample.rank))
+    for name in (
+        "total_score",
+        "technical_score",
+        "capital_score",
+        "emotion_score",
+        "momentum_score",
+        "risk_score",
+    ):
+        setattr(row, name, scores.get(name))
+    return row
 
 
 def _meta(row: QuantRankResult, key: str, default: Any = "") -> Any:

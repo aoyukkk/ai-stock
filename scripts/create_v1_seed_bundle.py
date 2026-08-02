@@ -114,6 +114,16 @@ def _sanitize_database(database: Path, secrets: list[str], stats: dict[str, int]
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=OFF")
         table_names = [row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+        immutable_triggers = [
+            (row[0], row[1]) for row in connection.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type='trigger' AND sql IS NOT NULL "
+                "AND upper(sql) LIKE '%IMMUTABLE_%'"
+            )
+        ]
+        # The seed is an isolated copy: temporarily suspend immutability triggers
+        # only while removing non-seed rows, then restore the exact trigger SQL.
+        for trigger_name, _ in immutable_triggers:
+            connection.execute(f'DROP TRIGGER "{trigger_name}"')
         initial_rows = sum(int(connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]) for table in table_names)
         stats["excluded_mock_rows"] = _explicit_mock_row_count(connection)
         registry = [dict(row) for row in connection.execute(
@@ -145,6 +155,15 @@ def _sanitize_database(database: Path, secrets: list[str], stats: dict[str, int]
         _delete_not_in(connection, "selection_cohort", "pipeline_run_id", pipeline_ids)
         cohort_ids = [row[0] for row in connection.execute("SELECT id FROM selection_cohort")]
         _delete_not_in(connection, "selection_cohort_member", "cohort_id", cohort_ids)
+        cohort_member_ids = [row[0] for row in connection.execute("SELECT id FROM selection_cohort_member")]
+        _delete_not_in(connection, "selection_performance_daily", "cohort_member_id", cohort_member_ids)
+        _delete_not_in(connection, "selection_portfolio_daily", "cohort_id", cohort_ids)
+        performance_run_ids = {
+            row[0] for row in connection.execute("SELECT DISTINCT performance_run_id FROM selection_performance_daily")
+        } | {
+            row[0] for row in connection.execute("SELECT DISTINCT performance_run_id FROM selection_portfolio_daily")
+        }
+        _delete_not_in(connection, "selection_performance_run", "id", sorted(performance_run_ids))
 
         for table in table_names:
             if table not in PRESERVED_TABLES:
@@ -185,10 +204,15 @@ def _sanitize_database(database: Path, secrets: list[str], stats: dict[str, int]
         secret_hits, path_hits = _sanitize_text_columns(connection, ROOT, secrets)
         stats["removed_secrets"] += secret_hits
         stats["rewritten_paths"] += path_hits
+        for _, trigger_sql in immutable_triggers:
+            connection.execute(trigger_sql)
         connection.execute("PRAGMA foreign_keys=ON")
         violations = list(connection.execute("PRAGMA foreign_key_check"))
         if violations:
-            raise RuntimeError(f"SEED_FOREIGN_KEY_CHECK_FAILED:{len(violations)}")
+            summary = ",".join(
+                f"{row[0]}->{row[2]}" for row in violations[:10]
+            )
+            raise RuntimeError(f"SEED_FOREIGN_KEY_CHECK_FAILED:{len(violations)}:{summary}")
         if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise RuntimeError("SEED_SQLITE_INTEGRITY_FAILED")
         connection.commit()

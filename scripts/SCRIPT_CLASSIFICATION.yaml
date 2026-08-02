@@ -1,0 +1,1255 @@
+schema_version: 1
+recommended_daily_entry: scripts/run_v2_postclose_official_once.py
+generated_for_review: 2026-07-30
+scripts:
+  - script: "scripts/__init__.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/audit_workspace_layout.py"
+    category: MAINTENANCE
+    owner_module: "repository_governance"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Read-only layout and permission audit; never deletes or moves files."
+  - script: "scripts/check_workspace_secret_exposure.py"
+    category: MAINTENANCE
+    owner_module: "security_governance"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Fail-closed local scan; does not print secret values."
+  - script: "scripts/run_quality_gate.py"
+    category: OPERATIONAL
+    owner_module: "quality_governance"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Security and quality validation only; all side-effecting business modes are forced off."
+  - script: "scripts/scan_desktop_security_build.py"
+    category: MAINTENANCE
+    owner_module: "desktop_release"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Scans only an isolated unpacked desktop build and reports redacted findings."
+  - script: "scripts/finalize_security_remediation_reports.py"
+    category: MAINTENANCE
+    owner_module: "security_governance"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: true
+    replacement: ""
+    notes: "Generates only redacted evidence reports for the 2026-07-30 remediation phase."
+  - script: "scripts/_common.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/apply_human_flash_correction.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/apply_human_verification_to_daily_workbook.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/apply_verified_fundamental_completion.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/audit_quant_factor_scores.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/backfill_dual_selection_reviews.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_full_a_volume_excel.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_human_daily_output.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_human_market_review.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_internal_web_release.ps1"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_midday_validation_report.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_selection_review_comparison.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_three_trade_day_comparison.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_today_sector_success_rate.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_v1_release.ps1"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_v2_corrected_human_daily_output.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_weekly_outputs.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_weekly_recommendation_review.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/build_weekly_sector_review.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/capture_ranking_snapshot.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/check_baostock_kline_cache.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/check_environment.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/check_security_config.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/cloudflare/__init__.py"
+    category: MAINTENANCE
+    owner_module: "internal_web"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/cloudflare/bootstrap_internal_access.py"
+    category: MAINTENANCE
+    owner_module: "internal_web"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/cloudflare/common.py"
+    category: MAINTENANCE
+    owner_module: "internal_web"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/cloudflare/remove_internal_access.py"
+    category: MAINTENANCE
+    owner_module: "internal_web"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/cloudflare/verify_internal_access.py"
+    category: MAINTENANCE
+    owner_module: "internal_web"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/compare_quant_ab_reports.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/compare_tushare_baostock_kline.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/complete_flash_v4_pipeline.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/create_v1_seed_bundle.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/data_readiness_current.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/dev_start_all.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/dev_start_backend.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/dev_start_frontend.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/diagnose_ifind_snapshot_parser.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/diagnose_tushare_optional_fundamentals.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/export_postclose_shadow_reconciliation.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/finalize_monday_v2_shadow.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/fix_internal_auth_state.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/freeze_monday_v2_decision.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/generate_v1_release_metadata.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/init_db.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/init_local_env.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/install_cloudflared_service.ps1"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/install_internal_web_service.ps1"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/migrate_admission_v3_explainability_enhancement.py"
+    category: MIGRATION
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/migrate_forward_shadow_evaluation_v1.py"
+    category: MIGRATION
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/migrate_llm_audit_v04.py"
+    category: MIGRATION
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/migrate_ranking_evaluation_v1.py"
+    category: MIGRATION
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/migrate_research_allocation_v05.py"
+    category: MIGRATION
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/migrate_selection_performance_v1.py"
+    category: MIGRATION
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/migrate_temporal_quant_v06.py"
+    category: MIGRATION
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/network_diagnostics.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/organize_outputs_by_date.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/package_backend_pyinstaller.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/package_windows_app.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/prewarm_baostock_kline_cache.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/prewarm_tushare_cache.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/prewarm_tushare_fundamental_cache.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/prewarm_tushare_trade_date_cache.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/probe_deepseek_web_search.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/probe_ifind_capabilities.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/probe_tushare_fundamental_capabilities.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/probe_tushare_permissions.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/prod_start_local.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/publish_business_results_to_internal_web.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/recalculate_ifind_acceptance_delays.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/reconcile_postclose_20260720_audit.py"
+    category: HISTORICAL_ONE_OFF
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: true
+    replacement: "scripts/run_daily_routine.py"
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/record_human_correction_in_official_audit.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/refill_v2_fundamentals.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/regenerate_flash_v4_excel.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/render_excel_via_com.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/render_workbook_artifact.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/repair_official_daily_workbook.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/resume_pro_v3_checkpoint.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_all_checks.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_close_once.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_daily_full_pipeline_excel.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_daily_routine.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: "scripts/run_v2_postclose_official_once.py"
+    notes: "Legacy stage orchestrator; the formal post-close path is V2 plus V3.1 Shadow."
+  - script: "scripts/run_decision_explainability_shadow.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_entry_timing_shadow.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_entry_timing_v22_shadow.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_entry_timing_v2_shadow.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_explainability_evaluation_shadow.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_final_smoke.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_flash_v4_pipeline.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_forward_shadow_backfill.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_fundamental_llm_positioning_smoke.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_guarded_llm_excel_validation.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_guarded_quant_samples.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_ifind_shadow_acceptance.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_ifind_shadow_scoring.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_internal_auth_migration.py"
+    category: MIGRATION
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_market_daily_review.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_market_direction_experiment.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_midday_full_a_capacity_resolved.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_midday_full_a_v22_once.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_midday_once.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_midday_recommendation.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_midday_v22_afternoon_recheck.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_midday_v22_once.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_post_close_actions.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_postclose_20260720_once.py"
+    category: HISTORICAL_ONE_OFF
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: true
+    replacement: "scripts/run_daily_routine.py"
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_postclose_official_once.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_quant_shadow_counterfactual.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_quant_shadow_forward_candidate.py"
+    category: SHADOW_EXPERIMENT
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_ranking_evaluation_once.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_ranking_weekly_evaluation.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_real_quant_top500.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_temporal_quant.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_trader_demo_excel.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_tushare_quant_v2_validation.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/run_v2_postclose_official_once.py"
+    category: OPERATIONAL
+    owner_module: "project_operations"
+    safe_for_daily_use: true
+    uses_external_api: true
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Formal advisory-only post-close entry; includes V2 and gated V3.1 daily Shadow."
+  - script: "scripts/run_v3_event_overlay_shadow_once.py"
+    category: OPERATIONAL
+    owner_module: "event_overlay"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: true
+    date_pinned: false
+    replacement: "scripts/run_v2_postclose_official_once.py"
+    notes: "Formal resumable V3.1 Shadow stage; direct use is for gated recovery only."
+  - script: "scripts/scan_v1_release.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/set_internal_shared_password.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/smoke_backend_executable.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/smoke_real_data_sources.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/smoke_real_llm_gateway.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/smoke_real_quant_top500.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/smoke_tushare_data_source.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/status_cloudflared_service.ps1"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/status_internal_web_service.ps1"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/sync_stock_master.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/uninstall_cloudflared_service.ps1"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: true
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/uninstall_internal_web_service.ps1"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/update_ranking_forward_outcomes.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: true
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/v1_release_common.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/validate_internal_web_release.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/validate_postclose_20260720_outputs.py"
+    category: HISTORICAL_ONE_OFF
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: true
+    replacement: "scripts/run_daily_routine.py"
+    notes: "Review classification before operational use; no automatic execution is authorized."
+  - script: "scripts/verify_v1_seed_bundle.py"
+    category: MAINTENANCE
+    owner_module: "project_operations"
+    safe_for_daily_use: false
+    uses_external_api: false
+    may_modify_database: false
+    date_pinned: false
+    replacement: ""
+    notes: "Review classification before operational use; no automatic execution is authorized."

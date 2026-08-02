@@ -20,7 +20,9 @@ midday_recommendation:
     index_max_codes: 8
     snapshot_max_stocks: 120
     minute_max_stocks: 30
-    max_external_calls: 30
+    # Run-scoped safety budget. Includes token refresh/retry headroom beyond the
+    # 30-stock minute pool; there is no fixed 30-call cap in Python.
+    max_external_calls: 40
     minimum_call_interval_ms: 1000
     snapshot_batch_size: 4
     index_batch_size: 2

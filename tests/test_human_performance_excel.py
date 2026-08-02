@@ -1,6 +1,7 @@
 from datetime import date
 from pathlib import Path
 
+import pytest
 from openpyxl import load_workbook
 
 from review.human_performance_excel import HumanPerformanceExcelExporter, WeeklyStockPerformanceExcelExporter
@@ -32,10 +33,14 @@ def test_human_performance_workbook_pivots_daily_returns(tmp_path: Path) -> None
     assert workbook.sheetnames == ["近三日汇总", "7月10日选股复盘", "7月13日选股复盘"]
     first = workbook["7月10日选股复盘"]
     assert [cell.value for cell in first[4]] == [
-        "原排名", "股票代码", "股票名称", "来源", "7月13日当日涨跌", "7月14日当日涨跌", "截至7月14日总涨跌",
+        "选入日期", "原排名", "股票代码", "股票名称", "来源",
+        "7月13日当日涨跌", "7月14日当日涨跌",
+        "截至7月14日最终涨跌", "截至7月14日最高点涨跌",
     ]
-    assert first["G5"].value == 0.0098
-    assert first["B5"].number_format == "@"
+    assert first["H5"].value == 0.0098
+    assert first["I5"].value == pytest.approx(0.04)
+    assert first["A5"].value.date() == date(2026, 7, 10)
+    assert first["C5"].number_format == "@"
     assert first.tables == {}
     workbook.close()
 
@@ -241,4 +246,7 @@ def _stock(
         "pro_rank": rank,
         "daily_return": daily_return,
         "cumulative_return": cumulative_return,
+        "baseline_price": 10.0,
+        "high_price": 10.4,
+        "peak_cumulative_return": max(0.0, cumulative_return),
     }

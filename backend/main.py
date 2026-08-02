@@ -15,6 +15,11 @@ from backend.api.post_close_actions import router as post_close_actions_router
 from backend.api.midday import router as midday_router
 from backend.api.intraday_monitor import router as intraday_monitor_router
 from backend.api.entry_timing import router as entry_timing_router
+from backend.api.decision_explainability import router as decision_explainability_router
+from backend.api.forward_shadow import router as forward_shadow_router
+from backend.api.ranking_evaluation import router as ranking_evaluation_router
+from backend.api.event_overlay import router as event_overlay_router
+from backend.api.model_effectiveness import router as model_effectiveness_router
 from backend.api.router import api_router, api_v1_router
 from backend.api.v1.health import router as health_router
 from backend.core.config import AppConfig, get_app_config
@@ -80,6 +85,11 @@ def create_app(
     app.include_router(midday_router)
     app.include_router(intraday_monitor_router)
     app.include_router(entry_timing_router)
+    app.include_router(decision_explainability_router)
+    app.include_router(forward_shadow_router)
+    app.include_router(ranking_evaluation_router)
+    app.include_router(event_overlay_router)
+    app.include_router(model_effectiveness_router)
     app.include_router(api_router)
     app.include_router(api_v1_router)
     if server_settings.enabled:

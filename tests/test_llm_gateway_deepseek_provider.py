@@ -146,6 +146,26 @@ def test_malformed_provider_response_is_rejected(monkeypatch) -> None:
         _provider(monkeypatch, handler).chat(_request())
 
 
+def test_http_400_surfaces_redacted_provider_error(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            request=request,
+            json={
+                "error": {
+                    "code": "invalid_request",
+                    "message": "bad field; Bearer test-secret-value",
+                }
+            },
+        )
+
+    with pytest.raises(LLMProviderResponseError) as exc_info:
+        _provider(monkeypatch, handler).chat(_request())
+
+    assert "invalid_request" in str(exc_info.value)
+    assert "test-secret-value" not in str(exc_info.value)
+
+
 def test_thinking_parameters_are_explicit_and_temperature_is_omitted(monkeypatch) -> None:
     captured = {}
 

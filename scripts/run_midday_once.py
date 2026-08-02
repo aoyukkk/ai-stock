@@ -22,6 +22,7 @@ from midday.core import MiddayBaselineResolver, MiddayTimeGate, SHANGHAI
 from midday.llm_review import MiddayLLMReviewer
 from midday.provider import MiddayIFindCollector
 from midday.service import MiddayRecommendationService
+from reporting.web_result_publish import publish_internal_web_snapshot
 from scripts.run_daily_routine import _assert_advisory_only, _run_midday
 
 
@@ -60,10 +61,15 @@ def main() -> int:
             "orders_created": 0,
             "real_trading_enabled": False,
         }
+    payload["web_sync"] = _publish_internal_web_snapshot()
     audit = _write_audit(trade_date, payload)
     payload["one_click_audit"] = str(audit)
     print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
-    return 0 if payload.get("status") in SUCCESS_STATUSES else 2
+    return 0 if payload.get("status") in SUCCESS_STATUSES and payload["web_sync"].get("status") != "FAILED" else 2
+
+
+def _publish_internal_web_snapshot() -> dict[str, Any]:
+    return publish_internal_web_snapshot()
 
 
 def _preflight(trade_date: date, *, now: datetime | None = None) -> dict[str, Any]:
@@ -102,7 +108,7 @@ def _preflight(trade_date: date, *, now: datetime | None = None) -> dict[str, An
         + _ceil_div(int(ifind.get("snapshot_max_stocks", 120)), int(ifind.get("snapshot_batch_size", 4)))
         + int(ifind.get("minute_max_stocks", 30))
     )
-    hard_limit = min(30, int(ifind.get("max_external_calls", 30)))
+    hard_limit = int(ifind.get("max_external_calls", expected_calls))
     call_budget = {"ready": expected_calls <= hard_limit, "expected_calls": expected_calls, "hard_limit": hard_limit, "fast_minutes_only": fast_path}
     already_complete = existing.get("status") in SUCCESS_STATUSES and bool(existing.get("excel_path")) and Path(str(existing["excel_path"])).is_file()
     gates_ready = bool(

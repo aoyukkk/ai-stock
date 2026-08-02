@@ -1,17 +1,18 @@
 import { safeStorage } from "electron";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { requireProvider, requireSecretValue, SECRET_PROVIDERS, type SecretProvider } from "./securityPolicy.js";
 
-export type Provider =
-  | "tushare"
-  | "deepseek"
-  | "openai"
-  | "tavily"
-  | "ifind_username"
-  | "ifind_password"
-  | "ifind_access"
-  | "ifind_refresh";
-type SecretFile = Partial<Record<Provider, string>>;
+export type Provider = SecretProvider;
+type StoredSecret = { ciphertext: string; updated_at: string };
+type SecretFile = Partial<Record<Provider, StoredSecret | string>>;
+type SecretStatus = {
+  configured: boolean;
+  provider: Provider;
+  storage_backend: "electron_safe_storage";
+  updated_at: string | null;
+  validation_status: "ENCRYPTED_AT_REST" | "NOT_CONFIGURED" | "OS_ENCRYPTION_UNAVAILABLE";
+};
 
 export class SecretManager {
   private readonly filename: string;
@@ -20,44 +21,51 @@ export class SecretManager {
     this.filename = path.join(secretDir, "secrets.enc.json");
   }
 
-  async status(): Promise<Record<Provider, { configured: boolean }>> {
+  async status(): Promise<Record<Provider, SecretStatus>> {
     const values = await this.read();
-    return {
-      tushare: { configured: Boolean(values.tushare) },
-      deepseek: { configured: Boolean(values.deepseek) },
-      openai: { configured: Boolean(values.openai) },
-      tavily: { configured: Boolean(values.tavily) },
-      ifind_username: { configured: Boolean(values.ifind_username) },
-      ifind_password: { configured: Boolean(values.ifind_password) },
-      ifind_access: { configured: Boolean(values.ifind_access) },
-      ifind_refresh: { configured: Boolean(values.ifind_refresh) }
-    };
+    return Object.fromEntries(SECRET_PROVIDERS.map((provider) => {
+      const stored = values[provider];
+      const configured = Boolean(stored);
+      return [provider, {
+        configured,
+        provider,
+        storage_backend: "electron_safe_storage",
+        updated_at: stored && typeof stored !== "string" ? stored.updated_at : null,
+        validation_status: !configured
+          ? "NOT_CONFIGURED"
+          : safeStorage.isEncryptionAvailable() ? "ENCRYPTED_AT_REST" : "OS_ENCRYPTION_UNAVAILABLE"
+      }];
+    })) as Record<Provider, SecretStatus>;
   }
 
   async set(provider: Provider, value: string): Promise<void> {
+    provider = requireProvider(provider);
+    value = requireSecretValue(value);
     const minimumLength = provider === "ifind_username" ? 1 : 8;
     if (value.trim().length < minimumLength) throw new Error("SECRET_TOO_SHORT");
     if (!safeStorage.isEncryptionAvailable()) throw new Error("OS_ENCRYPTION_UNAVAILABLE");
     const values = await this.read();
-    values[provider] = safeStorage.encryptString(value.trim()).toString("base64");
+    values[provider] = {
+      ciphertext: safeStorage.encryptString(value.trim()).toString("base64"),
+      updated_at: new Date().toISOString()
+    };
     await this.write(values);
   }
 
   async delete(provider: Provider): Promise<void> {
+    provider = requireProvider(provider);
     const values = await this.read();
     delete values[provider];
     await this.write(values);
   }
 
-  async decrypted(): Promise<Partial<Record<Provider, string>>> {
+  async decrypted(enabledProviders: readonly Provider[]): Promise<Partial<Record<Provider, string>>> {
     if (!safeStorage.isEncryptionAvailable()) return {};
     const values = await this.read();
     const result: Partial<Record<Provider, string>> = {};
-    for (const provider of [
-      "tushare", "deepseek", "openai", "tavily",
-      "ifind_username", "ifind_password", "ifind_access", "ifind_refresh"
-    ] as Provider[]) {
-      const encrypted = values[provider];
+    for (const provider of enabledProviders.map(requireProvider)) {
+      const stored = values[provider];
+      const encrypted = typeof stored === "string" ? stored : stored?.ciphertext;
       if (encrypted) result[provider] = safeStorage.decryptString(Buffer.from(encrypted, "base64"));
     }
     return result;

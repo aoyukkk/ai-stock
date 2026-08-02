@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install_internal_web_service.ps
   -SharedUsername partners
 ```
 
-安装器会要求静默输入两次共享密码。密码至少 12 位，只以 Argon2id Hash 写入受 ACL 保护的数据库，明文不会进入环境文件或日志。服务配置位于 `C:\ProgramData\AITraderAssistant\config\internal-web.env`。
+安装器会要求静默输入两次共享密码。密码至少 16 位，只以 Argon2id Hash 写入受 ACL 保护的数据库，明文不会进入环境文件或日志。服务配置位于 `C:\ProgramData\AITraderAssistant\config\internal-web.env`。
 
 需要改密码时，停止服务后以管理员身份执行：
 

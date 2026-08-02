@@ -18,6 +18,17 @@ class TushareFundamentalProfile(BaseModel):
     stock_code: str
     stock_name: str | None = None
     as_of_time: datetime
+    decision_as_of_time: datetime
+    profile_generated_at: datetime
+    report_period: str | None = None
+    latest_announcement_date: str | None = None
+    fundamental_data_as_of_time: datetime | None = None
+    cache_fetched_at: datetime | None = None
+    cache_age_hours: float | None = None
+    freshness_status: str = "UNVERIFIED"
+    point_in_time_safe: bool = False
+    degradation_reason: str | None = None
+    future_record_count: int = 0
     company_profile: dict[str, Any] = Field(default_factory=dict)
     level_one_sector: str | None = None
     industry_taxonomy: str = "UNKNOWN"
@@ -63,9 +74,11 @@ class TushareFundamentalProfileBuilder:
         concept_mapping_audit: dict[str, Any] | None = None,
         as_of_time: datetime | None = None,
         financial_selection: dict[str, Any] | None = None,
+        freshness: dict[str, Any] | None = None,
     ) -> TushareFundamentalProfile:
         now = as_of_time or datetime.now(timezone.utc)
         financial_selection = financial_selection or {}
+        freshness = freshness or {}
         basic, company = stock_basic or {}, company or {}
         financial = normalize_financial_snapshot(
             income or {}, balance or {}, cashflow or {}, indicator or {}, daily_basic or {}
@@ -142,6 +155,17 @@ class TushareFundamentalProfileBuilder:
             stock_code=stock_code,
             stock_name=basic.get("name"),
             as_of_time=now,
+            decision_as_of_time=now,
+            profile_generated_at=datetime.now(timezone.utc),
+            report_period=financial_selection.get("latest_financial_period") or financial.get("end_date"),
+            latest_announcement_date=financial_selection.get("announcement_date") or financial.get("f_ann_date") or financial.get("ann_date"),
+            fundamental_data_as_of_time=available_at,
+            cache_fetched_at=freshness.get("cache_fetched_at"),
+            cache_age_hours=freshness.get("cache_age_hours"),
+            freshness_status=freshness.get("freshness_status", "UNVERIFIED"),
+            point_in_time_safe=bool(freshness.get("point_in_time_safe", False)),
+            degradation_reason=freshness.get("degradation_reason"),
+            future_record_count=int(freshness.get("future_record_count", 0)),
             company_profile=company,
             level_one_sector=industry,
             industry_taxonomy=taxonomy,

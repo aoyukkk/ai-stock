@@ -1,0 +1,4 @@
+# Development/security-only tooling. Do not install in the packaged runtime.
+bandit==1.9.4
+pip-audit==2.10.1
+ruff==0.16.0

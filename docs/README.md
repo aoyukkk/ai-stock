@@ -1,5 +1,9 @@
 # 文档索引
 
+## 当前规划
+
+- `PROJECT_ROADMAP.md`：当前所有子项目的实际状态、正式/Shadow/实验边界、优先级和晋级标准；项目规划的唯一状态基准。
+
 ## 日常使用
 
 - `DAILY_OPERATION_RUNBOOK.md`：每日午盘、正式盘后、BAT 双击入口和恢复流程，唯一运行基准。
@@ -18,7 +22,7 @@
 
 ## 当前策略与验收记录
 
-`ENTRY_TIMING_SHADOW_*`、`IFIND_*`、`POST_CLOSE_LIVE_ACCEPTANCE_V2.md`、`SELECTION_PERFORMANCE_ANALYTICS_V1.md` 等文件属于可追溯的技术与验收记录，不是日常启动入口。
+`ENTRY_TIMING_SHADOW_*`、`IFIND_*`、`POST_CLOSE_LIVE_ACCEPTANCE_V2.md`、`SELECTION_PERFORMANCE_ANALYTICS_V1.md` 等文件属于可追溯的技术与验收记录，不是日常启动入口，也不能替代当前总规划。
 
 ## 历史归档
 

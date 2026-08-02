@@ -194,3 +194,12 @@ def test_shared_password_mode_refuses_conflicting_existing_dns(tmp_path, monkeyp
     with pytest.raises(CloudflareApiError, match="PREEXISTING_DNS_CONFLICT"):
         apply(client, deployment)
     assert not any(method in {"POST", "PUT", "DELETE"} for method, _ in client.calls)
+
+
+def test_internal_service_installer_configures_separate_auth_and_business_databases():
+    installer = (Path(__file__).resolve().parents[1] / "scripts" / "install_internal_web_service.ps1").read_text(encoding="utf-8")
+    assert "INTERNAL_WEB_AUTH_DATABASE_PATH=$AuthDatabasePath" in installer
+    assert "INTERNAL_WEB_BUSINESS_DATABASE_PATH=$BusinessDatabasePath" in installer
+    assert "AI_TRADER_DB_PATH=$AuthDatabasePath" in installer
+    assert 'BusinessPublishRoot = Join-Path $ProgramDataRoot "business"' in installer
+    assert '"${PublisherIdentity}:(OI)(CI)M"' in installer

@@ -20,6 +20,12 @@ from openpyxl.utils.cell import range_boundaries
 from openpyxl.worksheet.views import Selection
 
 from reporting.workbook_standard import DAILY_SHEETS, LEGACY_DAILY_SHEETS
+from reporting.source_row_style import (
+    NEUTRAL_ROW_FILL,
+    SELECTION_SOURCE_HEADERS,
+    disable_table_banding,
+    source_fill,
+)
 
 
 FORMULA_ERRORS = ("#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#N/A")
@@ -429,7 +435,16 @@ class WorkbookStyleService:
     def _style_table(worksheet, source, header_row, source_header_row, header_widths, header_formats) -> None:
         source_headers = {str(cell.value or ""): cell.column for cell in source[source_header_row]}
         source_max_col = max(1, source.max_column)
-        source_body_rows = [source_header_row + 1, min(source_header_row + 2, source.max_row)]
+        source_body_rows = [min(source_header_row + 1, source.max_row)]
+        selection_source_column = next(
+            (
+                cell.column
+                for cell in worksheet[header_row]
+                if str(cell.value or "").strip() in SELECTION_SOURCE_HEADERS
+            ),
+            None,
+        )
+        disable_table_banding(worksheet)
         for column in range(1, worksheet.max_column + 1):
             header = worksheet.cell(header_row, column)
             prototype = source.cell(source_header_row, source_headers.get(str(header.value or ""), min(column, source_max_col)))
@@ -444,6 +459,11 @@ class WorkbookStyleService:
                 body = source.cell(body_source_row, body_source_col)
                 current_format = cell.number_format
                 WorkbookStyleService._copy_cell_style(body, cell, include_number_format=False)
+                cell.fill = copy(
+                    source_fill(worksheet.cell(row, selection_source_column).value)
+                    if selection_source_column is not None
+                    else NEUTRAL_ROW_FILL
+                )
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                 cell.number_format = current_format if current_format and current_format != "General" else header_formats.get(str(header.value or ""), body.number_format)
                 if "股票代码" in str(header.value or "") and cell.value not in (None, ""):

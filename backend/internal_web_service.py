@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import signal
 import sys
+import os
 from pathlib import Path
 
 import servicemanager
@@ -23,6 +24,8 @@ class AITraderInternalWebService(win32serviceutil.ServiceFramework):
         super().__init__(args)
         self.stop_event = win32event.CreateEvent(None, 0, 0, None)
         self.process: subprocess.Popen | None = None
+        self.stdout_handle = None
+        self.stderr_handle = None
         self.job = _create_kill_on_close_job()
 
     def SvcStop(self):
@@ -46,10 +49,16 @@ class AITraderInternalWebService(win32serviceutil.ServiceFramework):
             service_dir.parent / "ai-trader-internal-web.exe",
         )
         executable = next((item for item in candidates if item.is_file()), candidates[0])
+        log_root = Path(os.environ.get("AI_TRADER_LOG_DIR", Path(os.environ.get("PROGRAMDATA", r"C:\\ProgramData")) / "AITraderAssistant" / "logs"))
+        log_root.mkdir(parents=True, exist_ok=True)
+        self.stdout_handle = (log_root / "internal-web-child.stdout.log").open("ab", buffering=0)
+        self.stderr_handle = (log_root / "internal-web-child.stderr.log").open("ab", buffering=0)
         self.process = subprocess.Popen(
             [str(executable)],
             cwd=executable.parent,
             creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
+            stdout=self.stdout_handle,
+            stderr=self.stderr_handle,
         )
         _assign_to_job(self.job, self.process.pid)
         while self.process.poll() is None:
@@ -58,6 +67,11 @@ class AITraderInternalWebService(win32serviceutil.ServiceFramework):
         if self.process.poll() not in {None, 0}:
             servicemanager.LogErrorMsg(f"AI Trader Internal Web exited with code {self.process.returncode}")
             raise RuntimeError("INTERNAL_WEB_CHILD_EXITED")
+
+    def _close_logs(self):
+        for handle in (self.stdout_handle, self.stderr_handle):
+            if handle:
+                handle.close()
 
 
 def _create_kill_on_close_job():

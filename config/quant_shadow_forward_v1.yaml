@@ -1,0 +1,104 @@
+quant_shadow_forward:
+  phase: "Quant Bugfix Candidate S2.1 + Missingness Policy + Forward Blind Evaluation"
+  retrospective_trade_date: "2026-07-22"
+  retrospective_sample_type: "RETROSPECTIVE_DIAGNOSTIC"
+  forward_effective_trade_date: "2026-07-27"
+  production_baseline: "TUSHARE_BASELINE_V1"
+  production_recommendation: "KEEP_LEGACY_AND_SHADOW"
+
+  versions:
+    S0_LEGACY:
+      tier: "FORMAL_HISTORICAL_BASELINE"
+      factor_version: "v0.3-phase4"
+      frozen_for_forward: true
+    S1_AMOUNT_UNIT_FIX:
+      tier: "SINGLE_BUGFIX_RESEARCH"
+      factor_version: "shadow_quant_v1::S1_AMOUNT_UNIT_FIX"
+      frozen_for_forward: false
+    S2_REAL_VOLUME_RATIO:
+      tier: "BUGFIX_CANDIDATE"
+      factor_version: "shadow_quant_v1::S2_REAL_VOLUME_RATIO"
+      frozen_for_forward: true
+    S2_1_MISSINGNESS_POLICY:
+      tier: "DATA_QUALITY_BUGFIX_CANDIDATE"
+      factor_version: "shadow_quant_v2_1::S2_1_MISSINGNESS_POLICY"
+      frozen_for_forward: true
+    S3_GLOBAL_EMOTION_REAL:
+      tier: "GLOBAL_SHIFT_DIAGNOSTIC"
+      factor_version: "shadow_quant_v1::S3_GLOBAL_EMOTION_REAL"
+      frozen_for_forward: false
+    S3_DIFFERENTIATED_EMOTION:
+      tier: "ALGORITHM_RESEARCH"
+      factor_version: "shadow_quant_v1::S3_DIFFERENTIATED_EMOTION"
+      frozen_for_forward: true
+    S4_PERCENTILE_NORMALIZATION:
+      tier: "HIGH_DRIFT_RESEARCH"
+      factor_version: "shadow_quant_v1::S4_PERCENTILE_NORMALIZATION"
+      frozen_for_forward: true
+
+  missingness_policy:
+    factor_group: "capital"
+    subfactor_weights:
+      amount_score: 0.25
+      volume_ratio_score: 0.25
+      turnover_score: 0.25
+      main_inflow_score: 0.25
+    normal_source_missing:
+      classification: "NORMAL_SOURCE_MISSING"
+      action: "REWEIGHT_VALID_SUBFACTORS"
+      confidence: "REWEIGHTED_NORMAL_MISSING"
+    non_random_missing:
+      classification: "NON_RANDOM_MISSING"
+      action: "QUARANTINE_PRESERVE_BASE_SCORE"
+      confidence: "NON_RANDOM_MISSING_BLOCKED"
+    data_insufficient:
+      classification: "DATA_INSUFFICIENT"
+      action: "QUARANTINE_PRESERVE_BASE_SCORE"
+      confidence: "DATA_INSUFFICIENT"
+    pipeline_error:
+      classification: "DATA_PIPELINE_ERROR"
+      action: "FAIL_CLOSED"
+      confidence: "INVALID"
+    future_return_penalty: null
+
+  amount_lineage:
+    raw_unit: "THOUSAND_CNY"
+    normalized_unit: "CNY"
+    multiplier: 1000
+    unit_conversion_version: "TUSHARE_AMOUNT_THOUSAND_CNY_TO_CNY_V1"
+
+  execution:
+    policy: "NEXT_OPEN"
+    horizons: ["D1", "D3", "D5"]
+    top_sets: [20, 50, 100]
+    benchmarks:
+      - "FULL_A_EQUAL_WEIGHT"
+      - "INDUSTRY_EQUAL_WEIGHT"
+    metrics:
+      - "AVERAGE_RETURN"
+      - "WIN_RATE"
+      - "PROFIT_FACTOR"
+      - "RANK_IC"
+      - "TOP_BOTTOM_SPREAD"
+      - "MAX_DRAWDOWN"
+      - "INCREMENTAL_REPLACEMENT_RETURN"
+      - "MFE"
+      - "MAE"
+
+  promotion_gate:
+    minimum_trading_days: 20
+    minimum_complete_d3_tradable_samples: 100
+    maximum_timing_contract_failures: 0
+    require_explainable_data_coverage: true
+    require_stable_relative_performance_vs_s0: true
+    conclusion_before_gate: "KEEP_LEGACY_AND_SHADOW"
+
+  safety:
+    external_api_calls: 0
+    llm_calls: 0
+    orders: 0
+    scheduler: false
+    production_quant_changes: 0
+    production_prompt_changes: 0
+    production_candidate_changes: 0
+    production_config_changes: 0

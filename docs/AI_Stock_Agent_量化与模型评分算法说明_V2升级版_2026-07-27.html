@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Stock Agent 量化与模型评分算法说明（V2 升级版）</title>
+  <style>
+    :root {
+      --ink: #1f2937;
+      --muted: #64748b;
+      --line: #d9e2ec;
+      --navy: #17365d;
+      --blue: #2563eb;
+      --blue-soft: #eaf2ff;
+      --green: #138a57;
+      --green-soft: #eaf8f1;
+      --amber: #b76800;
+      --amber-soft: #fff6df;
+      --red: #c0392b;
+      --red-soft: #fff0ee;
+      --panel: #f8fafc;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #fff;
+      font: 16px/1.72 "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+    }
+    main { width: min(980px, calc(100% - 40px)); margin: 0 auto; padding: 40px 0 72px; }
+    h1, h2, h3 { color: #111827; line-height: 1.3; }
+    h1 { margin: 0 0 16px; font-size: 34px; color: var(--navy); }
+    h2 {
+      margin-top: 42px;
+      padding-bottom: 9px;
+      border-bottom: 2px solid var(--blue);
+      font-size: 25px;
+    }
+    h3 { margin: 26px 0 10px; font-size: 19px; }
+    p { margin: 10px 0 16px; }
+    code {
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #174ea6;
+      background: #eef4ff;
+      font: 0.92em Consolas, monospace;
+    }
+    .lead, .note, .warning, .success {
+      margin: 18px 0;
+      padding: 16px 18px;
+      border-left: 5px solid var(--blue);
+      border-radius: 4px;
+      background: var(--blue-soft);
+    }
+    .warning { border-color: var(--amber); background: var(--amber-soft); }
+    .success { border-color: var(--green); background: var(--green-soft); }
+    .note { border-color: #94a3b8; background: var(--panel); }
+    .flow {
+      margin: 18px 0;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      white-space: pre-wrap;
+      font: 15px/1.75 Consolas, "Microsoft YaHei", monospace;
+    }
+    table {
+      width: 100%;
+      margin: 16px 0 24px;
+      border-collapse: collapse;
+      font-size: 15px;
+    }
+    th, td { padding: 10px 12px; border: 1px solid var(--line); vertical-align: top; }
+    th { color: #fff; background: var(--navy); text-align: left; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    ul, ol { padding-left: 24px; }
+    li { margin: 5px 0; }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 20px 0;
+    }
+    .kpi {
+      padding: 16px 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      text-align: center;
+      background: #fff;
+    }
+    .kpi b { display: block; color: var(--navy); font-size: 25px; }
+    .kpi span { color: var(--muted); font-size: 13px; }
+    .tag {
+      display: inline-block;
+      margin: 2px 4px 2px 0;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .shadow { color: #1759a6; background: var(--blue-soft); }
+    .safe { color: var(--green); background: var(--green-soft); }
+    .blocked { color: var(--red); background: var(--red-soft); }
+    .muted { color: var(--muted); }
+    footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 720px) {
+      main { width: min(100% - 24px, 980px); padding-top: 24px; }
+      h1 { font-size: 28px; }
+      .kpis { grid-template-columns: repeat(2, 1fr); }
+      table { display: block; overflow-x: auto; }
+    }
+    @media print {
+      main { width: 100%; padding: 0; }
+      .kpi, table, .flow { break-inside: avoid; }
+      h2, h3 { break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>AI Stock Agent 量化与模型评分算法说明（V2 升级版）</h1>
+  <div class="lead">
+    <strong>版本日期：</strong>2026-07-27<br>
+    <strong>对应结果：</strong>2026-07-24 收盘数据生成的 V2 Corrected Shadow 与第二轮基本面补全结果<br>
+    <strong>适用场景：</strong>A 股多头短线研究，主要观察 1—10 个交易日<br>
+    <strong>用途：</strong>帮助管理者和交易员理解本轮算法、数据质量、模型复核及 Web 发布机制的变化
+  </div>
+
+  <div class="warning">
+    <strong>生产边界没有改变：</strong>正式 Legacy 基线仍为
+    <code>TUSHARE_BASELINE_V1</code>，正式权重仍是
+    <code>25 / 25 / 20 / 15 / 15</code>。本次 V2 Corrected 仍为 Shadow，
+    不自动晋级生产，不创建真实订单或虚拟订单，Scheduler 保持关闭。
+  </div>
+
+  <h2>1. 本轮升级解决了什么问题</h2>
+  <table>
+    <thead><tr><th>旧问题</th><th>本轮处理</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>个股情绪分大量固定为 50，难以形成横截面差异</td>
+        <td>引入市场状态、行业/概念强度和个股相对强弱，生成差异化情绪分</td>
+        <td>情绪分可以参与排序解释，不再是统一中性占位值</td>
+      </tr>
+      <tr>
+        <td>资金流缺失时固定填 50，可能掩盖数据问题</td>
+        <td>按 S2.1 缺失策略区分正常缺失、非随机缺失和管线错误；正常缺失只在有效子项间重分配</td>
+        <td>同时输出覆盖率与置信度，管线错误不能伪装成中性分</td>
+      </tr>
+      <tr>
+        <td><code>stk_factor_pro</code> 覆盖不足会阻断全 A</td>
+        <td>改为可选交叉验证；缺失时用 daily、daily_basic、adj_factor 和本地历史重算技术指标</td>
+        <td>核心数据完整时可继续评分，但降低技术置信度并记录来源</td>
+      </tr>
+      <tr>
+        <td>基本面存在大量“信息不足”</td>
+        <td>允许第二轮 LLM 补全，并对仍需确认的字段进行人工联网核验和来源留痕</td>
+        <td>本轮 26 只候选的基本面状态均已形成可读结果</td>
+      </tr>
+      <tr>
+        <td>Excel 已更新，但 Web 仍读取旧数据库</td>
+        <td>增加统一发布步骤：结果入库、数量对账、SQLite 完整性检查、原子替换 Web 业务快照</td>
+        <td>以后流程成功结束后，Web 默认读取同一轮结果；发布失败会明确报错</td>
+      </tr>
+      <tr>
+        <td>不在 Quant 可评分 Universe 的人工股（例如 ST）无法进入模型复核</td>
+        <td>新增人工强制复核通道：全部人工关注股直接进入重点候选、Flash 与 Pro；不补造量化分</td>
+        <td>ST 也能获得基本面和风险深度复核，但继续保持 Hard Gate、零仓位和禁止下单</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>2. 升级后的完整决策流程</h2>
+  <div class="flow">Tushare 全 A 核心日线与基础数据
+  ↓
+Point-in-Time、交易日、重复值、单位与行业主映射门禁
+  ↓
+V2 Corrected Quant：技术 / 资金 / 情绪 / 动量 / 风险
+  ↓
+全市场 Top20 / Top50 / Top100 与数据置信度
+  ↓
+Hard Gate（ST、停牌、不可交易、未来数据、重大黑天鹅）
+  ↓
+Flash 复核 → Pro 复核 → 人工关注股票合并
+  ↓
+市场状态与主题集中度限制
+  ↓
+WATCH_POOL 与 ACTIVE_SHADOW
+  ↓
+规则引擎生成参考价、止损、止盈与仓位建议
+  ↓
+第二轮 LLM 基本面补全 + 人工联网核验
+  ↓
+生成智能交易助手 Excel
+  ↓
+同一候选集写入 Web 兼容数据链并自动发布
+  ↓
+交易员人工决策（系统不自动下单）</div>
+
+  <h2>3. Quant 总分与五类因子</h2>
+  <div class="flow">Quant Score
+= 25% × Technical 技术结构
++ 25% × Capital 资金与成交
++ 20% × Emotion 市场、行业与个股情绪
++ 15% × Momentum 动量
++ 15% × Risk 风险健康</div>
+  <p>
+    100 分是理论上限，不是日常应达到的目标。各因子经过横截面标准化、风险约束和数据置信度处理，
+    要同时在五类维度都极强才可能接近高分。60—70 分通常已代表全市场中的相对优选，
+    不应以“是否接近 100”判断策略好坏。
+  </p>
+
+  <h3>3.1 Technical（25%）</h3>
+  <ul>
+    <li>均线位置、趋势斜率、MACD、RSI、ATR、支撑压力与近期结构。</li>
+    <li>专业因子缺失时使用本地历史重算，并标记 <code>LOCAL_DERIVED</code> 与技术置信度。</li>
+    <li>技术强不等于当前可买，高位与部署风险由后续门禁处理。</li>
+  </ul>
+
+  <h3>3.2 Capital（25%）</h3>
+  <ul>
+    <li>主力资金、成交额、换手率、真实量比、量价配合和流动性。</li>
+    <li>正常缺失不再固定填 50，只对仍有效的资金子项重新归一化。</li>
+    <li><code>NON_RANDOM_MISSING</code>、<code>DATA_INSUFFICIENT</code> 和
+      <code>DATA_PIPELINE_ERROR</code> 分开记录。</li>
+  </ul>
+
+  <h3>3.3 Emotion（20%）</h3>
+  <p>本次最重要的算法变化之一，是把“所有股票共享一个市场情绪值”改为三层结构：</p>
+  <div class="flow">Emotion
+= 全局市场状态
++ 所属行业/概念板块强度
++ 个股相对板块强弱
+− 情绪数据不完整的置信度折减</div>
+  <ul>
+    <li>全局层：上涨比例、涨跌停结构、全市场中位收益、成交与尾部风险。</li>
+    <li>板块层：行业/概念涨幅、成分上涨比例、活跃度、持续性。</li>
+    <li>个股层：个股相对行业和概念的强弱、是否与板块形成共振。</li>
+    <li>因此同一天不同股票的情绪分应有差异，但仍受共同市场状态影响。</li>
+  </ul>
+
+  <h3>3.4 Momentum（15%）与 Risk（15%）</h3>
+  <ul>
+    <li>动量关注 5 日、20 日收益及强度变化，不把末端急涨自动等同于好买点。</li>
+    <li>风险健康分越高代表越安全；波动、回撤、高位拥挤、筹码、流动性和事件风险方向均按此解释。</li>
+    <li>缺失数据不得提高风险健康分；硬风险直接进入 Hard Gate。</li>
+  </ul>
+
+  <h2>4. 数据门禁和降级原则</h2>
+  <table>
+    <thead><tr><th>类别</th><th>规则</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>必须数据</td>
+        <td>daily、daily_basic、stk_limit、adj_factor、正式行业映射、合法历史窗口</td>
+      </tr>
+      <tr>
+        <td>允许降级</td>
+        <td>moneyflow 按 S2.1；stk_factor_pro 本地重算；概念与 THS 资金缺失降低置信度</td>
+      </tr>
+      <tr>
+        <td>必须阻断</td>
+        <td>核心行情不完整、交易日不一致、未来数据、行业主映射大面积缺失、重复/单位错误、管线错误</td>
+      </tr>
+      <tr>
+        <td>数据来源</td>
+        <td><code>TUSHARE</code>、<code>IFIND</code>、<code>LOCAL_DERIVED</code> 分别留痕，不混写</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5. Flash、Pro 与人工候选如何组合</h2>
+  <ul>
+    <li>量化分负责横截面排序；LLM 不改写 Quant 分数。</li>
+    <li>Flash 和 Pro 负责业务逻辑、催化、风险、证据置信度与持有期适配复核。</li>
+    <li>人工关注股票与模型前 20 合并，不因“重点候选数量”被截断；人工股直接进入重点候选。</li>
+    <li>全部人工关注股均进入 Flash 与 Pro 深度复核，包括不在 Quant 可评分 Universe 的 ST 股票。</li>
+    <li>ST 等 review-only 股票不补造 Quant 排名或分数，模型复核结果只用于风险解释；下单资格固定关闭。</li>
+    <li>人工关注与量化同时入选的股票，仍按“人工关注”来源展示。</li>
+    <li>人工候选没有模型分时保持未评分，不伪造 LLM 评分。</li>
+  </ul>
+
+  <h2>6. 市场状态与部署上限</h2>
+  <p>
+    2026-07-24 的市场状态为 <code>RISK_OFF</code>。高量化分不能绕过市场部署上限。
+    系统将研究候选拆分为：
+  </p>
+  <table>
+    <thead><tr><th>层级</th><th>作用</th><th>本轮规则</th></tr></thead>
+    <tbody>
+      <tr><td>WATCH_POOL</td><td>保留研究和次日观察</td><td>最多 10 只</td></tr>
+      <tr><td>ACTIVE_SHADOW</td><td>用于前向影子跟踪，不代表真实下单</td><td>RISK_OFF 时最多 2 只</td></tr>
+      <tr><td>BLOCKED / WATCH_ONLY</td><td>受市场、风险、主题集中或可交易性约束</td><td>不得因分数高而绕过</td></tr>
+    </tbody>
+  </table>
+
+  <h2>7. 第二轮基本面补全</h2>
+  <ol>
+    <li>读取第一次运行中已经形成的 Quant、Flash、Pro 和价格计划，不改写模型评分。</li>
+    <li>仅针对基本面信息不足或表达不完整的字段调用获准的 LLM 补全流程。</li>
+    <li>对仍需确认的信息进行人工联网核验，保存来源网址和证据记录。</li>
+    <li>最终在 Excel 与 Web 中展示主营业务、产业链、核心产品、概念、投资逻辑、财务状态和风险。</li>
+  </ol>
+  <div class="note">
+    “补全”只增强可读性和证据质量，不允许 LLM 决定最终量化排名、挂单价格、仓位或交易数量。
+  </div>
+
+  <h2>8. Excel 与 Web 的统一机制</h2>
+  <div class="flow">流程成功
+  ↓
+生成并校验 Excel（内容哈希 / 样式哈希 / 文件哈希）
+  ↓
+将同一轮全量 Quant 与候选、基本面、价格计划写入数据库
+  ↓
+候选数 / Pro 数 / 价格计划数 / 仓位数强制对账
+  ↓
+SQLite integrity_check = ok
+  ↓
+原子替换 Web 只读业务数据库快照
+  ↓
+Web 读取最新兼容运行</div>
+  <p>
+    午盘双击流程、盘后正式流程、日常命令行流程以及 V2 修正版工作簿流程，
+    现在统一调用同一个发布服务。发布失败会在运行报告中显示
+    <code>FAILED</code> 并返回失败状态，不再静默保留旧网页数据。
+  </p>
+
+  <h2>9. 本轮已核验结果</h2>
+  <div class="kpis">
+    <div class="kpi"><b>5,303</b><span>全量 Quant 记录</span></div>
+    <div class="kpi"><b>26</b><span>最终候选</span></div>
+    <div class="kpi"><b>26 / 26</b><span>基本面可读结果</span></div>
+    <div class="kpi"><b>10</b><span>人工联网核验</span></div>
+  </div>
+  <table>
+    <thead><tr><th>核验项</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td>模型候选 / 人工候选</td><td>20 / 6</td></tr>
+      <tr><td>非零影子仓位</td><td>2</td></tr>
+      <tr><td>基本面“信息不足”</td><td>0</td></tr>
+      <tr><td>数据库链路数量一致性</td><td><span class="tag safe">PASS</span></td></tr>
+      <tr><td>Web 业务快照完整性</td><td><span class="tag safe">integrity_check = ok</span></td></tr>
+      <tr><td>真实订单 / 虚拟订单</td><td>0 / 0</td></tr>
+      <tr><td>生产晋级</td><td><span class="tag shadow">否，仍为 Shadow</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>10. 阅读结果时应注意</h2>
+  <ul>
+    <li>分数是相对排序工具，不是上涨概率的直接百分比。</li>
+    <li>同一市场状态会影响所有股票，但行业和个股层使 Emotion 不再完全相同。</li>
+    <li>量化分高只代表相对更优，最终是否部署还要经过风险、市场状态和主题集中限制。</li>
+    <li>Shadow 候选用于验证，不代表买入建议；价格与仓位是规则化参考值。</li>
+    <li>模型效果必须依靠 D1、D3、D5、MFE、MAE、超额收益、Rank IC 等前向结果判断。</li>
+  </ul>
+
+  <div class="success">
+    <strong>本轮升级结论：</strong>
+    数据缺失处理、情绪差异化、基本面补全和 Web 发布链路已经形成统一闭环；
+    正式生产算法与交易安全边界保持不变，V2 继续以 Shadow 方式前向验证。
+  </div>
+
+  <footer>
+    文档版本：V2 Upgrade 2026-07-27<br>
+    说明口径：以 2026-07-24 收盘数据对应的已发布运行与当前代码实现为准。<br>
+    风险提示：本系统输出仅供研究和人工决策参考，不构成投资建议。
+  </footer>
+</main>
+</body>
+</html>

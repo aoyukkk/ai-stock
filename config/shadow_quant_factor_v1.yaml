@@ -1,0 +1,94 @@
+shadow_quant_factor:
+  phase: "Quant Factor Remediation Preparation + Immutable Shadow Counterfactual V1"
+  base_run_id: "quant-dd980474bdd269a46a47ddf4"
+  base_factor_version: "v0.3-phase4"
+  input_hash: "dd980474bdd269a46a47ddf441f1ce52dae355c0335caf14e4838ea0bb069ff2"
+  trade_date: "2026-07-22"
+  weights:
+    technical: 0.25
+    capital: 0.25
+    emotion: 0.20
+    momentum: 0.15
+    risk: 0.15
+  universe:
+    min_kline_bars: 20
+    min_listing_days: 60
+    configured_min_daily_amount_cny: 50000000
+    production_amount_gate_wired: false
+  amount_units:
+    daily_amount:
+      raw_unit: "THOUSAND_CNY"
+      multiplier_to_cny: 1000
+    daily_volume:
+      raw_unit: "LOT"
+      multiplier_to_shares: 100
+    moneyflow_amount:
+      raw_unit: "TEN_THOUSAND_CNY"
+      multiplier_to_cny: 10000
+  global_emotion:
+    components:
+      breadth_score: 0.35
+      limit_structure_score: 0.35
+      break_board_health: 0.20
+      market_amount_change_score: 0.10
+    limit_up_min: 10
+    limit_up_max: 80
+    limit_down_bad: 30
+    limit_down_good: 0
+    amount_change_min_percent: -20
+    amount_change_max_percent: 20
+  differentiated_emotion:
+    components:
+      sector_return_score: 0.20
+      sector_breadth_score: 0.15
+      sector_amount_expansion_score: 0.15
+      relative_sector_score: 0.20
+      within_sector_rank_score: 0.15
+      relative_full_a_score: 0.10
+      stock_limit_state_score: 0.05
+    missing_industry_fallback: 50
+    missing_component_fallback: 50
+  percentile_normalization:
+    factor_group_rules:
+      technical: "PERCENTILE"
+      capital: "PERCENTILE"
+      emotion: "PERCENTILE"
+      momentum: "PERCENTILE"
+      risk: "PERCENTILE"
+    subfactor_rules:
+      ma_trend_score: "CLIP_SCORE"
+      rsi_score: "BAND_SCORE"
+      atr_stability_score: "BAND_SCORE"
+      vwap_position_score: "CLIP_SCORE"
+      amount_score: "CLIP_SCORE"
+      volume_ratio_score: "CLIP_SCORE"
+      turnover_score: "CLIP_SCORE"
+      main_inflow_score: "CLIP_SCORE"
+      global_market_emotion: "GLOBAL_MARKET_VALUE"
+      sector_return_score: "PERCENTILE"
+      sector_breadth_score: "STOCK_LEVEL_VALUE"
+      sector_amount_expansion_score: "PERCENTILE"
+      relative_sector_score: "PERCENTILE"
+      within_sector_rank_score: "PERCENTILE"
+      relative_full_a_score: "PERCENTILE"
+      stock_limit_state_score: "BINARY_RULE"
+      return_5d_score: "CLIP_SCORE"
+      return_20d_score: "CLIP_SCORE"
+      volatility_risk_score: "BAND_SCORE"
+      drawdown_risk_score: "BAND_SCORE"
+      liquidity_risk_score: "CLIP_SCORE"
+  versions:
+    - "S0_LEGACY"
+    - "S1_AMOUNT_UNIT_FIX"
+    - "S2_REAL_VOLUME_RATIO"
+    - "S3_GLOBAL_EMOTION_REAL"
+    - "S3_DIFFERENTIATED_EMOTION"
+    - "S4_PERCENTILE_NORMALIZATION"
+  safety:
+    external_api_calls: 0
+    llm_calls: 0
+    orders: 0
+    scheduler: false
+    real_orders: 0
+    virtual_orders: 0
+    production_table_writes: 0

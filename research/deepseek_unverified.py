@@ -81,11 +81,22 @@ class DeepSeekUnverifiedResearchProvider:
     @staticmethod
     def _dry_run(context: dict[str, Any]) -> FundamentalInference:
         stock_code = str(context.get("stock_code") or "UNKNOWN")
+        decision_value = context.get("decision_as_of_time") or context.get("as_of_time")
+        try:
+            decision_as_of_time = (
+                decision_value
+                if isinstance(decision_value, datetime)
+                else datetime.fromisoformat(str(decision_value))
+            )
+            if decision_as_of_time.tzinfo is None:
+                raise ValueError("timezone required")
+        except (TypeError, ValueError):
+            decision_as_of_time = datetime.now(timezone.utc)
         financial = context.get("financial_status") or {"status": "INSUFFICIENT_DATA", "source_status": "DERIVED_RULE"}
         generic = {"summary": "缺少外部证据，等待人工或正式搜索Provider核验。", "confidence": 0.2}
         return FundamentalInference.model_validate({
             "stock_code": stock_code,
-            "as_of_time": datetime.now(timezone.utc),
+            "as_of_time": decision_as_of_time,
             "industry_chain": {"chain_position": "UNKNOWN", "direct_or_indirect": "UNKNOWN", "confidence": 0.2, "reason": "仅依据结构化主营资料的保守推断。"},
             "level_one_sector_explanation": generic,
             "main_business_summary": generic,

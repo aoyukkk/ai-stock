@@ -278,7 +278,7 @@ def _write_rows(sheet, start_row: int, rows: list[list[Any]]) -> None:
             cell = sheet.cell(row_number, column, value)
             cell.alignment = CENTER
             cell.border = Border(bottom=THIN)
-            cell.fill = PatternFill("solid", fgColor=PALE if row_number % 2 == 0 else WHITE)
+            cell.fill = PatternFill("solid", fgColor=WHITE)
             cell.font = Font(name="Microsoft YaHei", bold=column % 2 == 1, color=NAVY if column % 2 == 1 else BLACK)
         sheet.row_dimensions[row_number].height = 28
 
