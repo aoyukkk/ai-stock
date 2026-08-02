@@ -40,13 +40,13 @@ class UserUpdateRequest(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    temporary_password: str = Field(min_length=12, max_length=256)
+    temporary_password: str = Field(min_length=16, max_length=256)
 
 
 class PasswordChangeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     current_password: str = Field(min_length=1, max_length=256)
-    new_password: str = Field(min_length=12, max_length=256)
+    new_password: str = Field(min_length=16, max_length=256)
 
 
 @router.get("/auth/me")
@@ -61,6 +61,8 @@ def me(request: Request) -> dict:
         "role": user.role,
         "auth_mode": settings.auth_mode,
         "auth_source": "CLOUDFLARE_ACCESS" if request.state.cloudflare_verified else "LOCAL_PASSWORD",
+        "identity_scope": "SHARED_IDENTITY" if settings.shared_password_enabled else "VERIFIED_INDIVIDUAL",
+        "individual_accountability": not settings.shared_password_enabled,
         "local_password_enabled": settings.local_password_enabled,
         "password_change_required": bool(getattr(request.state, "password_change_required", False)),
     }, trace_id=request.state.trace_id)
@@ -71,6 +73,8 @@ def public_config(request: Request) -> dict:
     settings = _settings(request)
     return success_response(data={
         "auth_mode": settings.auth_mode,
+        "identity_scope": "SHARED_IDENTITY" if settings.shared_password_enabled else "VERIFIED_INDIVIDUAL",
+        "individual_accountability": not settings.shared_password_enabled,
         "local_password_enabled": settings.local_password_enabled,
         "force_password_change_on_first_login": settings.force_password_change_on_first_login,
     }, trace_id=request.state.trace_id)

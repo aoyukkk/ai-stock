@@ -13,6 +13,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterable, Mapping, Sequence
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -23,7 +24,12 @@ if str(ROOT) not in sys.path:
 load_dotenv(ROOT / ".env", override=False)
 
 from llm_gateway.service import get_llm_gateway_service
+from llm_gateway.checkpoint_contract import (
+    LLMCheckpointContract,
+    checkpoint_reuse_audit,
+)
 from quant.shadow.tushare_quant_v2 import linear, true_range_percent
+from quant.shadow.regime_deployment import resolve_deployment_regime
 from research.flash_v4 import (
     FLASH_RANKING_VERSION,
     FLASH_SCORE_VERSION,
@@ -75,6 +81,8 @@ DELIVERABLES = {
     "risk": OUTPUT_ROOT / "monday_v2_risk_lineage.csv",
     "theme": OUTPUT_ROOT / "monday_v2_theme_concentration.csv",
     "report": OUTPUT_ROOT / "monday_v2_final_report.md",
+    "checkpoint_audit_json": OUTPUT_ROOT / "checkpoint_reuse_audit.json",
+    "checkpoint_audit_csv": OUTPUT_ROOT / "checkpoint_reuse_audit.csv",
 }
 
 THEME_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -141,6 +149,8 @@ def configure_runtime(
         "risk": OUTPUT_ROOT / "monday_v2_risk_lineage.csv",
         "theme": OUTPUT_ROOT / "monday_v2_theme_concentration.csv",
         "report": OUTPUT_ROOT / "monday_v2_final_report.md",
+        "checkpoint_audit_json": OUTPUT_ROOT / "checkpoint_reuse_audit.json",
+        "checkpoint_audit_csv": OUTPUT_ROOT / "checkpoint_reuse_audit.csv",
     }
     if TRADE_DATE != "2026-07-24":
         FOCUS_NAMES = {}
@@ -668,6 +678,112 @@ def _save_checkpoint(payload: Mapping[str, Any]) -> None:
     _write_json(CHECKPOINT, payload)
 
 
+def _checkpoint_source_hashes() -> dict[str, str]:
+    report = read_json(BASE_REPORT, {})
+    member_summaries = sorted(MEMBER_ROOT.glob("*_summary.json"))
+    fundamental_candidates = sorted(
+        (ROOT / "outputs").glob(f"fundamental-refill-*/*{TRADE_DATE.replace('-', '')}*.json")
+    )
+    return {
+        "factor_version": str(
+            (report.get("v2_run") or {}).get("factor_version")
+            or (report.get("v2_run") or {}).get("version")
+            or "TUSHARE_QUANT_V2_CORRECTED_SHADOW"
+        ),
+        "data_manifest_hash": _sha256(BASE_REPORT),
+        "membership_manifest_hash": _canonical_hash(
+            {str(path): _sha256(path) for path in member_summaries}
+        ),
+        "fundamental_snapshot_hash": _canonical_hash(
+            {str(path): _sha256(path) for path in fundamental_candidates}
+            or {"status": "MISSING"}
+        ),
+        "news_snapshot_hash": _canonical_hash(
+            {
+                "status": "DATA_ONLY",
+                "trade_date": TRADE_DATE,
+                "confidence": 0,
+            }
+        ),
+        "overseas_snapshot_hash": _canonical_hash(
+            {
+                "status": "DISABLED_OR_MOCK",
+                "eligible_for_scoring": False,
+            }
+        ),
+        "market_regime_hash": _canonical_hash(
+            (report.get("v2_run") or {}).get("global_regime") or {"status": "MISSING"}
+        ),
+    }
+
+
+def _checkpoint_contract(
+    *,
+    stage: str,
+    stock: str,
+    input_hash: str,
+    prompt_version: str,
+    schema_version: str,
+    contract_version: str,
+) -> LLMCheckpointContract:
+    hashes = _checkpoint_source_hashes()
+    return LLMCheckpointContract(
+        trade_date=TRADE_DATE,
+        stock_code=stock,
+        stage=stage,
+        factor_version=hashes["factor_version"],
+        input_hash=input_hash,
+        prompt_version=prompt_version,
+        prompt_hash=_canonical_hash(
+            {
+                "prompt_version": prompt_version,
+                "stage": stage,
+                "code_hash": _sha256(
+                    ROOT
+                    / ("research/structured_validation.py" if stage == "FLASH" else "trader_demo/pro_single_v3.py")
+                ),
+            }
+        ),
+        schema_version=schema_version,
+        contract_version=contract_version,
+        data_manifest_hash=hashes["data_manifest_hash"],
+        membership_manifest_hash=hashes["membership_manifest_hash"],
+        fundamental_snapshot_hash=hashes["fundamental_snapshot_hash"],
+        news_snapshot_hash=hashes["news_snapshot_hash"],
+        overseas_snapshot_hash=hashes["overseas_snapshot_hash"],
+        market_regime_hash=hashes["market_regime_hash"],
+        risk_version="RISK_V2_FROZEN",
+        decision_as_of_time=datetime.combine(
+            date.fromisoformat(TRADE_DATE),
+            datetime.min.time().replace(hour=17),
+            ZoneInfo("Asia/Shanghai"),
+        ),
+    )
+
+
+def _reuse_or_archive(
+    checkpoint: dict[str, Any],
+    *,
+    stage: str,
+    stock: str,
+    saved: Mapping[str, Any] | None,
+    contract: LLMCheckpointContract,
+) -> tuple[bool, dict[str, Any]]:
+    audit = checkpoint_reuse_audit(saved, contract)
+    checkpoint.setdefault("reuse_audit", []).append(audit)
+    if saved and saved.get("execution_status") == "SUCCESS" and not audit["reuse_allowed"]:
+        checkpoint.setdefault("stale_for_current_context", []).append(
+            {
+                "archived_at": datetime.now(timezone.utc).isoformat(),
+                "stage": stage,
+                "stock_code": stock,
+                "reasons": audit["reasons"],
+                "checkpoint": dict(saved),
+            }
+        )
+    return bool(audit["reuse_allowed"]), audit
+
+
 def run_flash_once(
     top100: Sequence[Mapping[str, Any]],
     theme_by_stock: Mapping[str, Mapping[str, Any]],
@@ -679,13 +795,29 @@ def run_flash_once(
     business_new = 0
     for source in top100:
         item = stock_code(source.get("stock_code"))
-        saved = checkpoint["flash"].get(item)
-        if saved and saved.get("execution_status") == "SUCCESS":
-            results.append(dict(saved))
-            continue
         context = _flash_context(
             source, theme_by_stock[item], risk_summary.get(item) or {}
         )
+        context_hash = _canonical_hash(context)
+        contract = _checkpoint_contract(
+            stage="FLASH",
+            stock=item,
+            input_hash=context_hash,
+            prompt_version=SCREENING_PROMPT_VERSION,
+            schema_version=FLASH_SCORE_VERSION,
+            contract_version=FLASH_RANKING_VERSION,
+        )
+        saved = checkpoint["flash"].get(item)
+        reuse, _ = _reuse_or_archive(
+            checkpoint,
+            stage="FLASH",
+            stock=item,
+            saved=saved,
+            contract=contract,
+        )
+        if reuse:
+            results.append(dict(saved))
+            continue
         business_new += 1
         try:
             screening = provider.screening(
@@ -703,7 +835,9 @@ def run_flash_once(
                 "prompt_version": SCREENING_PROMPT_VERSION,
                 "flash_score_version": FLASH_SCORE_VERSION,
                 "ranking_version": FLASH_RANKING_VERSION,
-                "context_hash": _canonical_hash(context),
+                "context_hash": context_hash,
+                "checkpoint_contract": contract.model_dump(mode="json"),
+                "checkpoint_contract_hash": contract.checkpoint_hash,
             }
         except Exception as exc:
             result = {
@@ -719,7 +853,9 @@ def run_flash_once(
                 ),
                 "error": str(exc)[:400],
                 "prompt_version": SCREENING_PROMPT_VERSION,
-                "context_hash": _canonical_hash(context),
+                "context_hash": context_hash,
+                "checkpoint_contract": contract.model_dump(mode="json"),
+                "checkpoint_contract_hash": contract.checkpoint_hash,
             }
         checkpoint["flash"][item] = result
         _save_checkpoint(checkpoint)
@@ -758,6 +894,9 @@ def run_flash_once(
         "quality": quality,
         "top20_codes": [row["stock_code"] for row in ordered[:20]],
         "audit": audits,
+        "checkpoint_reuse_audit": [
+            row for row in checkpoint.get("reuse_audit", []) if row.get("stage") == "FLASH"
+        ],
     }
     return ordered[:20], stats
 
@@ -815,12 +954,28 @@ def run_pro_once(
     output_tokens = 0
     for flash in flash_top20:
         item = stock_code(flash.get("stock_code"))
-        saved = checkpoint["pro"].get(item)
-        if saved and saved.get("execution_status") == "SUCCESS":
-            results.append(dict(saved))
-            continue
         source = top100_by_code[item]
         compact = _pro_compact(source, flash, theme_by_stock[item])
+        input_hash = _canonical_hash(compact)
+        contract = _checkpoint_contract(
+            stage="PRO",
+            stock=item,
+            input_hash=input_hash,
+            prompt_version=SINGLE_PROMPT_VERSION,
+            schema_version=SINGLE_CONTRACT_VERSION,
+            contract_version=RANKING_VERSION,
+        )
+        saved = checkpoint["pro"].get(item)
+        reuse, _ = _reuse_or_archive(
+            checkpoint,
+            stage="PRO",
+            stock=item,
+            saved=saved,
+            contract=contract,
+        )
+        if reuse:
+            results.append(dict(saved))
+            continue
         new_business += 1
         responses = []
         response = gateway.chat(
@@ -873,7 +1028,9 @@ def run_pro_once(
                 "diagnostics": checked.diagnostics,
                 "prompt_version": SINGLE_PROMPT_VERSION,
                 "contract_version": SINGLE_CONTRACT_VERSION,
-                "input_hash": _canonical_hash(compact),
+                "input_hash": input_hash,
+                "checkpoint_contract": contract.model_dump(mode="json"),
+                "checkpoint_contract_hash": contract.checkpoint_hash,
             }
         else:
             result = {
@@ -889,7 +1046,9 @@ def run_pro_once(
                 "prompt_version": SINGLE_PROMPT_VERSION,
                 "contract_version": SINGLE_CONTRACT_VERSION,
                 "ranking_version": RANKING_VERSION,
-                "input_hash": _canonical_hash(compact),
+                "input_hash": input_hash,
+                "checkpoint_contract": contract.model_dump(mode="json"),
+                "checkpoint_contract_hash": contract.checkpoint_hash,
                 "diagnostics": checked.diagnostics,
             }
         checkpoint["pro"][item] = result
@@ -922,6 +1081,9 @@ def run_pro_once(
         "output_tokens": output_tokens,
         "prompt_version": SINGLE_PROMPT_VERSION,
         "contract_version": SINGLE_CONTRACT_VERSION,
+        "checkpoint_reuse_audit": [
+            row for row in checkpoint.get("reuse_audit", []) if row.get("stage") == "PRO"
+        ],
     }
 
 
@@ -929,7 +1091,12 @@ def apply_regime_cap(
     pro_rows: Sequence[Mapping[str, Any]],
     top100_by_code: Mapping[str, Mapping[str, Any]],
     theme_by_stock: Mapping[str, dict[str, Any]],
+    market_regime: Mapping[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    regime_contract = resolve_deployment_regime(market_regime)
+    calculated_regime = str(regime_contract["calculated_regime"] or "")
+    fallback_used = bool(regime_contract["fallback_used"])
+    deployment_regime = str(regime_contract["deployment_regime"])
     watch: list[dict[str, Any]] = []
     active: list[dict[str, Any]] = []
     active_industries: set[str] = set()
@@ -957,7 +1124,11 @@ def apply_regime_cap(
             "pro_summary": pro.get("final_summary"),
             "pro_key_strengths": "|".join(pro.get("key_strengths") or []),
             "pro_key_risks": "|".join(pro.get("key_risks") or []),
-            "regime": "RISK_OFF",
+            "regime": deployment_regime,
+            "calculated_regime": calculated_regime or None,
+            "regime_fallback_used": fallback_used,
+            "regime_input_hash": regime_contract["input_hash"],
+            "regime_contract_version": regime_contract["contract_version"],
             "concentration_reason": "",
             "disclaimer": DISCLAIMER,
         }
@@ -971,14 +1142,14 @@ def apply_regime_cap(
         if not eligible:
             reasons.append("PRO_NOT_ACTIVE_ELIGIBLE")
         if len(active) >= 2:
-            reasons.append("RISK_OFF_ACTIVE_MAX_2")
+            reasons.append(f"{deployment_regime}_ACTIVE_MAX_2")
         if industry in active_industries:
-            reasons.append("RISK_OFF_SAME_INDUSTRY_MAX_1")
+            reasons.append(f"{deployment_regime}_SAME_INDUSTRY_MAX_1")
         if binding in active_themes:
-            reasons.append("RISK_OFF_SAME_THEME_MAX_1")
+            reasons.append(f"{deployment_regime}_SAME_THEME_MAX_1")
         if not reasons:
             row["deployment_status"] = "ACTIVE_SHADOW"
-            row["concentration_reason"] = "RETAINED_UNDER_RISK_OFF_CAP"
+            row["concentration_reason"] = f"RETAINED_UNDER_{deployment_regime}_CAP"
             active.append(dict(row))
             active_industries.add(industry)
             active_themes.add(binding)
@@ -1153,7 +1324,10 @@ def finalize(*, audit_only: bool = False) -> dict[str, Any]:
                 final_status = "LLM_REVIEW_FAILED"
             else:
                 watch, active, concentration_removals = apply_regime_cap(
-                    pro_rows, top100_by_code, theme_by_stock
+                    pro_rows,
+                    top100_by_code,
+                    theme_by_stock,
+                    report["v2_run"].get("global_regime"),
                 )
                 daily = by_code(trade_date_rows("daily"))
                 basic = by_code(trade_date_rows("daily_basic"))
@@ -1234,6 +1408,34 @@ def finalize(*, audit_only: bool = False) -> dict[str, Any]:
         "final_status": final_status,
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
+    reuse_rows = list(checkpoint.get("reuse_audit") or [])
+    checkpoint_audit = {
+        "trade_date": TRADE_DATE,
+        "base_run_id": BASE_RUN_ID,
+        "actual_network_calls": int(flash_stats.get("api_calls") or 0)
+        + int(pro_stats.get("api_calls") or 0),
+        "logical_evaluations": len(reuse_rows),
+        "reused_checkpoint_count": sum(
+            bool(row.get("reuse_allowed")) for row in reuse_rows
+        ),
+        "reused_input_hash_match": all(
+            row.get("reused_input_hash_match")
+            for row in reuse_rows
+            if row.get("reuse_allowed")
+        ),
+        "stale_checkpoint_count": sum(
+            not bool(row.get("reuse_allowed")) for row in reuse_rows
+        ),
+        "rows": reuse_rows,
+        "status": (
+            "STALE_LLM_CHECKPOINT_FOUND"
+            if any(not bool(row.get("reuse_allowed")) for row in reuse_rows)
+            else "CHECKPOINT_REUSE_VALID"
+        ),
+    }
+    _write_json(DELIVERABLES["checkpoint_audit_json"], checkpoint_audit)
+    _write_csv(DELIVERABLES["checkpoint_audit_csv"], reuse_rows)
+    audit_payload["checkpoint_reuse_audit"] = checkpoint_audit
     _write_json(DELIVERABLES["audit"], audit_payload)
     final_report = {
         "phase": audit_payload["phase"],

@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 
 from database.models.postclose_official import PostCloseOfficialRun
 from database.session import get_session, init_db
+from datasource.tushare_provider import TushareMarketDataProvider
 from quant.shadow.tushare_quant_v2 import FACTOR_VERSION
 from reporting.web_result_publish import publish_internal_web_snapshot
 from scripts.build_v2_corrected_human_daily_output import build as build_v2_workbook
@@ -34,6 +35,7 @@ from scripts.run_tushare_quant_v2_validation import (
     read_json,
     run as run_quant_v2,
 )
+from scripts.run_v3_event_overlay_shadow_once import run_daily_v31
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -42,12 +44,17 @@ SUCCESS = {"POSTCLOSE_FULL_A_SUCCESS", "POSTCLOSE_FULL_A_PARTIAL_SUCCESS"}
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="One-click V2-only advisory post-close workflow."
+        description="One-click V2 official plus V3.1 Shadow advisory workflow."
     )
     parser.add_argument("--trade-date", type=date.fromisoformat)
     parser.add_argument("--target-trade-date", type=date.fromisoformat)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-ifind", action="store_true")
+    parser.add_argument(
+        "--skip-event-overlay",
+        action="store_true",
+        help="Explicit recovery override; normal daily runs must keep V3.1 enabled.",
+    )
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env", override=False)
@@ -58,7 +65,16 @@ def main() -> int:
 
     existing = _existing_v2_official(trade_date)
     if existing and not args.force:
-        sync = publish_internal_web_snapshot()
+        event_overlay = (
+            {"status": "EXPLICITLY_SKIPPED"}
+            if args.skip_event_overlay
+            else run_daily_v31(trade_date)
+        )
+        sync = (
+            publish_internal_web_snapshot()
+            if args.skip_event_overlay
+            else event_overlay["web_sync"]
+        )
         payload = {
             "status": "REUSED_EXISTING_V2_OFFICIAL_RUN",
             "trade_date": trade_date.isoformat(),
@@ -66,6 +82,7 @@ def main() -> int:
             "run_id": existing.run_id,
             "factor_version": FACTOR_VERSION,
             "output_paths": existing.output_paths_json,
+            "event_overlay_v3_1": event_overlay,
             "web_sync": sync,
             "real_orders": 0,
             "virtual_orders": 0,
@@ -133,7 +150,19 @@ def main() -> int:
         fundamental=fundamental,
         workbook=workbook,
     )
-    sync = publish_internal_web_snapshot()
+    event_overlay = (
+        {"status": "EXPLICITLY_SKIPPED"}
+        if args.skip_event_overlay
+        else run_daily_v31(
+            trade_date,
+            base_quant_run_id=str(quant_report["run_id"]),
+        )
+    )
+    sync = (
+        publish_internal_web_snapshot()
+        if args.skip_event_overlay
+        else event_overlay["web_sync"]
+    )
     payload = {
         "status": official.status,
         "trade_date": trade_date.isoformat(),
@@ -144,6 +173,7 @@ def main() -> int:
         "flash_calls": (final_audit.get("flash") or {}).get("api_calls", 0),
         "pro_calls": (final_audit.get("pro") or {}).get("api_calls", 0),
         "fundamental_calls": fundamental.get("actual_network_calls", 0),
+        "event_overlay_v3_1": event_overlay,
         "output_paths": official.output_paths_json,
         "web_sync": sync,
         "real_orders": 0,
@@ -155,6 +185,13 @@ def main() -> int:
 
 
 def _ensure_legacy_universe_report(trade_date: date) -> None:
+    # The listed-stock universe changes independently of trade-date datasets.
+    # Refresh it once before resolving/reusing the baseline report so newly
+    # listed securities cannot be silently omitted by a stale stock_basic cache.
+    provider = TushareMarketDataProvider(cache_enabled=True)
+    stocks = provider.get_stock_list(use_cache=False)
+    if not stocks:
+        raise RuntimeError("FRESH_STOCK_BASIC_UNIVERSE_EMPTY")
     key = trade_date.strftime("%Y%m%d")
     if any((ROOT / "data" / "reports").glob(f"quant_{key}_*.json")):
         return

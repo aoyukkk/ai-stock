@@ -149,7 +149,7 @@ class OutcomeBackfillService:
             "missing_reason": None,
             "corporate_action_flag": "UNKNOWN",
             "calculated_at": now,
-            "data_as_of_time": now,
+            "data_as_of_time": None,
         }
         if due_date > as_of_date:
             return {**common, "outcome_status": "NOT_MATURED"}
@@ -257,6 +257,14 @@ class OutcomeBackfillService:
             "source_data_hash": source_hash,
             "outcome_status": status,
             "corporate_action_flag": flag,
+            "data_as_of_time": datetime(
+                due_date.year,
+                due_date.month,
+                due_date.day,
+                7,
+                0,
+                tzinfo=timezone.utc,
+            ),
         }
 
     def _persist(self, outcome, item, payload):

@@ -126,6 +126,11 @@ from database.models.weekly_review import (
     WeeklyRecommendationReviewSupersession,
 )
 from database.models.ranking_evaluation import (
+    ModelEffectivenessDailyMetric,
+    ModelEffectivenessDataIssue,
+    ModelEffectivenessStageItem,
+    ModelEffectivenessStageSnapshot,
+    ModelEffectivenessWeeklyRun,
     RankingEvaluationArtifact,
     RankingEvaluationDailyMetric,
     RankingEvaluationDataIssue,
@@ -134,6 +139,19 @@ from database.models.ranking_evaluation import (
     RankingEvaluationSnapshotItem,
     RankingEvaluationState,
     RankingEvaluationWeeklyRun,
+)
+from database.models.event_overlay import (
+    EventEvidenceItemRecord,
+    EventEvidenceSnapshotRecord,
+    EventOverlayDataIssueRecord,
+    EventReviewResultRecord,
+    EventScreeningItemRecord,
+    EventScreeningRunRecord,
+)
+from database.models.full_universe_effectiveness import (
+    FullUniverseEvaluationRun,
+    FullUniverseQuantItem,
+    FullUniverseQuantSnapshot,
 )
 
 __all__ = [
@@ -261,4 +279,18 @@ __all__ = [
     "RankingEvaluationSnapshotItem",
     "RankingEvaluationState",
     "RankingEvaluationWeeklyRun",
+    "ModelEffectivenessDailyMetric",
+    "ModelEffectivenessDataIssue",
+    "ModelEffectivenessStageItem",
+    "ModelEffectivenessStageSnapshot",
+    "ModelEffectivenessWeeklyRun",
+    "EventEvidenceItemRecord",
+    "EventEvidenceSnapshotRecord",
+    "EventOverlayDataIssueRecord",
+    "EventReviewResultRecord",
+    "EventScreeningItemRecord",
+    "EventScreeningRunRecord",
+    "FullUniverseEvaluationRun",
+    "FullUniverseQuantItem",
+    "FullUniverseQuantSnapshot",
 ]

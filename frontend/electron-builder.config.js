@@ -6,17 +6,14 @@ export default {
   },
   files: [
     "dist/**/*",
-    "dist-electron/**/*",
+    "dist-electron/electron/*.js",
+    "!dist-electron/electron/*.spec.js",
     "package.json"
   ],
   extraResources: [
     {
       from: "../build/backend/ai-trader-backend",
       to: "backend"
-    },
-    {
-      from: "../build/seed",
-      to: "seed"
     },
     {
       from: "../config",

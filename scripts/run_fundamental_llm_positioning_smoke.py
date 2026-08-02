@@ -66,7 +66,9 @@ def main() -> int:
         screening = []
         candidates = []
         for code, rank in samples:
-            profile = CachedTushareProfileService().build(code)
+            profile = CachedTushareProfileService().build(
+                code, decision_time=datetime.now().astimezone()
+            )
             inference = provider.infer(profile.model_dump(mode="json"), use_real_llm=args.real_llm)
             profile_hash = hashlib.sha256(f"smoke:{profile.profile_version}:{code}".encode()).hexdigest()
             fundamental_repo.save_profile({

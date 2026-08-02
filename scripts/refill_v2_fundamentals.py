@@ -7,6 +7,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -29,6 +30,16 @@ from scripts.build_v2_corrected_human_daily_output import (
     _read_json,
 )
 from trader_demo.runtime import temporary_real_llm_runtime
+
+
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def _restore_persisted_decision_time(value: datetime) -> datetime:
+    """Restore the run contract timezone stripped by SQLite on read."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=SHANGHAI)
+    return value.astimezone(SHANGHAI)
 
 
 class WorkbookFundamentalInference(BaseModel):
@@ -116,10 +127,7 @@ def _candidate_rows(trade_date: date) -> list[dict[str, str]]:
     )
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
-    for row in sorted(
-        (audit.get("pro") or {}).get("results") or [],
-        key=lambda item: int(item.get("pro_rank") or 999),
-    ):
+    for row in (audit.get("flash") or {}).get("top20") or []:
         code = _code(row.get("stock_code"))
         if code and code not in seen:
             rows.append(
@@ -142,6 +150,20 @@ def _candidate_rows(trade_date: date) -> list[dict[str, str]]:
             )
             seen.add(code)
     return rows
+
+
+def _can_reuse_refill_checkpoint(
+    previous: dict[str, Any],
+    *,
+    trade_date: date,
+    quant_run_id: str,
+    data_manifest_id: str,
+) -> bool:
+    return bool(
+        previous.get("trade_date") == trade_date.isoformat()
+        and previous.get("quant_run_id") == quant_run_id
+        and previous.get("data_manifest_id") == data_manifest_id
+    )
 
 
 def _temporal_context(
@@ -188,6 +210,18 @@ def run(trade_date: date, *, output: Path) -> dict[str, Any]:
     try:
         quant_run, manifest = _temporal_context(session, trade_date)
         candidates = _candidate_rows(trade_date)
+        previous = _read_json(output) if output.exists() else {}
+        reusable = _can_reuse_refill_checkpoint(
+            previous,
+            trade_date=trade_date,
+            quant_run_id=quant_run.run_id,
+            data_manifest_id=manifest.manifest_id,
+        )
+        previous_by_code = {
+            _code(row.get("stock_code")): row
+            for row in (previous.get("rows") or [])
+            if reusable and row.get("status") == "COMPLETE"
+        }
         checkpoint: dict[str, Any] = {
             "phase": "V2_FUNDAMENTAL_LLM_REFILL",
             "trade_date": trade_date.isoformat(),
@@ -197,6 +231,7 @@ def run(trade_date: date, *, output: Path) -> dict[str, Any]:
             "temporal_status": manifest.temporal_status,
             "candidate_count": len(candidates),
             "rows": [],
+            "reused_checkpoint_count": 0,
             "real_orders": 0,
             "virtual_orders": 0,
             "scheduler": False,
@@ -212,8 +247,38 @@ def run(trade_date: date, *, output: Path) -> dict[str, Any]:
                     "sequence": index,
                     "status": "RUNNING",
                 }
+                previous_row = previous_by_code.get(code)
+                if previous_row is not None:
+                    row.update(previous_row)
+                    row.update(candidate)
+                    row.update(
+                        {
+                            "sequence": index,
+                            "status": "COMPLETE",
+                            "reused_checkpoint": True,
+                        }
+                    )
+                    checkpoint["rows"].append(row)
+                    checkpoint["reused_checkpoint_count"] = (
+                        int(checkpoint["reused_checkpoint_count"]) + 1
+                    )
+                    checkpoint["completed_count"] = sum(
+                        item["status"] == "COMPLETE"
+                        for item in checkpoint["rows"]
+                    )
+                    checkpoint["failed_count"] = sum(
+                        item["status"] == "FAILED" for item in checkpoint["rows"]
+                    )
+                    checkpoint["updated_at"] = datetime.now().isoformat()
+                    _write_checkpoint(output, checkpoint)
+                    continue
                 try:
-                    profile = profile_service.build(code)
+                    profile = profile_service.build(
+                        code,
+                        decision_time=_restore_persisted_decision_time(
+                            manifest.decision_time
+                        ),
+                    )
                     inference, usage = _infer_workbook_fields(
                         profile.model_dump(mode="json")
                     )
@@ -223,6 +288,7 @@ def run(trade_date: date, *, output: Path) -> dict[str, Any]:
                             "profile": profile.model_dump(mode="json"),
                             "inference": inference,
                             "usage": usage,
+                            "reused_checkpoint": False,
                         }
                     )
                 except Exception as exc:
@@ -251,6 +317,7 @@ def run(trade_date: date, *, output: Path) -> dict[str, Any]:
             1
             for item in checkpoint["rows"]
             if item.get("status") == "COMPLETE"
+            and not item.get("reused_checkpoint")
             and not (item.get("usage") or {}).get("cached", False)
         )
         checkpoint["input_tokens"] = sum(

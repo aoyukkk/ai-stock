@@ -12,12 +12,16 @@ export interface InternalIdentity {
   auth_source?: "CLOUDFLARE_ACCESS" | "LOCAL_PASSWORD";
   local_password_enabled?: boolean;
   password_change_required?: boolean;
+  identity_scope?: "SHARED_IDENTITY" | "VERIFIED_INDIVIDUAL";
+  individual_accountability?: boolean;
 }
 
 export interface InternalAuthPublicConfig {
   auth_mode: InternalIdentity["auth_mode"];
   local_password_enabled: boolean;
   force_password_change_on_first_login: boolean;
+  identity_scope: "SHARED_IDENTITY" | "VERIFIED_INDIVIDUAL";
+  individual_accountability: boolean;
 }
 
 export const internalAuthApi = {

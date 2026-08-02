@@ -48,7 +48,7 @@
           <el-input v-model="secretInput[provider]" type="password" show-password placeholder="提交后立即清空" />
           <el-button @click="saveSecret(provider)">更新</el-button><el-button @click="testSecret(provider)">测试</el-button><el-button type="danger" plain :disabled="!secretStatus[provider]?.configured" @click="deleteSecret(provider)">删除</el-button>
         </div>
-        <p>密钥只提交给本地后端进程，不进入浏览器存储、数据库配置历史或Excel。</p>
+        <p>桌面模式使用 Windows 用户级 Electron safeStorage 加密，仅主进程可解密；禁用 Provider 默认不加载。密钥不进入渲染进程、浏览器存储、数据库配置历史或 Excel。</p>
       </el-card>
     </div>
   </section>
@@ -84,7 +84,13 @@ const providerLabels: Record<string, string> = {
   ifind_refresh: "iFinD Refresh Token"
 };
 const secretInput = reactive<Record<string, string>>(Object.fromEntries(providers.map((provider) => [provider, ""])));
-const secretStatus = ref<Record<string, { configured: boolean }>>({});
+const secretStatus = ref<Record<string, {
+  configured: boolean;
+  provider?: string;
+  storage_backend?: "electron_safe_storage";
+  updated_at?: string | null;
+  validation_status?: string;
+}>>({});
 
 async function load() {
   const [settings, performanceSettings] = await Promise.all([workbenchApi.settings(), performanceApi.settings()]);

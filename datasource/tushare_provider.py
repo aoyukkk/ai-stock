@@ -389,12 +389,13 @@ class TushareMarketDataProvider(MarketDataProvider):
                 self.cache_insufficient_count += 1
         return records
 
-    def get_stock_list(self) -> list[MarketStockInfo]:
+    def get_stock_list(self, *, use_cache: bool = True) -> list[MarketStockInfo]:
         result = self._records_or_raise(
             "stock_basic",
             params={"exchange": "", "list_status": "L"},
             fields="ts_code,symbol,name,area,industry,market,exchange,list_status,list_date,is_hs",
             required_fields={"ts_code", "symbol", "name"},
+            use_cache=use_cache,
         )
         stocks: list[MarketStockInfo] = []
         for row in result:
@@ -769,8 +770,15 @@ class TushareMarketDataProvider(MarketDataProvider):
         params: dict[str, Any] | None = None,
         fields: str | list[str] | None = None,
         required_fields: set[str] | list[str] | None = None,
+        use_cache: bool = True,
     ) -> list[dict[str, Any]]:
-        result = self.query_endpoint(api_name, params=params, fields=fields, required_fields=required_fields)
+        result = self.query_endpoint(
+            api_name,
+            params=params,
+            fields=fields,
+            required_fields=required_fields,
+            use_cache=use_cache,
+        )
         if result.status in {"available", "empty"}:
             return result.records
         raise DataSourceError(f"Tushare {api_name} request failed: {result.error_message or result.status}")
@@ -799,7 +807,7 @@ class TushareMarketDataProvider(MarketDataProvider):
 
     def _cache_path(self, api_name: str, params: dict[str, Any], fields: str | None) -> Path:
         key = json.dumps({"api_name": api_name, "params": params, "fields": fields}, ensure_ascii=False, sort_keys=True)
-        digest = hashlib.sha1(key.encode("utf-8")).hexdigest()
+        digest = hashlib.sha1(key.encode("utf-8"), usedforsecurity=False).hexdigest()
         return self.cache_dir / f"{api_name}_{digest}.json"
 
     def _read_trade_date_cache(

@@ -26,10 +26,10 @@ def _previous_friday(value: date) -> date:
 
 def _canonical_factor(run: QuantRun) -> str | None:
     source = str(run.factor_version or "")
-    if bool(run.actionable):
-        return "TUSHARE_BASELINE_V1"
     if "TUSHARE_QUANT_V2_CORRECTED_SHADOW" in source.upper():
         return "TUSHARE_QUANT_V2_CORRECTED_SHADOW"
+    if bool(run.actionable):
+        return "TUSHARE_BASELINE_V1"
     return None
 
 

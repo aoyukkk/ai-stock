@@ -23,7 +23,7 @@ class ReportPeriodCache:
         digest = hashlib.sha256(json.dumps(safe_params, sort_keys=True).encode()).hexdigest()[:16]
         return self.root / interface / period / f"{digest}.json"
 
-    def read(self, interface: str, period: str, params: dict[str, Any] | None = None) -> dict | None:
+    def _read_raw(self, interface: str, period: str, params: dict[str, Any] | None = None) -> dict | None:
         path = self.path_for(interface, period, params)
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -32,6 +32,42 @@ class ReportPeriodCache:
         if payload.get("metadata", {}).get("schema_version") != SCHEMA_VERSION:
             return None
         return payload
+
+    def read(self, interface: str, period: str, params: dict[str, Any] | None = None) -> dict | None:
+        """Return only policy-current cache entries.
+
+        Callers that intentionally display stale evidence must use
+        ``read_with_freshness`` so staleness cannot be silently erased.
+        """
+        payload = self._read_raw(interface, period, params)
+        return None if payload is None or self.is_stale(payload) else payload
+
+    def read_with_freshness(
+        self,
+        interface: str,
+        period: str,
+        params: dict[str, Any] | None = None,
+        *,
+        now: datetime | None = None,
+        allow_stale: bool = False,
+    ) -> tuple[dict | None, dict[str, Any]]:
+        payload = self._read_raw(interface, period, params)
+        if payload is None:
+            return None, {
+                "freshness_status": "MISSING",
+                "cache_fetched_at": None,
+                "cache_age_hours": None,
+            }
+        fetched = datetime.fromisoformat(payload["metadata"]["fetched_at"])
+        current = now or datetime.now(timezone.utc)
+        age_hours = max(0.0, (current.astimezone(timezone.utc) - fetched.astimezone(timezone.utc)).total_seconds() / 3600)
+        stale = self.is_stale(payload, current)
+        evidence = {
+            "freshness_status": "STALE" if stale else "FRESH",
+            "cache_fetched_at": fetched.isoformat(),
+            "cache_age_hours": age_hours,
+        }
+        return (payload if allow_stale or not stale else None), evidence
 
     def is_stale(self, payload: dict, now: datetime | None = None) -> bool:
         fetched = datetime.fromisoformat(payload["metadata"]["fetched_at"])
@@ -48,7 +84,7 @@ class ReportPeriodCache:
     ) -> dict:
         if params.get("ts_code"):
             raise ValueError("report-period cache forbids per-stock API calls")
-        cached = self.read(interface, period, params)
+        cached = self._read_raw(interface, period, params)
         if cached is not None and not force and not self.is_stale(cached):
             cached["metadata"]["cache_status"] = "HIT"
             return cached

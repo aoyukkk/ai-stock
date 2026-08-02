@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any, Callable
@@ -167,7 +168,22 @@ class DeepSeekLLMProvider(BaseLLMProvider):
                         continue
                     raise last_error
                 if http_response.status_code >= 400:
-                    raise LLMProviderResponseError(f"DeepSeek provider returned HTTP {http_response.status_code}.")
+                    provider_detail = ""
+                    try:
+                        error_payload = http_response.json().get("error") or {}
+                        if isinstance(error_payload, dict):
+                            provider_detail = json.dumps(
+                                error_payload,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                            )
+                    except (ValueError, AttributeError, TypeError):
+                        provider_detail = ""
+                    safe_detail = redact_sensitive_text(provider_detail)[:300]
+                    suffix = f" {safe_detail}" if safe_detail else ""
+                    raise LLMProviderResponseError(
+                        f"DeepSeek provider returned HTTP {http_response.status_code}.{suffix}"
+                    )
                 return self._normalize_response(http_response, request, started)
             except (LLMAuthenticationError, LLMInsufficientBalanceError):
                 raise

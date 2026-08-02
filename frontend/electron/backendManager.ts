@@ -1,13 +1,14 @@
 import { app } from "electron";
 import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { appendFile, mkdir } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 
 import { backendEnvironment, type DesktopPaths } from "./pathManager.js";
+import { requireBackendProxyRequest, requireProvider, type BackendProxyRequest } from "./securityPolicy.js";
 import type { Provider, SecretManager } from "./secretManager.js";
 
 export interface BackendConnection {
@@ -20,6 +21,8 @@ export class BackendManager {
   private process: ChildProcessByStdio<null, Readable, Readable> | null = null;
   private connection: BackendConnection | null = null;
   private logStream: WriteStream | null = null;
+  private restartPromise: Promise<BackendConnection> | null = null;
+  private lastRestartAt = 0;
 
   constructor(private readonly paths: DesktopPaths, private readonly secrets: SecretManager) {}
 
@@ -36,9 +39,14 @@ export class BackendManager {
     await mkdir(this.paths.logs, { recursive: true });
     this.logStream = createWriteStream(path.join(this.paths.logs, "backend.log"), { flags: "a" });
     const command = backendCommand();
+    const allowLegacySecretFallback = !app.isPackaged
+      && process.env.AI_TRADER_ALLOW_LEGACY_ENV_SECRET_FALLBACK === "true";
+    if (allowLegacySecretFallback) {
+      await this.audit("LEGACY_ENV_SECRET_FALLBACK enabled for development");
+    }
     const child = spawn(command.executable, command.args, {
       cwd: this.paths.root,
-      env: backendEnvironment(this.paths, port, token),
+      env: backendEnvironment(this.paths, port, token, allowLegacySecretFallback),
       windowsHide: true,
       detached: false,
       stdio: ["ignore", "pipe", "pipe"]
@@ -81,16 +89,29 @@ export class BackendManager {
   }
 
   async restart(): Promise<BackendConnection> {
-    await this.stop();
-    return this.start();
+    if (this.restartPromise) return this.restartPromise;
+    if (Date.now() - this.lastRestartAt < 1000) throw new Error("BACKEND_RESTART_RATE_LIMITED");
+    this.lastRestartAt = Date.now();
+    await this.audit("backend restart requested");
+    this.restartPromise = (async () => {
+      await this.stop();
+      return this.start();
+    })();
+    try {
+      return await this.restartPromise;
+    } finally {
+      this.restartPromise = null;
+    }
   }
 
   async saveSecret(provider: Provider, value: string): Promise<void> {
+    provider = requireProvider(provider);
     await this.secrets.set(provider, value);
     await this.injectSecret(provider, value);
   }
 
   async deleteSecret(provider: Provider): Promise<void> {
+    provider = requireProvider(provider);
     await this.secrets.delete(provider);
     const connection = this.currentConnection();
     await fetch(`${connection.baseUrl}/api/runtime/secrets/${provider}`, {
@@ -100,7 +121,12 @@ export class BackendManager {
   }
 
   private async injectStoredSecrets(): Promise<void> {
-    const values = await this.secrets.decrypted();
+    const enabled = String(process.env.AI_TRADER_DESKTOP_ENABLED_PROVIDERS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map(requireProvider);
+    const values = await this.secrets.decrypted(enabled);
     for (const [provider, value] of Object.entries(values)) {
       if (value) await this.injectSecret(provider as Provider, value);
     }
@@ -116,16 +142,50 @@ export class BackendManager {
     if (!response.ok) throw new Error(`SECRET_INJECTION_FAILED:${provider}`);
   }
 
+  async request(candidate: BackendProxyRequest): Promise<{ status: number; data: unknown }> {
+    const request = requireBackendProxyRequest(candidate);
+    const connection = this.currentConnection();
+    const url = new URL(request.url, connection.baseUrl);
+    for (const [key, value] of Object.entries(request.params || {})) {
+      if (Array.isArray(value)) value.forEach((item) => url.searchParams.append(key, String(item)));
+      else if (value !== null) url.searchParams.set(key, String(value));
+    }
+    const response = await fetch(url, {
+      method: request.method,
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-AI-Trader-Token": connection.sessionToken,
+        "X-Trace-Id": `desktop-${Date.now()}-${randomBytes(8).toString("hex")}`
+      },
+      body: request.data === undefined || ["GET", "HEAD"].includes(request.method)
+        ? undefined
+        : JSON.stringify(request.data),
+      redirect: "manual",
+      signal: AbortSignal.timeout(20000)
+    });
+    const contentType = response.headers.get("content-type") || "";
+    const data = contentType.includes("application/json")
+      ? await response.json()
+      : { success: false, code: "INVALID_BACKEND_RESPONSE", message: "Backend returned a non-JSON response" };
+    return { status: response.status, data };
+  }
+
   private writeLog(chunk: Buffer): void {
     const text = chunk.toString("utf8")
       .replace(/(authorization|token|api[_-]?key|secret)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]");
     this.logStream?.write(text);
   }
+
+  private async audit(message: string): Promise<void> {
+    await mkdir(this.paths.logs, { recursive: true });
+    await appendFile(path.join(this.paths.logs, "electron.log"), `${new Date().toISOString()} ${message}\n`, "utf8");
+  }
 }
 
 function backendCommand(): { executable: string; args: string[] } {
   if (app.isPackaged) {
-    return { executable: path.join(process.resourcesPath, "backend", "ai_trader_backend.exe"), args: [] };
+    return { executable: path.join(process.resourcesPath, "backend", "ai-trader-backend.exe"), args: [] };
   }
   const executable = process.env.AI_TRADER_PYTHON || "python";
   return { executable, args: ["-m", "backend.desktop_entry"] };

@@ -20,6 +20,7 @@ class SearchProviderStatus(StrEnum):
     PROVIDER_ERROR = "PROVIDER_ERROR"
     NO_VALID_RESULT = "NO_VALID_RESULT"
     UNVERIFIED_FALLBACK = "UNVERIFIED_FALLBACK"
+    FLASH_V4_DIRECT_SEARCH_FALLBACK = "FLASH_V4_DIRECT_SEARCH_FALLBACK"
     UNKNOWN = "UNKNOWN"
 
 
@@ -105,11 +106,17 @@ class SearchProviderChain:
                 )
         if self.unverified_fallback is not None and _flag("ENABLE_LLM_UNVERIFIED_RESEARCH_FALLBACK", True):
             payload = self.unverified_fallback.infer(context, use_real_llm=use_real_llm, temporal_manifest=temporal_manifest)
-            attempts.append(SearchAttempt(provider="deepseek_unverified", status=SearchProviderStatus.UNVERIFIED_FALLBACK))
+            attempts.append(
+                SearchAttempt(
+                    provider="flash_v4_direct_search",
+                    status=SearchProviderStatus.FLASH_V4_DIRECT_SEARCH_FALLBACK,
+                    message="Allowed direct-search fallback; evidence confidence is degraded.",
+                )
+            )
             return SearchChainResult(
                 status=SearchProviderStatus.UNVERIFIED_FALLBACK,
                 attempts=attempts,
-                degradation_level="DEEPSEEK_UNVERIFIED",
+                degradation_level="FLASH_V4_DIRECT_SEARCH_FALLBACK",
                 unverified_payload=payload,
             )
         return SearchChainResult(status=SearchProviderStatus.UNKNOWN, attempts=attempts, degradation_level="UNKNOWN")

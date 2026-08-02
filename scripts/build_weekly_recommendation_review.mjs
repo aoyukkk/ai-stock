@@ -57,7 +57,7 @@ const safe = (value) => {
   const text = String(value);
   return /^[=+\-@]/.test(text) ? `'${text}` : text;
 };
-const sixCode = (value) => String(value || "").split(".")[0].padStart(6, "0");
+const sixCode = (value) => `\u200B${String(value || "").split(".")[0].padStart(6, "0")}`;
 const num = (value) => (value === null || value === undefined ? "" : Number(value));
 const dailyReturn = (row, date) => num((row.daily_returns || {})[date]);
 const setWidth = (sheet, index, width) => {
@@ -205,6 +205,7 @@ setTitle(
   "上周推荐股票总览（去重）",
   `${data.review_start_date} 至 ${data.review_end_date}｜仅统计深度复核分（Pro分）≥${data.minimum_recommendation_score}的今日推荐；同一股票仅保留一行。`,
 );
+overviewSheet.getRange("B:B").format.numberFormat = "@";
 const overviewTable = writeTable(
   overviewSheet,
   5,
@@ -310,6 +311,7 @@ for (let index = 0; index < data.date_sheets.length; index += 1) {
     `${item.trade_date} 推荐股票`,
     `仅统计当天深度复核分（Pro分）≥${data.minimum_recommendation_score}的今日推荐；未到T+1标记为待成熟。`,
   );
+  sheet.getRange("B:B").format.numberFormat = "@";
   const table = writeTable(
     sheet,
     5,
@@ -389,8 +391,8 @@ await fs.mkdir(previewDir, { recursive: true });
 for (const name of sheetNames) {
   const sheet = sheets[name];
   const used = sheet.getUsedRange(true);
-  const maxCols = Math.min(used.columnCount, name === "08_四类占比" ? 12 : 17);
-  const maxRows = Math.min(used.rowCount, name === "08_四类占比" ? 22 : 32);
+  const maxCols = name === "08_四类占比" ? 12 : Math.min(used.columnCount, 17);
+  const maxRows = name === "08_四类占比" ? 22 : Math.min(used.rowCount, 32);
   const image = await workbook.render({
     sheetName: name,
     range: `A1:${col(maxCols)}${maxRows}`,

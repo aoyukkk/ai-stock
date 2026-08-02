@@ -1,8 +1,18 @@
 # PyInstaller backend packaging skeleton for local Windows deployment.
 # Runtime configuration remains external and is not bundled into the executable.
 
+from pathlib import Path
+import sys
+
 from PyInstaller.utils.hooks import collect_submodules
 
+ROOT = Path(SPECPATH).resolve().parent
+CONDA_BIN = Path(sys.prefix) / "Library" / "bin"
+runtime_binaries = [
+    (str(CONDA_BIN / name), ".")
+    for name in ("libssl-3-x64.dll", "libcrypto-3-x64.dll", "zlib.dll", "zlib1.dll")
+    if (CONDA_BIN / name).is_file()
+]
 
 hiddenimports = []
 for package in (
@@ -28,9 +38,9 @@ for package in (
 
 
 a = Analysis(
-    ["backend/main.py"],
-    pathex=["."],
-    binaries=[],
+    [str(ROOT / "backend" / "desktop_entry.py")],
+    pathex=[str(ROOT)],
+    binaries=runtime_binaries,
     datas=[],
     hiddenimports=hiddenimports,
     hookspath=[],

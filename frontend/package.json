@@ -12,6 +12,7 @@
     "build:electron": "tsc -p tsconfig.node.json",
     "build": "vue-tsc --noEmit && npm run build:electron && vite build",
     "electron:build": "npm run build && npx electron-builder --config electron-builder.config.js --publish never",
+    "migrate:desktop-secrets": "npm run build:electron && electron dist-electron/electron/migrateDesktopSecrets.js",
     "package:win": "npm run build && npx electron-builder --config electron-builder.config.js --win --publish never",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
@@ -30,14 +31,15 @@
     "@types/node": "^22.10.2",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.4.11",
-    "concurrently": "^9.1.0",
-    "electron": "33.4.11",
+    "concurrently": "10.0.4",
+    "electron": "43.2.0",
     "electron-builder": "26.15.3",
     "jsdom": "^29.1.1",
+    "postcss": "8.5.18",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vitest": "^4.1.10",
-    "vue-tsc": "^2.1.10",
+    "vue-tsc": "3.3.8",
     "wait-on": "^8.0.1"
   }
 }

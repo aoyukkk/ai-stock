@@ -1,4 +1,7 @@
-pytest>=8.0,<9.0
+# Compatibility input for developer environments.
+# pyproject.toml is the canonical runtime dependency declaration.
+# Exact runtime/build/security resolutions are recorded in requirements-*.lock.txt.
+pytest>=9.0.3,<10.0
 PyYAML>=6.0,<7.0
 python-dotenv>=1.0,<2.0
 fastapi>=0.115,<1.0

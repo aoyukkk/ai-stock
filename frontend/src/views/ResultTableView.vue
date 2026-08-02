@@ -15,6 +15,14 @@
       :closable="false"
       class="legacy-score-note"
     />
+    <el-alert
+      v-if="props.kind === 'fundamentals' && currentness?.currentness_status !== 'CURRENT'"
+      :title="`数据时效状态：${currentness?.currentness_status || 'UNVERIFIED'}；过期或未核验 ${currentness?.stale_or_unverified_count || 0} 项。`"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="legacy-score-note"
+    />
     <el-alert v-if="store.status?.source_mode === 'EMPTY'" title="该交易日没有已完成的正式流水线结果。" type="info" show-icon :closable="false" />
     <CenteredDataTable
       v-else
@@ -51,6 +59,7 @@ const total = ref(0);
 const query = reactive({ page: 1, pageSize: 50, keyword: "", sortBy: "rank", sortOrder: "asc" });
 const loading = ref(false);
 const selectedRows = ref<Record<string, unknown>[]>([]);
+const currentness = ref<Record<string, unknown> | null>(null);
 const { addToMonitor } = useMonitorPool();
 let sequence = 0;
 let controller: AbortController | null = null;
@@ -61,7 +70,20 @@ const title = computed(() => titles[props.kind]);
 const subtitle = computed(() => subtitles[props.kind]);
 const paginated = computed(() => ["quant", "flash"].includes(props.kind));
 const monitorEnabled = computed(() => ["final", "orders"].includes(props.kind));
-const columns = computed<TableColumn[]>(() => columnMaps[props.kind]);
+const freshnessColumns: TableColumn[] = [
+  "freshness_status|时效状态",
+  "decision_as_of_time|决策时点",
+  "report_period|报告期",
+  "latest_announcement_date|最新披露日",
+  "cache_fetched_at|缓存抓取时间",
+  "cache_age_hours|缓存年龄(小时)",
+  "point_in_time_safe|时点安全"
+].map(parseColumn);
+const columns = computed<TableColumn[]>(() =>
+  props.kind === "fundamentals"
+    ? [...freshnessColumns, ...columnMaps[props.kind]]
+    : columnMaps[props.kind]
+);
 
 const columnMaps: Record<string, TableColumn[]> = {
   quant: ["rank|量化排名", "stock_code|股票代码", "stock_name|股票名称", "total_score|量化总分", "technical_score|技术分", "capital_score|资金分", "emotion_score|情绪分", "momentum_score|动量分", "risk_score|风险分", "manual_selected|人工选择"].map(parseColumn),
@@ -88,6 +110,9 @@ async function load() {
       : await workbenchApi.fundamentals(selectedDate, runId, controller.signal);
     if (current !== sequence || selectedDate !== store.tradeDate) return;
     rows.value = response.data.items;
+    currentness.value = props.kind === "fundamentals" && "currentness" in response.data
+      ? (response.data.currentness as Record<string, unknown>)
+      : null;
     total.value = "total" in response.data ? Number(response.data.total) : response.data.items.length;
   } catch { /* Keep the last successful page visible. */ }
   finally { if (current === sequence) loading.value = false; }

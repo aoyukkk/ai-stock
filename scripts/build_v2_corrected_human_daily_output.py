@@ -270,6 +270,8 @@ def _payload(
     manual_rows: list[dict[str, Any]],
     fundamental_rows: list[dict[str, Any]] | None = None,
     web_verifications: Mapping[str, Any] | None = None,
+    universe_exclusions: list[dict[str, Any]] | None = None,
+    fundamental_actual_network_calls: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     expected_prefix = f"v2-recovery-{trade_date:%Y%m%d}-"
     if not str(final_audit.get("base_run_id") or "").startswith(expected_prefix):
@@ -297,13 +299,46 @@ def _payload(
     if emotion_values and all(abs(value - 50.0) < 1e-9 for value in emotion_values):
         raise RuntimeError("V2_EMOTION_SCORE_LEGACY_CONSTANT")
 
-    flash_rows = list((final_audit.get("flash") or {}).get("top20") or [])
-    pro_rows = list((final_audit.get("pro") or {}).get("results") or [])
-    if len(pro_rows) != 20:
-        raise RuntimeError("V2_PRO_TOP20_INCOMPLETE")
+    flash_summary = final_audit.get("flash") or {}
+    flash_rows = list(flash_summary.get("top20") or [])
+    pro_summary = final_audit.get("pro") or {}
+    pro_rows = list(pro_summary.get("results") or [])
+    if len(flash_rows) != 20:
+        raise RuntimeError("V2_FLASH_TOP20_INCOMPLETE")
+    flash_business_inputs = int(
+        flash_summary.get("business_inputs") or len(flash_rows)
+    )
+    flash_audit_rows = list(flash_summary.get("audit") or [])
+    flash_evaluated_codes = {
+        _code(row.get("stock_code"))
+        for row in flash_audit_rows
+        if _code(row.get("stock_code"))
+    }
+    if flash_audit_rows and len(flash_evaluated_codes) != flash_business_inputs:
+        raise RuntimeError("V2_FLASH_EVALUATED_SET_MISMATCH")
+    if not flash_evaluated_codes:
+        flash_evaluated_codes = {
+            _code(row.get("stock_code")) for row in flash_rows
+        }
+    pro_business_inputs = int(pro_summary.get("business_inputs") or len(flash_rows))
+    pro_successful = int(pro_summary.get("successful") or len(pro_rows))
+    pro_failed = int(
+        pro_summary.get("failed")
+        if pro_summary.get("failed") is not None
+        else max(0, pro_business_inputs - pro_successful)
+    )
+    if (
+        pro_business_inputs != len(flash_rows)
+        or pro_successful != len(pro_rows)
+        or pro_successful + pro_failed != pro_business_inputs
+    ):
+        raise RuntimeError("V2_PRO_COMPLETION_AUDIT_MISMATCH")
     flash_by_code = {_code(row.get("stock_code")): row for row in flash_rows}
     pro_by_code = {_code(row.get("stock_code")): row for row in pro_rows}
-    model_codes = set(pro_by_code)
+    model_codes = set(flash_by_code)
+    failed_pro_codes = model_codes - set(pro_by_code)
+    if len(failed_pro_codes) != pro_failed:
+        raise RuntimeError("V2_PRO_FAILURE_SET_MISMATCH")
     manual_by_code = {
         row["stock_code"]: row for row in manual_rows if row.get("stock_code")
     }
@@ -318,6 +353,11 @@ def _payload(
     }
     active_codes = set(active_by_code)
     watch_codes = set(watch_by_code)
+    if failed_pro_codes & (active_codes | watch_codes):
+        raise RuntimeError("V2_FAILED_PRO_CANDIDATE_DEPLOYED")
+    market_regime = str(
+        (final_audit.get("market_regime") or {}).get("regime") or "UNKNOWN"
+    )
     plans_by_code = {
         _code(row.get("stock_code")): row
         for row in (final_audit.get("order_plans") or [])
@@ -325,6 +365,7 @@ def _payload(
     strict_fundamental_overlay = fundamental_rows is not None
     fundamental_rows = fundamental_rows or []
     web_verifications = web_verifications or {}
+    universe_exclusions = universe_exclusions or []
     fundamental_by_code = {
         _code(row.get("stock_code")): row
         for row in fundamental_rows
@@ -339,6 +380,11 @@ def _payload(
         _code(row.get("stock_code"))
         for row in sorted(pro_rows, key=lambda row: int(row["pro_rank"]))
     ]
+    ordered_codes.extend(
+        code
+        for code in (_code(row.get("stock_code")) for row in flash_rows)
+        if code in failed_pro_codes
+    )
     ordered_codes.extend(code for code in manual_by_code if code not in model_codes)
 
     candidates: list[dict[str, Any]] = []
@@ -413,6 +459,8 @@ def _payload(
             model_codes=model_codes,
             hard_gate=hard_gate,
         )
+        if code in failed_pro_codes:
+            current_status = "Pro复核失败，仅观察"
         candidate = {
             "深度复核排名": pro.get("pro_rank") or candidate_index,
             "股票代码": code,
@@ -446,9 +494,9 @@ def _payload(
         candidates.append(candidate)
 
         note = (
-            "RISK_OFF部署上限内的ACTIVE_SHADOW；仅供人工复核，不创建订单。"
+            f"{market_regime}部署下的ACTIVE_SHADOW；仅供人工复核，不创建订单。"
             if code in active_codes
-            else "RISK_OFF，仅观察，不配置仓位。"
+            else f"{market_regime}，仅观察，不配置仓位。"
             if code in watch_codes
             else "未进入ACTIVE_SHADOW，不配置仓位。"
             if code in model_codes
@@ -559,6 +607,60 @@ def _payload(
                     "说明": "ST或数据硬门禁；保留人工关注记录，但不计算V2分数、收益或仓位。",
                 }
             )
+        elif code in failed_pro_codes:
+            issues.append(
+                {
+                    "股票代码": code,
+                    "股票名称": stock_name,
+                    "问题类型": "Pro结构化复核失败",
+                    "当前状态": "已降级、不可部署",
+                    "说明": (
+                        "已进入Flash Top20，但Pro结构化复核未形成合格结果；"
+                        "保留在重点候选和问题页，不配置仓位、不生成Order Plan。"
+                    ),
+                }
+            )
+
+    for excluded in universe_exclusions:
+        code = _code(excluded.get("stock_code"))
+        name = str(excluded.get("stock_name") or code)
+        history_count = int(excluded.get("history_count") or 0)
+        list_date = str(excluded.get("list_date") or "")
+        reason = str(excluded.get("reason") or "UNIVERSE_EXCLUSION")
+        if reason == "BASELINE_UNIVERSE_OMISSION" and "ST" in name.upper():
+            issue_type = "V2硬门禁"
+            current_status = "已阻断、保留审计"
+            description = (
+                f"{reason}；当前名称含ST风险标识；上市日期={list_date or '未知'}；"
+                f"可用日线={history_count}天。按硬安全门禁不生成V2分数、收益或仓位建议。"
+            )
+        elif reason in {
+            "DATA_INSUFFICIENT_NEW_LISTING",
+            "DATA_INSUFFICIENT_HISTORY",
+        }:
+            issue_type = "新股历史数据不足"
+            current_status = "未评分、等待数据成熟"
+            description = (
+                f"{reason}；上市日期={list_date or '未知'}；"
+                f"可用日线={history_count}天。历史不足20个交易日时不生成V2分数、"
+                "收益或仓位建议，待数据成熟后自动纳入。"
+            )
+        else:
+            issue_type = "全A名单差异"
+            current_status = "未评分、保留审计"
+            description = (
+                f"{reason}；上市日期={list_date or '未知'}；"
+                f"可用日线={history_count}天。该证券未进入评分集合，已保留供数据审计。"
+            )
+        issues.append(
+            {
+                "股票代码": code,
+                "股票名称": name,
+                "问题类型": issue_type,
+                "当前状态": current_status,
+                "说明": description,
+            }
+        )
 
     recommendations = [
         row
@@ -577,7 +679,11 @@ def _payload(
             "情绪得分": _number(row.get("emotion_score")),
             "动量得分": _number(row.get("momentum_score")),
             "风险得分": _number(row.get("risk_score")),
-            "进入二筛": "是",
+            "进入二筛": (
+                "是"
+                if _code(row["stock_code"]) in flash_evaluated_codes
+                else "否"
+            ),
             "进入重点候选": "是" if _code(row["stock_code"]) in model_codes else "否",
         }
         for row in top100
@@ -624,11 +730,15 @@ def _payload(
             abs(value - 50.0) < 1e-9 for value in emotion_values
         ),
         "model_top20_count": len(model_codes),
+        "pro_successful_count": pro_successful,
+        "pro_failed_count": pro_failed,
+        "pro_failed_codes": sorted(failed_pro_codes),
         "manual_count": len(manual_codes),
         "candidate_count": len(candidates),
         "recommendation_count": len(recommendations),
         "watch_pool_count": len(watch_codes),
         "active_shadow_count": len(active_codes),
+        "market_regime": market_regime,
         "real_orders": 0,
         "virtual_orders": 0,
         "scheduler": False,
@@ -638,7 +748,9 @@ def _payload(
             1
             for row in fundamental_rows
             if (row.get("usage") or {}).get("cached") is False
-        ),
+        )
+        if fundamental_actual_network_calls is None
+        else int(fundamental_actual_network_calls),
         "web_verified_count": len(web_verifications),
     }
     return payload, audit
@@ -654,10 +766,15 @@ def build(
     source_dir = DEFAULT_SOURCE_ROOT / trade_date.isoformat()
     full_path = source_dir / "v2_full_universe.csv"
     final_path = source_dir / "monday_v2_candidate_audit.json"
-    if not full_path.exists() or not final_path.exists():
+    quant_path = source_dir / "quant_v2_validation.json"
+    if not full_path.exists() or not final_path.exists() or not quant_path.exists():
         raise FileNotFoundError("V2_SOURCE_ARTIFACT_MISSING")
     full_rows = _read_csv(full_path)
     final_audit = _read_json(final_path)
+    quant_audit = _read_json(quant_path)
+    universe_exclusions = list(
+        ((quant_audit.get("universe") or {}).get("unscored_trade_date_securities") or [])
+    )
     manual_rows = _manual_rows(trade_date)
     fundamental_audit = _read_json(fundamental_overlay)
     if fundamental_audit.get("trade_date") != trade_date.isoformat():
@@ -683,6 +800,8 @@ def build(
         manual_rows,
         fundamental_rows,
         web_verifications,
+        universe_exclusions,
+        int(fundamental_audit.get("actual_network_calls") or 0),
     )
 
     day_dir = ROOT / "outputs" / trade_date.isoformat()

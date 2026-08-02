@@ -1,5 +1,44 @@
 # AI Stock Agent 当前规划与实施状态
 
+## 2026-07-31 Full-Universe Quant Effectiveness V1
+
+`FULL_UNIVERSE_QUANT_EFFECTIVENESS_V1` 已作为
+`MODEL_STAGE_FORWARD_EFFECTIVENESS_V2` 的独立Shadow扩展实现。它冻结每日全量V2
+Quant原始排名，复用本地交易日历和批量日线，输出全A Rank/Score IC、十分位、
+固定500名、前排诊断、市场超额、五因子和风格诊断。
+
+固定验收覆盖2026-07-24、27、28、29，行情截止2026-07-30；Top100回归完全不变，
+Flash仍为 `COMPARISON_BLOCKED`，行业PIT不可验证时行业超额保持空值。当前成熟日
+不足，结论保持 `INSUFFICIENT_DATA`。模块状态：
+`FULL_UNIVERSE_QUANT_EFFECTIVENESS_SHADOW_READY`，不代表模型有效或可生产。
+
+## 2026-07-31 Quant + Flash 分阶段前向效度 V2
+
+`MODEL_STAGE_FORWARD_EFFECTIVENESS_V2` 已按 Shadow 边界实现，复用
+`Ranking Forward Effectiveness V1` 的 Quant Top100 不可变快照以及
+`ranking_evaluation_forward_outcome` 的 D1/D3/D5/D10 收益，不建立第二套行情收益表。
+
+- 支持 `QUANT`、`FLASH_V2`、`FLASH_V3_EVENT_OVERLAY` 独立版本快照。
+- Flash 阶段强制绑定同一 Quant Cohort、股票集合、代码、原始排名和输入 Hash。
+- 失败、Schema 错误、搜索失败、Checkpoint 复用和遗漏股票均保留；缺失评分不填
+  0 或 50，不足 20 只不补位。
+- 已实现 Quant IC、Flash Score/Rank/Event IC、Selected/Unselected、
+  Flash 相对 Quant Top20、Promote/Demote、V2/V3 合同比较和按排名日 Bootstrap。
+- 研究全样本与开盘前可执行样本分开，跨日统计先算 Daily Metric，再按排名日等权。
+- 新增只读 API、`Quant & Flash Effectiveness` 页面、每日/周报 CLI 和双击 CMD。
+- 首次冻结证据：2026-07-30 Quant 为 100/100；V2 Flash 为 91/100，V3 为
+  5/100 `MOCK_SEARCH`，两者均被 `FLASH_QUANT_COHORT_MISMATCH` 阻止增量比较；
+  V3 同时为 `OUTPUT_TIME_MISSING`。
+- 当前 D1 仍未满足本地正式收盘门禁；不输出模型有效、可生产或 V3 更优结论。
+- Excel 已定义 15 个工作表并只允许 artifact-tool；当前运行环境缺少
+  `ARTIFACT_TOOL_NODE_MODULE_DIR` 时产出 JSON/CSV/Markdown 与审计 Manifest，
+  周报状态为 `PARTIAL_SUCCESS`，不使用其他 Excel 库降级。
+
+模块状态：`QUANT_FLASH_FORWARD_EFFECTIVENESS_SHADOW_READY`；当前实证运行仍为
+`COMPARISON_BLOCKED / NOT_MATURED`。达到 20 个交易日、100 条完整 D3
+公平可成交样本、时间合同 0 失败和稳定正增量之前，只允许人工观察，不得改 Quant、
+Prompt、权重、候选或生产配置。
+
 状态基准日期：2026-07-22
 适用目录：`D:\ai stock agent`
 本文件是当前项目规划和状态的唯一基准。日常执行仍以 `DAILY_OPERATION_RUNBOOK.md` 为准；历史设计以 `archive/` 为准。
@@ -179,3 +218,54 @@ Shadow和实验结果不得回写正式Quant权重、Flash/Pro Prompt、正式�
 - 各 `ENTRY_TIMING_*`、`IFIND_*`、验收报告负责“某阶段当时做了什么”。
 - `archive/v0_3_design/` 只保留历史设计，不再作为当前规划。
 - 每完成一个阶段，应更新本文件中的状态、证据日期、限制和下一道门禁；不能只新增阶段报告而不更新总规划。
+# 2026-07-29 时效性与时点安全修复状态
+
+本节是当前阶段的最新状态覆盖；与下文旧快照冲突时，以本节为准。
+
+| 能力 | 当前状态 | 已验证范围 | 仍有限制 |
+|---|---|---|---|
+| Point-in-Time Data Contract | `SHADOW` | 已建立统一 `decision_as_of_time`、业务日期、可用时间、抓取时间、缓存年龄、新鲜度、PIT 安全和评分资格契约；51 项专项测试通过。 | 尚未让所有历史 Provider 都真实回填源可用时间，未晋级生产。 |
+| THS Freshness Gate | `SHADOW` | 行业/概念成员读取时检查缓存年龄；行业过期阻断阶段，概念过期降级；统一 `membership_manifest_hash`。7 月 24 日缓存用于 7 月 28 日时已识别为 `STALE`。 | 仍需下一个真实交易日在线刷新验收。 |
+| Fundamental PIT Filter | `SHADOW` | 普通读取不再静默接受过期缓存；历史构建强制显式决策时间；正式财务和主营按披露时间过滤；报告期、披露日、抓取时间分离。 | 7 月 28 日现存缓存抓取于 7 月 10 日且主要为 2026Q1，只能降级展示。 |
+| Checkpoint Contract Validation | `SHADOW` | Flash/Pro Checkpoint 已绑定完整输入、Prompt、Schema、Contract、数据清单、成员、基本面、新闻、海外、Regime 和 Risk Hash；失配保存为历史且拒绝复用。 | 旧 Checkpoint 元数据不足，均不能按新契约复用；需真实恢复运行验收零新增调用。 |
+| News Evidence | `PARTIAL` | 已严格区分 Provider 关闭、不可用、正式查询后证据为空、36 小时外和未来新闻；v4 Flash 直接搜索允许作为显式降级，不作为流程错误。 | 正式日常流程仍为 `DATA_ONLY`，不能声称“已检查且无新闻”。 |
+| Overseas Evidence | `DISABLED` | Placeholder/Mock 已显式标记并排除真实评分。 | 尚无正式海外行情 Provider。 |
+| Risk V2.1 | `SHADOW` | 新版本 `TUSHARE_QUANT_V2_1_CORRECTED_SHADOW`；十类风险证据血缘；缺失值为未知而非零风险；事件按决策时点过滤和去重。 | 解禁、减持、质押等正式数据源仍未完成全量接入。 |
+| Market Regime Deployment Fix | `SHADOW` | 部署状态绑定实际计算 Regime；缺失时才 fail-safe 为 `RISK_OFF`；显式不一致会阻断。7 月 28 日只读验收确认计算值为 `NEUTRAL`，旧表错误写成 `RISK_OFF`。 | 需前向运行确认候选上限和集中度行为。 |
+| Web Freshness Visibility | `PARTIAL` | 基本面页已显示决策时点、报告生成时间、报告期、披露日、缓存抓取时间、年龄、时效状态和降级原因；API 返回 currentness 摘要。 | 需要重新构建和部署 Internal Web 后线上可见。 |
+
+## 2026-07-28 只读验收
+
+- 原始 V2/Legacy 文件哈希在验收前后完全一致，未重算、未覆盖。
+- 2026-07-24 冻结 Decision ID 和 Content Hash 完全一致。
+- 新闻为 `DATA_ONLY / NEWS_PROVIDER_DISABLED`，海外为 `OVERSEAS_PROVIDER_DISABLED` 或 Mock 排除。
+- Risk V2.1、THS 门禁、基本面 PIT、Checkpoint 契约、Regime 修复仍保持 Shadow。
+- `real_orders=0`、`virtual_orders=0`、`scheduler=false`、`real_trading=false`。
+- 当前不能宣称所有时效问题已经彻底解决；正式新闻、海外及部分风险数据源仍需真实接入和当日验收。
+
+## 2026-07-30 桌面安全与仓库治理
+
+| 能力 | 当前状态 | 完成范围 | 仍有限制 |
+|---|---|---|---|
+| Electron Runtime Security | `SHADOW_READY_FOR_RELEASE_REVIEW` | 受支持 Electron 主线、精确导航来源、新窗口/权限/下载默认拒绝、packaged DevTools 关闭。 | 仍需干净 Windows 环境正式签名安装验收。 |
+| IPC Trust Boundary | `SHADOW_READY_FOR_RELEASE_REVIEW` | 敏感 IPC 校验 WebContents、主 Frame、来源 URL 与参数；渲染进程不再读取后端 session token。 | API 路径 allowlist 随新增页面必须显式评审。 |
+| Desktop Secret Storage | `SHADOW` | packaged 默认使用用户级 `safeStorage`；项目 `.env` 仅限显式开发 fallback；提供不回显的迁移工具。 | 不自动迁移或删除真实 Secret；需要用户本地执行迁移。 |
+| Workspace Secret Scan | `OPERATIONAL` | 内存匹配 `.env` 真实值，报告变量名/路径/行号而不回显值；权限拒绝 fail closed。 | 无权限备份目录需由所有者处理后才能声称全覆盖。 |
+| Shared Identity | `KNOWN_LIMITATION` | Cloudflare Access 保持验证邮箱身份；共享模式 API/UI 明示 `SHARED_IDENTITY` 和不可个人追责。 | `LOCAL_NAMED_USERS` 需独立认证设计，不在本阶段仓促重写。 |
+| Repository Artifact Governance | `POLICY_READY` | 保留策略、脚本逐项分类、`tmp/temp` 统一规则和只读布局审计。 | 本阶段未删除、移动或清理历史文件。 |
+| Python Security Gate | `PARTIAL` | 统一质量入口与 pip-audit/Bandit/Ruff 依赖分层建立。 | 现存第三方漏洞或高置信静态发现需按报告逐项处置。 |
+| Desktop Release | `NOT_OPERATIONAL` | 仅允许任务专属目录的临时构建和敏感扫描。 | 正式发布仍需干净 Windows 主机、签名、安装/卸载和人工验收。 |
+
+## 2026-08-03 V3.1 Event Overlay Shadow
+
+| 能力 | 当前状态 | 已实现边界 | 下一道门禁 |
+|---|---|---|---|
+| V3.1事件覆盖二筛 | `V3_1_DAILY_SHADOW_READY` | 已纳入盘后日常编排；只读取 `TUSHARE_QUANT_V2_CORRECTED_SHADOW` 全量 Universe，Hard Gate 后按排名补足前100。每股一次结构化搜索，禁止 LLM 重算 Quant；无合格证据时分数严格不变。 | 累积真实前向 D1/D3/D5 样本，保持 Shadow，不自动晋级。 |
+| DeepSeek V4 Flash直搜 | `FORMAL_DAILY_SHADOW_STAGE` | 固定“5只真实Canary→Top100”，服务端工具续轮保留合同；JSON非法仅允许一次语法修复，仍失败即阻断。已验证完整100股、失败0。 | 持续监控调用量、续轮率、失败率和Checkpoint stale率。 |
+| 事件证据 | `FRESHNESS_VERIFIED_SHADOW` | 市场新闻36小时、普通事件72小时、Tier 1正式公告168小时；未来、未知时间、缺URL、过期、重复和非法数值不计分。2026-07-31样本174条中50条合格、124条仅审计。 | 增加正式公告/交易所结构化Provider，提高Tier 1覆盖。 |
+| V3.1输出与Web | `DAILY_PUBLISH_GATED` | 只有100/100成功、Hard Gate违规0、搜索/Provider失败0且`database_publish_eligible=true`才落库并原子同步Web；Canary、Mock和失败运行不发布。 | 重新构建发布物后完成已登录浏览器页面验收。 |
+| 前向A/B | `CONTRACT_CONNECTED` | A组V2二筛、B组V3二筛，共用T+1开盘、滑点、可交易性和复权口径，复用Ranking Evaluation/Selection Performance/Forward Outcome。 | 积累D1/D3/D5/D10真实前向样本；禁止单日调权或自动晋级。 |
+
+生产边界保持：Legacy、V2 Quant/Prompt/结果、2026-07-24冻结Decision、正式工作簿、价格计划和仓位均不变；`real_orders=0`、`virtual_orders=0`、`scheduler=false`。
+
+---

@@ -11,6 +11,10 @@ const isMidday = data.output_mode === "midday";
 const priceSheetName = isMidday ? "价格与权重" : "挂单与仓位";
 const contextSheetName = isMidday ? "复核依据" : "基本面摘要";
 const minimumRecommendationScore = Number(data.minimum_recommendation_score ?? 60);
+const recommendationOperator = String(data.recommendation_operator ?? "GREATER_THAN_OR_EQUAL");
+const recommendationRuleText = recommendationOperator === "STRICT_GREATER_THAN"
+  ? `最终复核分严格超过 ${minimumRecommendationScore.toFixed(0)} 分`
+  : `最终复核分不低于 ${minimumRecommendationScore.toFixed(0)} 分`;
 const recommendations = Array.isArray(data.recommendations)
   ? data.recommendations
   : (data.candidates || []).filter((row) => Number(row["深度复核分"]) >= minimumRecommendationScore);
@@ -132,7 +136,7 @@ titleBand(
   recommendation,
   "K",
   "今日推荐",
-  `从重点候选中保留最终复核分不低于 ${minimumRecommendationScore.toFixed(0)} 分的股票；模型筛选、人工关注和共同入选使用同一门槛。`,
+  `从重点候选中保留${recommendationRuleText}的股票；模型筛选、人工关注和共同入选使用同一门槛。`,
 );
 const rHeaders = ["复核排名","股票代码","股票名称","入选来源","最终复核分","复核优先级","一级行业","产业链","财务状态","核心逻辑","主要风险"];
 const rRows = recommendations.map((row) => [

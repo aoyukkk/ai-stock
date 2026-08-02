@@ -364,6 +364,7 @@ def _persist_chain(
             profile=profile,
             financial=financial,
             now=now,
+            decision_as_of_time=decision_time,
             content_hash=content_hash,
             session=session,
         )
@@ -626,6 +627,7 @@ def _fundamental_result(
     profile: Mapping[str, Any],
     financial: Mapping[str, Any],
     now: datetime,
+    decision_as_of_time: datetime,
     content_hash: str,
     session,
 ) -> dict[str, Any]:
@@ -652,7 +654,18 @@ def _fundamental_result(
         }
     result = {
         "stock_code": code,
-        "as_of_time": now.isoformat(),
+        "as_of_time": decision_as_of_time.isoformat(),
+        "as_of_time_semantics": "DEPRECATED_ALIAS_OF_DECISION_AS_OF_TIME",
+        "decision_as_of_time": decision_as_of_time.isoformat(),
+        "report_generated_at": now.isoformat(),
+        "report_period": profile.get("report_period") or profile.get("latest_financial_period"),
+        "latest_announcement_date": profile.get("latest_announcement_date") or profile.get("announcement_date"),
+        "fundamental_data_as_of_time": profile.get("fundamental_data_as_of_time") or profile.get("available_at"),
+        "cache_fetched_at": profile.get("cache_fetched_at"),
+        "cache_age_hours": profile.get("cache_age_hours"),
+        "freshness_status": profile.get("freshness_status") or "UNVERIFIED",
+        "point_in_time_safe": bool(profile.get("point_in_time_safe", False)),
+        "degradation_reason": profile.get("degradation_reason"),
         "research_mode": research_mode,
         "analysis_status": "SUCCESS",
         "wire_schema_version": "workbook_web_readback_v1",

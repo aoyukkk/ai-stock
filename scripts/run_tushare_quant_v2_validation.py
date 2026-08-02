@@ -14,6 +14,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -172,6 +173,43 @@ def by_code(rows: Iterable[Mapping[str, Any]], field: str = "ts_code") -> dict[s
         for row in rows
         if row.get(field)
     }
+
+
+def classify_universe_exclusions(
+    daily_codes: set[str],
+    scored_codes: set[str],
+    *,
+    histories: Mapping[str, Sequence[Mapping[str, Any]]],
+    stock_by_code: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Explain every trade-date security omitted from the scored universe."""
+
+    rows: list[dict[str, Any]] = []
+    for code in sorted(daily_codes - scored_codes):
+        meta = dict(stock_by_code.get(code) or {})
+        history_count = len(histories.get(code, ()))
+        list_date = str(meta.get("list_date") or "")
+        if not meta:
+            reason = "STOCK_BASIC_MISSING"
+        elif history_count < 20:
+            reason = (
+                "DATA_INSUFFICIENT_NEW_LISTING"
+                if list_date
+                else "DATA_INSUFFICIENT_HISTORY"
+            )
+        else:
+            reason = "BASELINE_UNIVERSE_OMISSION"
+        rows.append(
+            {
+                "stock_code": code,
+                "stock_name": str(meta.get("name") or code),
+                "list_date": list_date,
+                "history_count": history_count,
+                "reason": reason,
+                "action": "NOT_SCORED_RETAINED_FOR_AUDIT",
+            }
+        )
+    return rows
 
 
 def duplicate_count(rows: Sequence[Mapping[str, Any]], keys: Sequence[str]) -> int:
@@ -419,6 +457,8 @@ def _codes_in_rows(rows: Sequence[Mapping[str, Any]]) -> set[str]:
 def probe_ifind(
     sample_codes: Sequence[str],
     board_samples: Sequence[Mapping[str, Any]],
+    *,
+    decision_as_of_time: datetime,
 ) -> dict[str, Any]:
     load_dotenv(ROOT / ".env", override=False)
     started = datetime.now().astimezone()
@@ -438,7 +478,10 @@ def probe_ifind(
         "quota_after": None,
         "quota_delta": None,
         "usable_fields": [],
-        "as_of_time": started.isoformat(),
+        "as_of_time": decision_as_of_time.isoformat(),
+        "as_of_time_semantics": "DEPRECATED_ALIAS_OF_DECISION_AS_OF_TIME",
+        "decision_as_of_time": decision_as_of_time.isoformat(),
+        "probe_started_at": started.isoformat(),
     }
     auth = IFindHttpAuthManager(
         base_url=os.getenv(
@@ -516,7 +559,9 @@ def probe_ifind(
                     "field_coverage": round(len(required & fields) / len(required), 4),
                     "returned_fields": sorted(fields),
                     "latency_ms": response.latency_ms,
-                    "as_of_time": datetime.now().astimezone().isoformat(),
+                    "decision_as_of_time": decision_as_of_time.isoformat(),
+                    "retrieved_at": datetime.now().astimezone().isoformat(),
+                    "data_business_date": TRADE_DATE,
                     "parser_branch": structure["parser_branch_used"],
                     "missing_codes": sorted(set(requested) - returned),
                 }
@@ -573,7 +618,9 @@ def probe_ifind(
                     if tushare_codes
                     else None,
                     "latency_ms": response.latency_ms,
-                    "as_of_time": datetime.now().astimezone().isoformat(),
+                    "decision_as_of_time": decision_as_of_time.isoformat(),
+                    "retrieved_at": datetime.now().astimezone().isoformat(),
+                    "data_business_date": TRADE_DATE,
                     "parser_branch": structure["parser_branch_used"],
                 }
             )
@@ -591,7 +638,9 @@ def probe_ifind(
                     "latency_ms": round(
                         (time.perf_counter() - started_call) * 1000
                     ),
-                    "as_of_time": datetime.now().astimezone().isoformat(),
+                    "decision_as_of_time": decision_as_of_time.isoformat(),
+                    "retrieved_at": datetime.now().astimezone().isoformat(),
+                    "data_business_date": TRADE_DATE,
                     "error": exc.__class__.__name__,
                 }
             )
@@ -776,7 +825,7 @@ def _order_plans(
         payload = plan.model_dump(mode="json")
         payload.update(
             {
-                "limit_price_source": "RULE_ESTIMATED_FROM_2026_07_24_CLOSE",
+                "limit_price_source": f"RULE_ESTIMATED_FROM_{TRADE_DATE.replace('-', '_')}_CLOSE",
                 "official_target_day_limit_available": False,
                 "target_day_auction_available": False,
                 "actionable": False,
@@ -885,6 +934,7 @@ def run(
 ) -> dict[str, Any]:
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     started = datetime.now(timezone.utc)
+    decision_as_of_time = started.astimezone(ZoneInfo("Asia/Shanghai"))
     run_id = f"v2-recovery-{TRADE_KEY}-{started.strftime('%H%M%S')}"
     _load_local_tushare_token()
     provider = TushareMarketDataProvider(cache_enabled=True)
@@ -898,10 +948,17 @@ def run(
     }
     stock_result = provider.query_endpoint(
         "stock_basic",
-        params={"list_status": "L"},
+        params={"exchange": "", "list_status": "L"},
         fields=STOCK_BASIC_FIELDS,
-        use_cache=True,
+        use_cache=False,
     )
+    if not stock_result.available:
+        stock_result = provider.query_endpoint(
+            "stock_basic",
+            params={"exchange": "", "list_status": "L"},
+            fields=STOCK_BASIC_FIELDS,
+            use_cache=True,
+        )
     stock_by = by_code(stock_result.records)
     pro_rows, pro_audit = audit_pro_factor(provider, daily, stock_by)
 
@@ -929,6 +986,8 @@ def run(
         output_root=MEMBER_ROOT,
         refresh=refresh_members,
         progress=True,
+        decision_as_of_time=decision_as_of_time,
+        data_business_date=decision_as_of_time.date(),
     )
     concept_members, concept_audit = fetch_ths_members_by_board(
         provider,
@@ -937,6 +996,8 @@ def run(
         output_root=MEMBER_ROOT,
         refresh=refresh_members,
         progress=True,
+        decision_as_of_time=decision_as_of_time,
+        data_business_date=decision_as_of_time.date(),
     )
 
     primary_industry_codes = {
@@ -993,6 +1054,12 @@ def run(
     )
     daily_codes = set(by_code(core["daily"]))
     basic_codes = set(by_code(core["daily_basic"]))
+    universe_exclusions = classify_universe_exclusions(
+        daily_codes,
+        legacy_codes,
+        histories=histories,
+        stock_by_code=stock_by,
+    )
     legacy_core_excluded = sorted(
         legacy_codes - (daily_codes & basic_codes)
     )
@@ -1056,7 +1123,11 @@ def run(
         if skip_ifind
         else reusable_ifind
         if reuse_ifind and reusable_ifind
-        else probe_ifind(pro_audit["ifind_probe_sample"], board_samples)
+        else probe_ifind(
+            pro_audit["ifind_probe_sample"],
+            board_samples,
+            decision_as_of_time=decision_as_of_time,
+        )
     )
 
     report: dict[str, Any] = {
@@ -1092,6 +1163,7 @@ def run(
             "local_history_eligible": len(legacy_core_eligible)
             - len(set(insufficient) & legacy_core_eligible),
             "history_insufficient": insufficient,
+            "unscored_trade_date_securities": universe_exclusions,
         },
         "v2_run": {"status": "NOT_RUN_DATA_GATE", "stages": {}},
         "topn_comparison": {},

@@ -9,8 +9,6 @@ export const http = axios.create({
   timeout: 20000
 });
 
-let desktopConnection: { baseUrl: string; sessionToken: string } | null = null;
-
 export function createTraceId(): string {
   const random = Math.random().toString(16).slice(2);
   return `frontend-${Date.now()}-${random}`;
@@ -18,11 +16,7 @@ export function createTraceId(): string {
 
 http.interceptors.request.use(async (config) => {
   config.headers = config.headers || {};
-  if (window.aiTraderShell) {
-    desktopConnection ||= await window.aiTraderShell.getConnection();
-    config.baseURL = desktopConnection.baseUrl;
-    config.headers["X-AI-Trader-Token"] = desktopConnection.sessionToken;
-  } else {
+  if (!window.aiTraderShell) {
     config.baseURL = browserApiBaseUrl;
     if (!["GET", "HEAD", "OPTIONS"].includes(String(config.method || "GET").toUpperCase())) {
       const csrf = sessionStorage.getItem("ai-trader-csrf");
@@ -61,6 +55,17 @@ export async function apiDelete<T = unknown>(url: string, config?: AxiosRequestC
 
 async function request<T>(config: AxiosRequestConfig): Promise<ApiEnvelope<T>> {
   try {
+    if (window.aiTraderShell) {
+      const response = await window.aiTraderShell.backend.request({
+        method: String(config.method || "GET"),
+        url: String(config.url || ""),
+        data: config.data,
+        params: config.params as Record<string, string | number | boolean | Array<string | number | boolean> | null> | undefined
+      });
+      const envelope = sanitizeEnvelope(response.data as ApiEnvelope<T>);
+      if (!envelope.success) throw contractError(envelope, response.status);
+      return envelope;
+    }
     const response = await http.request<ApiEnvelope<T>>(config);
     const envelope = sanitizeEnvelope(response.data);
     if (!envelope.success) {

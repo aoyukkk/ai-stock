@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from typing import Literal
 from uuid import uuid4
 
@@ -78,7 +79,14 @@ def run_fundamental_research(body: FundamentalResearchRequest, request: Request)
         chain = SearchProviderChain(default_search_providers(), fallback)
         profiles = []
         for stock_code in selected:
-            profile = CachedTushareProfileService().build(stock_code)
+            profile = CachedTushareProfileService().build(
+                stock_code,
+                decision_time=(
+                    temporal_manifest.decision_time
+                    if temporal_manifest is not None
+                    else datetime.now().astimezone()
+                ),
+            )
             chain_result = chain.run(
                 ResearchQuery(stock_code=stock_code, query="fundamental profile missing fields"),
                 profile.model_dump(mode="json"),

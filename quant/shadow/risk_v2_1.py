@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from typing import Any
 
 
-VERSION = "RISK_V2_1_SHADOW"
+VERSION = "TUSHARE_QUANT_V2_1_CORRECTED_SHADOW"
+PARENT_VERSION = "TUSHARE_QUANT_V2_CORRECTED_SHADOW"
 WEIGHTS = {
     "risk_v2_frozen": 0.40,
     "max_drawdown_20d": 0.15,
@@ -44,6 +45,8 @@ def calculate_risk_v2_1(value: RiskV21Input) -> dict[str, Any]:
     if value.pipeline_error:
         return {
             "version": VERSION,
+            "parent_version": PARENT_VERSION,
+            "production_status": "SHADOW_ONLY",
             "status": "DATA_PIPELINE_ERROR",
             "score": None,
             "coverage": 0.0,
@@ -157,6 +160,8 @@ def calculate_risk_v2_1(value: RiskV21Input) -> dict[str, Any]:
         )
     return {
         "version": VERSION,
+        "parent_version": PARENT_VERSION,
+        "production_status": "SHADOW_ONLY",
         "status": "SHADOW_ONLY",
         "score": round(score, 4),
         "coverage": round(observed_weight, 4),

@@ -1,0 +1,54 @@
+versions:
+  decision: AI_STOCK_DECISION_V3_EVENT_OVERLAY_SHADOW
+  screening: LLM_SCREENING_V3_EVENT_OVERLAY_SHADOW
+  event_review: EVENT_REVIEW_V1
+  search_contract: FLASH_DIRECT_SEARCH_CONTRACT_V4
+production_or_shadow: SHADOW
+screening:
+  input_top_n: 100
+  output_top_n: 20
+  pro_max_n: 20
+  retry_count: 1
+  max_sources_per_stock: 8
+  max_events_per_stock: 5
+  timeout_seconds: 120
+  confidence_discount_direct_search: 0.70
+web_search:
+  endpoint: https://api.deepseek.com/anthropic/v1/messages
+  model: deepseek-v4-flash
+  max_uses: 2
+  max_tokens: 10000
+  workers: 4
+weights:
+  quant: 0.40
+  event_opportunity: 0.25
+  evidence_confidence: 0.15
+  evidence_breadth: 0.10
+  risk_action: 0.10
+source_tiers:
+  tier_1:
+    - cninfo.com.cn
+    - sse.com.cn
+    - szse.cn
+    - gov.cn
+  tier_2:
+    - cs.com.cn
+    - stcn.com
+    - cnstock.com
+  tier_3:
+    - eastmoney.com
+    - 10jqka.com.cn
+    - sina.com.cn
+  tier_4:
+    - unknown
+risk_actions:
+  ALLOW: 100
+  PROMOTE: 100
+  KEEP: 80
+  DEMOTE: 45
+  WATCH_ONLY: 20
+  BLOCK: 0
+freshness:
+  default_hours: 72
+  announcement_hours: 168
+  market_news_hours: 36

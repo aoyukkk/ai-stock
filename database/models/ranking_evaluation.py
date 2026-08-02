@@ -214,6 +214,200 @@ class RankingEvaluationArtifact(IDMixin, TimestampMixin, ReprMixin, Base):
     immutable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class ModelEffectivenessStageSnapshot(IDMixin, TimestampMixin, ReprMixin, Base):
+    __tablename__ = "model_effectiveness_stage_snapshot"
+    __table_args__ = (
+        UniqueConstraint(
+            "screening_run_id",
+            "stage_type",
+            "screening_version",
+            name="uq_model_effectiveness_business_stage",
+        ),
+        Index(
+            "ix_model_effectiveness_stage_version_date",
+            "ranking_trade_date",
+            "quant_factor_version",
+            "screening_version",
+        ),
+    )
+
+    stage_snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    cohort_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("ranking_evaluation_snapshot.id"), nullable=False
+    )
+    evaluation_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    ranking_trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source_quant_run_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    screening_run_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    quant_factor_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    screening_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    event_review_version: Mapped[str | None] = mapped_column(String(96))
+    risk_version: Mapped[str | None] = mapped_column(String(96))
+    prompt_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_schema_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    checkpoint_contract_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    production_or_shadow: Mapped[str] = mapped_column(String(16), nullable=False)
+    return_basis: Mapped[str] = mapped_column(String(40), nullable=False)
+    execution_contract_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    quant_top100_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    flash_input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    flash_input_count: Mapped[int] = mapped_column(nullable=False)
+    decision_as_of_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    output_available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_market_open_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    actionability_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    cohort_match: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    run_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    reliability_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_artifacts_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class ModelEffectivenessStageItem(IDMixin, TimestampMixin, ReprMixin, Base):
+    __tablename__ = "model_effectiveness_stage_item"
+    __table_args__ = (
+        UniqueConstraint(
+            "stage_snapshot_id", "source_row_number",
+            name="uq_model_effectiveness_stage_row",
+        ),
+        Index("ix_model_effectiveness_stage_item_stock", "stage_snapshot_id", "stock_code"),
+        Index("ix_model_effectiveness_stage_item_rank", "stage_snapshot_id", "flash_rank"),
+    )
+
+    stage_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("model_effectiveness_stage_snapshot.id"), nullable=False
+    )
+    cohort_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ranking_evaluation_snapshot_item.id")
+    )
+    source_row_number: Mapped[int] = mapped_column(nullable=False)
+    stock_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    stock_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    original_quant_rank: Mapped[int | None] = mapped_column()
+    quant_score: Mapped[Decimal | None] = mapped_column(VALUE)
+    flash_input_member: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    nonstandard_extra: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    flash_score: Mapped[Decimal | None] = mapped_column(VALUE)
+    flash_rank: Mapped[int | None] = mapped_column()
+    selected_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    final_selected_rank: Mapped[int | None] = mapped_column()
+    screening_action: Mapped[str | None] = mapped_column(String(64))
+    recommendation: Mapped[str | None] = mapped_column(String(64))
+    confidence: Mapped[Decimal | None] = mapped_column(VALUE)
+    risk_level: Mapped[str | None] = mapped_column(String(32))
+    risk_action: Mapped[str | None] = mapped_column(String(32))
+    reason: Mapped[str | None] = mapped_column(Text)
+    schema_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    task_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    repair_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    checkpoint_reused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    model_provider: Mapped[str | None] = mapped_column(String(64))
+    model_alias: Mapped[str | None] = mapped_column(String(64))
+    resolved_model_name: Mapped[str | None] = mapped_column(String(128))
+    prompt_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_schema_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    input_hash: Mapped[str | None] = mapped_column(String(64))
+    context_hash: Mapped[str | None] = mapped_column(String(64))
+    checkpoint_contract_hash: Mapped[str | None] = mapped_column(String(64))
+    output_available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_market_open_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    actionable_before_next_open: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    event_opportunity_score: Mapped[Decimal | None] = mapped_column(VALUE)
+    event_evidence_confidence: Mapped[Decimal | None] = mapped_column(VALUE)
+    event_action: Mapped[str | None] = mapped_column(String(32))
+    direct_search_used: Mapped[bool | None] = mapped_column(Boolean)
+    evidence_source: Mapped[str | None] = mapped_column(String(64))
+    search_status: Mapped[str | None] = mapped_column(String(64))
+    event_evidence_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
+    data_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    raw_payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class ModelEffectivenessDailyMetric(IDMixin, TimestampMixin, ReprMixin, Base):
+    __tablename__ = "model_effectiveness_daily_metric"
+    __table_args__ = (
+        UniqueConstraint(
+            "stage_snapshot_id", "horizon", "return_basis", "actionable_only",
+            name="uq_model_effectiveness_daily_metric",
+        ),
+        Index(
+            "ix_model_effectiveness_metric_version_date",
+            "screening_version", "ranking_trade_date",
+        ),
+    )
+
+    stage_snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("model_effectiveness_stage_snapshot.id"), nullable=False
+    )
+    evaluation_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    quant_factor_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    screening_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    ranking_trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    horizon: Mapped[int] = mapped_column(nullable=False)
+    return_basis: Mapped[str] = mapped_column(String(40), nullable=False)
+    actionable_only: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    calculation_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    valid_sample_count: Mapped[int] = mapped_column(nullable=False)
+    metric_payload_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    metric_input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ModelEffectivenessWeeklyRun(IDMixin, TimestampMixin, ReprMixin, Base):
+    __tablename__ = "model_effectiveness_weekly_run"
+    __table_args__ = (
+        UniqueConstraint("run_id", name="uq_model_effectiveness_weekly_run"),
+        Index(
+            "ix_model_effectiveness_week_version",
+            "week_ending", "quant_factor_version", "screening_version",
+        ),
+    )
+
+    run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    evaluation_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    quant_factor_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    screening_version: Mapped[str] = mapped_column(String(96), nullable=False)
+    week_ending: Mapped[date] = mapped_column(Date, nullable=False)
+    return_basis: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    data_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    summary_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    report_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_paths_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ModelEffectivenessDataIssue(IDMixin, TimestampMixin, ReprMixin, Base):
+    __tablename__ = "model_effectiveness_data_issue"
+    __table_args__ = (
+        UniqueConstraint("issue_hash", name="uq_model_effectiveness_issue"),
+        Index(
+            "ix_model_effectiveness_issue_version_date",
+            "screening_version", "affected_date",
+        ),
+    )
+
+    issue_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    issue_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage_snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_effectiveness_stage_snapshot.id")
+    )
+    issue_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    issue_level: Mapped[str] = mapped_column(String(32), nullable=False)
+    affected_date: Mapped[date | None] = mapped_column(Date)
+    affected_stock: Mapped[str | None] = mapped_column(String(32))
+    quant_factor_version: Mapped[str | None] = mapped_column(String(96))
+    screening_version: Mapped[str | None] = mapped_column(String(96))
+    detail: Mapped[str] = mapped_column(Text, nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 def _immutable(*_args, **_kwargs) -> None:
     raise ValueError("IMMUTABLE_RANKING_EVALUATION_RECORD")
 
@@ -224,6 +418,9 @@ for _model in (
     RankingEvaluationSnapshotItem,
     RankingEvaluationWeeklyRun,
     RankingEvaluationArtifact,
+    ModelEffectivenessStageSnapshot,
+    ModelEffectivenessStageItem,
+    ModelEffectivenessWeeklyRun,
 ):
     event.listen(_model, "before_update", _immutable)
     event.listen(_model, "before_delete", _immutable)
